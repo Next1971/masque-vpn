@@ -1,0 +1,44 @@
+# Aggregate ignore rules (see per-directory .gitignore files too).
+
+# Secrets — NEVER commit
+*.key
+*.keystore
+*.jks
+keystore.properties
+keystore-credentials.txt
+**/certs/*.crt
+**/certs/*.pem
+_signing/
+_artifacts/
+
+# Generator output (contains private keys)
+server/scripts/out/
+out/
+ca.srl
+
+# Real client profiles (distribute out-of-band)
+profile.client.toml
+**/uploaded_profile.toml
+
+# Build output
+build/
+.gradle/
+android/app/build/
+android/local.properties
+android/app/libs/masque.aar
+android/app/libs/masque-sources.jar
+dist/
+*.exe
+*.dll
+*.aar
+*.so
+
+# Go
+*.test
+*.out
+
+# OS / editor
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

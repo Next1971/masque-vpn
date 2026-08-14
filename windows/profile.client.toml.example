@@ -1,0 +1,27 @@
+# MASQUE — Windows client profile (TEMPLATE)
+# Copy this file to `profile.client.toml` and place it next to vpn-client.exe.
+# Certificate paths are relative to the folder you run the EXE from.
+
+[server]
+# Server address. server_name must match the CN/SAN of the server certificate.
+server      = "your-server.example.com:4433"
+server_name = "your-server.example.com"
+
+[tls]
+# mTLS client certificates. Keep client.key private — never commit it.
+ca   = "certs\\ca.crt"
+cert = "certs\\client.crt"
+key  = "certs\\client.key"
+# Disable server certificate verification. INSECURE — troubleshooting only.
+# Leave false in normal use. Can also be toggled with the -insecure flag or the
+# "Disable certificate verification" checkbox in the web UI.
+insecure = false
+
+[tun]
+# TUN adapter (Wintun). Name is visible under "Network Connections".
+tun_name = "masque0"
+mtu      = 1400
+# DNS servers for the tunnel (used only in -full-route mode).
+# CONNECT-IP does not advertise DNS, so it is set here. Default 1.1.1.1.
+# Multiple allowed: dns = ["1.1.1.1", "8.8.8.8"]
+dns      = ["1.1.1.1"]

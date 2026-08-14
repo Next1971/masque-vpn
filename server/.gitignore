@@ -1,0 +1,8 @@
+# Generator output — contains private keys and per-client bundles.
+# NEVER commit generated CA / server / client keys or profiles.
+out/
+*.key
+*.crt
+*.pem
+ca.srl
+config.server.toml

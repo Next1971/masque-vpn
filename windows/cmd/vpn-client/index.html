@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>MASQUE VPN</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+        button { padding: 15px 30px; font-size: 18px; cursor: pointer; margin: 10px; }
+        #status { font-weight: bold; margin-top: 20px; font-size: 20px; }
+        .on { background-color: #4CAF50; color: white; }
+        .off { background-color: #f44336; color: white; }
+    </style>
+</head>
+<body>
+    <h2>MASQUE VPN Client</h2>
+    <input type="file" id="fileInput" accept=".toml">
+    <br>
+    <label style="display:inline-block; margin-top:12px; font-size:14px;">
+        <input type="checkbox" id="insecureChk">
+        Disable certificate verification (insecure &mdash; troubleshooting only)
+    </label>
+    <br>
+    <button id="toggleBtn" class="off" onclick="toggleVPN()">CONNECT</button>
+    <div id="status">Disconnected</div>
+
+    <script>
+        let isRunning = false;
+
+        async function toggleVPN() {
+            const btn = document.getElementById('toggleBtn');
+            const status = document.getElementById('status');
+            const fileInput = document.getElementById('fileInput');
+
+            if (!isRunning) {
+                if (!fileInput.files[0]) {
+                    alert("Select a profile.client.toml file first!");
+                    return;
+                }
+
+                // Upload the file to the server
+                const formData = new FormData();
+                formData.append("file", fileInput.files[0]);
+                
+                status.innerText = "Uploading configuration...";
+                await fetch('/upload', { method: 'POST', body: formData });
+
+                // Connect VPN
+                const insecure = document.getElementById('insecureChk').checked ? '1' : '0';
+                status.innerText = "Connecting...";
+                const res = await fetch('/connect?insecure=' + insecure, { method: 'POST' });
+                const data = await res.json();
+
+                if (data.status === 'ok') {
+                    isRunning = true;
+                    btn.innerText = "DISCONNECT";
+                    btn.className = "on";
+                    status.innerText = "Connected: " + data.ip;
+                } else {
+                    status.innerText = "Error: " + data.error;
+                }
+            } else {
+                // Disconnect VPN
+                status.innerText = "Disconnecting...";
+                await fetch('/disconnect', { method: 'POST' });
+                isRunning = false;
+                btn.innerText = "CONNECT";
+                btn.className = "off";
+                status.innerText = "Disconnected";
+            }
+        }
+    </script>
+</body>
+</html>

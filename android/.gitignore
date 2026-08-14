@@ -1,0 +1,24 @@
+# Gradle / Android build output
+.gradle/
+build/
+app/build/
+local.properties
+
+# Signing — NEVER commit keystores or their passwords
+*.keystore
+*.jks
+keystore.properties
+
+# gomobile output (rebuild with scripts/build-aar)
+app/libs/masque.aar
+app/libs/masque-sources.jar
+
+# Go
+*.test
+*.out
+
+# OS / editor
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

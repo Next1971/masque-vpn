@@ -1,0 +1,26 @@
+# Build output
+/dist/vpn-client.exe
+vpn-client.exe
+
+# Wintun runtime library (ship in release archive, do not commit).
+# Download from https://www.wintun.net/ and place next to vpn-client.exe.
+wintun.dll
+
+# Runtime-generated uploaded profile (created by the web UI)
+uploaded_profile.toml
+
+# Secrets — never commit real certificates / keys / live profile
+certs/*.crt
+certs/*.key
+certs/*.pem
+profile.client.toml
+
+# Go
+*.test
+*.out
+
+# OS / editor
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/
