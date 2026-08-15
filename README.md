@@ -14,6 +14,7 @@ A minimal VPN built on the IETF **MASQUE** framework: it tunnels IP traffic insi
 | Deploy a Linux server | [Detailed server guide](server/README.md) |
 | Connect from Android | [Android guide](android/README-Android.md) |
 | Connect from Windows | [Windows guide](windows/README.md) |
+| See what's done and what's next | [Roadmap](docs/ROADMAP.md) |
 | Report a bug or feature request | [Open an issue](../../issues/new/choose) |
 | Report a security issue | [Security policy](SECURITY.md) |
 
@@ -91,6 +92,7 @@ See [`android/README-Android.md`](android/README-Android.md). In short:
 
 ## Project documentation
 
+- [Roadmap](docs/ROADMAP.md)
 - [Server installation guide](server/README.md)
 - [Android guide](android/README-Android.md)
 - [Windows guide](windows/README.md)
