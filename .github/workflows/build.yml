@@ -1,0 +1,44 @@
+name: Build check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  server-build:
+    name: Server (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Build server
+        working-directory: android/go-src/masque-vpn-mvp
+        run: go build -v ./...
+
+      - name: Vet
+        working-directory: android/go-src/masque-vpn-mvp
+        run: go vet ./...
+
+  windows-build:
+    name: Windows client
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Build Windows client
+        working-directory: windows
+        run: go build -v ./...
+
+      - name: Vet
+        working-directory: windows
+        run: go vet ./...
