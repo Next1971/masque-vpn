@@ -73,6 +73,10 @@ jobs:
       - name: gomobile init
         run: gomobile init
 
+      - name: Ensure libs directory exists
+        working-directory: android
+        run: mkdir -p app/libs
+
       - name: Build AAR
         working-directory: android/go-src/masque-vpn-mvp
         env:
