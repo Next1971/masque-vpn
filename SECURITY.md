@@ -4,6 +4,8 @@
 
 MASQUE VPN is experimental software. It has not been independently security-audited. Do not treat it as a guarantee of anonymity, censorship resistance, or protection against every network adversary.
 
+For a high-level discussion of how the transport stack interacts with known QUIC/HTTP3 censorship mechanisms (including GFW QUIC SNI–based blocking), see [CENSORSHIP.md](docs/CENSORSHIP.md).
+
 ## Reporting a vulnerability
 
 Please do not open a public GitHub issue for a suspected vulnerability, private key exposure, authentication bypass, traffic leak, or other security-sensitive report.
