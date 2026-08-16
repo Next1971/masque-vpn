@@ -7,6 +7,12 @@
 //   - IP pool (E1): dynamic address assignment to multiple clients;
 //   - config.toml (E1): -config reads everything from TOML; without -config, flags are used.
 //
+// Multi-client routing: a single shared TUN device serves all clients. One
+// reader goroutine reads the TUN and demultiplexes each inbound packet to the
+// owning client connection by its destination IP address (see Router). Each
+// client has its own conn→TUN goroutine. This prevents cross-delivery of return
+// packets between simultaneous clients.
+//
 // Secrets (keys) are not stored in code—their paths are supplied through config/flags.
 package main
 
@@ -22,6 +28,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"sync"
 	"time"
 
 	connectip "github.com/quic-go/connect-ip-go"
@@ -107,6 +114,86 @@ type serverConfig struct {
 	assign, route                                 netip.Prefix // assign is the fallback when no pool is set
 }
 
+// Router demultiplexes packets read from the single shared TUN device to the
+// correct client connection, keyed by the client's assigned IP address.
+//
+// A single goroutine (see Run) reads the TUN device. For every inbound packet
+// it extracts the destination IP and forwards the packet only to the connection
+// that owns that address. Client connections register on connect and unregister
+// on disconnect. This is what makes two or more simultaneous clients work: each
+// return packet reaches exactly its owner instead of racing between clients.
+type Router struct {
+	mu      sync.RWMutex
+	clients map[netip.Addr]*connectip.Conn
+}
+
+func NewRouter() *Router {
+	return &Router{clients: make(map[netip.Addr]*connectip.Conn)}
+}
+
+// Add registers a client address → connection mapping.
+func (r *Router) Add(addr netip.Addr, conn *connectip.Conn) {
+	r.mu.Lock()
+	r.clients[addr] = conn
+	r.mu.Unlock()
+}
+
+// Remove drops a client mapping (only if the stored conn still matches).
+func (r *Router) Remove(addr netip.Addr, conn *connectip.Conn) {
+	r.mu.Lock()
+	if r.clients[addr] == conn {
+		delete(r.clients, addr)
+	}
+	r.mu.Unlock()
+}
+
+// lookup returns the connection owning dst, if any.
+func (r *Router) lookup(dst netip.Addr) (*connectip.Conn, bool) {
+	r.mu.RLock()
+	conn, ok := r.clients[dst]
+	r.mu.RUnlock()
+	return conn, ok
+}
+
+// Run is the single TUN reader. It reads batches from the shared TUN device,
+// finds the destination IP of each packet, and writes the packet to the owning
+// client connection. It runs for the whole server lifetime.
+func (r *Router) Run(dev tun.Device, mtu int) {
+	batch := dev.BatchSize()
+	if batch < 1 {
+		batch = 1
+	}
+	bufs := make([][]byte, batch)
+	sizes := make([]int, batch)
+	for i := range bufs {
+		bufs[i] = make([]byte, tunOffset+mtu+64)
+	}
+	for {
+		k, err := dev.Read(bufs, sizes, tunOffset)
+		if err != nil {
+			log.Printf("router: tun read error: %v", err)
+			return
+		}
+		for i := 0; i < k; i++ {
+			pkt := bufs[i][tunOffset : tunOffset+sizes[i]]
+			dst, ok := dstIP(pkt)
+			if !ok {
+				continue // not a parseable IPv4/IPv6 packet
+			}
+			conn, ok := r.lookup(dst)
+			if !ok {
+				// No client owns this address (stale/unknown) — drop.
+				continue
+			}
+			if _, err := conn.WritePacket(pkt); err != nil {
+				// The client connection is likely gone; the per-client
+				// goroutine will unregister it. Drop and continue.
+				continue
+			}
+		}
+	}
+}
+
 func run(cfg serverConfig) error {
 	bind, certFile, keyFile, serverName, clientCA := cfg.bind, cfg.certFile, cfg.keyFile, cfg.serverName, cfg.clientCA
 	assign, route := cfg.assign, cfg.route
@@ -128,6 +215,14 @@ func run(cfg serverConfig) error {
 		defer dev.Close()
 	} else {
 		log.Printf("no -tun set: running in log-only mode (packets not forwarded)")
+	}
+
+	// Router: single reader of the shared TUN, demultiplexing to clients by dst IP.
+	var router *Router
+	if tunDev != nil {
+		router = NewRouter()
+		go router.Run(tunDev, cfg.mtu)
+		log.Printf("router started: single TUN reader demultiplexing by destination IP")
 	}
 
 	// IP pool: assign addresses dynamically if pool_cidr is set.
@@ -167,11 +262,11 @@ func run(cfg serverConfig) error {
 		if err != nil {
 			return fmt.Errorf("read client CA: %w", err)
 		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(caPEM) {
+		caPool := x509.NewCertPool()
+		if !caPool.AppendCertsFromPEM(caPEM) {
 			return fmt.Errorf("failed to parse client CA %q", clientCA)
 		}
-		tlsConf.ClientCAs = pool
+		tlsConf.ClientCAs = caPool
 		tlsConf.ClientAuth = tls.RequireAndVerifyClientCert
 		log.Printf("mTLS ENABLED: requiring client cert signed by %s", clientCA)
 	}
@@ -237,7 +332,7 @@ func run(cfg serverConfig) error {
 			}()
 		}
 
-		if err := handleConn(conn, tunDev, cfg.mtu, clientAddr, route); err != nil {
+		if err := handleConn(conn, tunDev, router, cfg.mtu, clientAddr, route); err != nil {
 			log.Printf("session ended: %v", err)
 		}
 	})
@@ -259,9 +354,10 @@ func run(cfg serverConfig) error {
 }
 
 // handleConn assigns an address, advertises a route, then:
-//   - if TUN is present, forwards bidirectionally between conn and TUN;
+//   - if TUN is present, registers the client in the router and forwards its
+//     conn→TUN direction (router handles TUN→conn for all clients);
 //   - if TUN is absent (nil), uses the previous log-only mode.
-func handleConn(conn *connectip.Conn, tunDev tun.Device, mtu int, assign, route netip.Prefix) error {
+func handleConn(conn *connectip.Conn, tunDev tun.Device, router *Router, mtu int, assign, route netip.Prefix) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -290,77 +386,61 @@ func handleConn(conn *connectip.Conn, tunDev tun.Device, mtu int, assign, route 
 		}
 	}
 
+	// Register this client's address so the router delivers its return packets.
+	clientIP := assign.Addr()
+	router.Add(clientIP, conn)
+	defer router.Remove(clientIP, conn)
+
 	return forward(conn, tunDev, mtu)
 }
 
-// forward relays IP packets in both directions between the MASQUE connection and TUN.
-//   conn → TUN: client packets go to the kernel (then NAT/routing);
-//   TUN → conn: replies from the Internet return to the client.
+// forward relays the client→TUN direction for a single client. The reverse
+// direction (TUN→client) is handled centrally by the Router, which reads the
+// shared TUN once and demultiplexes packets to the correct client by dst IP.
 //
-// Important for returning an address to the pool: as soon as either side fails
-// (client disconnects → conn.ReadPacket returns an error), close conn
-// to wake the other goroutine (TUN→conn would otherwise block in dev.Read/WritePacket).
-// Stop the TUN goroutine through done: dev is shared by the server and must not be closed.
+// When the client disconnects, conn.ReadPacket returns an error; we return it,
+// which triggers the deferred router.Remove and pool.Release in the caller.
 func forward(conn *connectip.Conn, dev tun.Device, mtu int) error {
-	errCh := make(chan error, 2)
-	done := make(chan struct{})
+	log.Printf("forwarding started (conn→TUN; TUN→conn via router)")
+	buf := make([]byte, tunOffset+mtu+64)
+	for {
+		n, err := conn.ReadPacket(buf[tunOffset:])
+		if err != nil {
+			conn.Close()
+			return fmt.Errorf("conn read: %w", err)
+		}
+		// wireguard/tun expects data with offset; pass the full slice with offset.
+		if _, err := dev.Write([][]byte{buf[:tunOffset+n]}, tunOffset); err != nil {
+			conn.Close()
+			return fmt.Errorf("tun write: %w", err)
+		}
+	}
+}
 
-	// conn → TUN
-	go func() {
-		buf := make([]byte, tunOffset+mtu+64)
-		for {
-			n, err := conn.ReadPacket(buf[tunOffset:])
-			if err != nil {
-				errCh <- fmt.Errorf("conn read: %w", err)
-				return
-			}
-			// wireguard/tun expects data with offset; pass the full slice with offset.
-			if _, err := dev.Write([][]byte{buf[:tunOffset+n]}, tunOffset); err != nil {
-				errCh <- fmt.Errorf("tun write: %w", err)
-				return
-			}
+// dstIP extracts the destination IP address from a raw IPv4 or IPv6 packet.
+// Returns ok=false if the packet is too short or not IPv4/IPv6.
+func dstIP(pkt []byte) (netip.Addr, bool) {
+	if len(pkt) < 1 {
+		return netip.Addr{}, false
+	}
+	switch pkt[0] >> 4 {
+	case 4:
+		// IPv4 destination address is at bytes 16..19.
+		if len(pkt) < 20 {
+			return netip.Addr{}, false
 		}
-	}()
-
-	// TUN → conn
-	go func() {
-		batch := dev.BatchSize()
-		if batch < 1 {
-			batch = 1
+		return netip.AddrFrom4([4]byte{pkt[16], pkt[17], pkt[18], pkt[19]}), true
+	case 6:
+		// IPv6 destination address is at bytes 24..39.
+		if len(pkt) < 40 {
+			return netip.Addr{}, false
 		}
-		bufs := make([][]byte, batch)
-		sizes := make([]int, batch)
-		for i := range bufs {
-			bufs[i] = make([]byte, tunOffset+mtu+64)
-		}
-		for {
-			k, err := dev.Read(bufs, sizes, tunOffset)
-			if err != nil {
-				errCh <- fmt.Errorf("tun read: %w", err)
-				return
-			}
-			// If the session is already closed, exit (do not write to a dead conn).
-			select {
-			case <-done:
-				return
-			default:
-			}
-			for i := 0; i < k; i++ {
-				pkt := bufs[i][tunOffset : tunOffset+sizes[i]]
-				if _, err := conn.WritePacket(pkt); err != nil {
-					errCh <- fmt.Errorf("conn write: %w", err)
-					return
-				}
-			}
-		}
-	}()
-
-	log.Printf("forwarding started (conn↔TUN)")
-	err := <-errCh
-	// Close the session and signal the other goroutine that it has ended.
-	close(done)
-	conn.Close()
-	return err
+		var a [16]byte
+		copy(a[:], pkt[24:40])
+		return netip.AddrFrom16(a), true
+	default:
+		return netip.Addr{}, false
+	}
 }
 
 // lastIPOfPrefix returns the final address in a prefix (the broadcast for an IPv4 range).
