@@ -72,7 +72,7 @@ class TvMainActivity : ComponentActivity() {
         connectBtn = findViewById(R.id.tvBtnConnect)
 
         findViewById<Button>(R.id.tvBtnPaste).setOnClickListener { showPasteDialog() }
-        findViewById<Button>(R.id.tvBtnImportFile).setOnClickListener { pickProfile.launch("*/*") }
+        findViewById<Button>(R.id.tvBtnImportFile).setOnClickListener { launchFilePicker() }
 
         connectBtn.setOnClickListener {
             if (connected) {
@@ -90,6 +90,34 @@ class TvMainActivity : ComponentActivity() {
          else findViewById<Button>(R.id.tvBtnPaste)).requestFocus()
 
         refresh()
+    }
+
+    /**
+     * File-picker fallback. Many TVs (e.g. Haier) have NO app that handles
+     * ACTION_GET_CONTENT, which previously froze the UI. Guard it: only launch
+     * when a handler exists, and catch ActivityNotFoundException otherwise so
+     * the app stays responsive and directs the user to paste-text.
+     */
+    private fun launchFilePicker() {
+        val probe = Intent(Intent.ACTION_GET_CONTENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        val hasHandler = probe.resolveActivity(packageManager) != null
+        if (!hasHandler) {
+            AlertDialog.Builder(this)
+                .setTitle("No file manager")
+                .setMessage("This TV has no file picker. Use \"Paste profile text\" instead: open the .masque profile on your phone/PC, copy its contents, and paste them here.")
+                .setPositiveButton("Paste text") { _, _ -> showPasteDialog() }
+                .setNegativeButton("Cancel", null)
+                .show()
+            return
+        }
+        try {
+            pickProfile.launch("*/*")
+        } catch (e: Exception) {
+            toast("Cannot open file picker: ${e.message}. Use paste-text instead.")
+        }
     }
 
     /** Paste-text import: reliable on TV where file managers are absent. */

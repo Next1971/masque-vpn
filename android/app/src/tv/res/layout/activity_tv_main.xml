@@ -41,7 +41,7 @@
         android:id="@+id/tvBtnImportFile"
         android:layout_width="520dp"
         android:layout_height="wrap_content"
-        android:text="Import from file / USB"
+        android:text="Import from file / USB (optional)"
         android:textSize="20sp"
         android:focusable="true"
         android:nextFocusUp="@+id/tvBtnPaste"
