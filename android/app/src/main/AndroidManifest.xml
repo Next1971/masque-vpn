@@ -10,17 +10,11 @@
         android:allowBackup="false"
         android:icon="@android:drawable/ic_lock_lock"
         android:label="@string/app_name"
-        android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.Light">
+        android:supportsRtl="true">
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+        <!-- Launcher activity is declared per form factor:
+             src/phone/AndroidManifest.xml (MainActivity, phone launcher)
+             src/tv/AndroidManifest.xml    (TvMainActivity, leanback launcher) -->
 
         <service
             android:name=".MasqueVpnService"

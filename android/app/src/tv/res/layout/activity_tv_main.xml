@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="#101418"
+    android:padding="48dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="MASQUE VPN"
+        android:textColor="#FFFFFF"
+        android:textSize="40sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Status: —"
+        android:textColor="#B0BEC5"
+        android:textSize="22sp"
+        android:gravity="center"
+        android:layout_marginBottom="40dp" />
+
+    <Button
+        android:id="@+id/tvBtnPaste"
+        android:layout_width="520dp"
+        android:layout_height="wrap_content"
+        android:text="Import profile (paste text)"
+        android:textSize="20sp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:nextFocusDown="@+id/tvBtnImportFile"
+        android:layout_marginBottom="20dp" />
+
+    <Button
+        android:id="@+id/tvBtnImportFile"
+        android:layout_width="520dp"
+        android:layout_height="wrap_content"
+        android:text="Import from file / USB"
+        android:textSize="20sp"
+        android:focusable="true"
+        android:nextFocusUp="@+id/tvBtnPaste"
+        android:nextFocusDown="@+id/tvBtnConnect"
+        android:layout_marginBottom="20dp" />
+
+    <Button
+        android:id="@+id/tvBtnConnect"
+        android:layout_width="520dp"
+        android:layout_height="wrap_content"
+        android:text="Connect"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:focusable="true"
+        android:nextFocusUp="@+id/tvBtnImportFile" />
+
+</LinearLayout>

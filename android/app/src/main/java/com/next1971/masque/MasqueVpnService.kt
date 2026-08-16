@@ -35,14 +35,15 @@ class MasqueVpnService : VpnService() {
         const val CHANNEL_ID = "masque_vpn"
         const val NOTIF_ID = 1
 
-        // Client tunnel address. The server assigns it from the 10.8.0.0/24 pool.
-        // Builder requires an address BEFORE establish(); use the known pool
-        // approach: set a temporary /32 and default route. The actual address
-        // comes from the server and could be reset if needed, but for
-        // one client the address is predictable. Use a broad /24 here to
-        // avoid depending on the exact .254 (the server routes it regardless).
+        // Fallback tunnel address, used ONLY if the server does not report an
+        // assigned address (should not happen). The real address is obtained
+        // from the server via a two-phase connect (Dial → read assigned addr →
+        // build TUN with THAT address → establish → StartWithFD). This is
+        // essential for multiple devices: each client gets a UNIQUE address
+        // from the 10.8.0.0/24 pool, so return traffic is demultiplexed to the
+        // correct device. Hardcoding one address broke concurrent clients.
         const val TUN_ADDR_FALLBACK = "10.8.0.254"
-        const val TUN_PREFIX = 24
+        const val TUN_PREFIX_FALLBACK = 32
         const val TUN_MTU = 1400
     }
 
@@ -71,31 +72,7 @@ class MasqueVpnService : VpnService() {
 
         startForeground(NOTIF_ID, buildNotification("Connecting…"))
 
-        // 1. Create the TUN interface. Android configures address/routes/DNS.
-        val builder = Builder()
-            .setSession("MASQUE")
-            .setMtu(TUN_MTU)
-            .addAddress(TUN_ADDR_FALLBACK, TUN_PREFIX)
-            .addRoute("0.0.0.0", 0)          // all traffic through the tunnel (full-route)
-            .addDnsServer(prof.dns)          // DNS from profile (1.1.1.1 by default)
-
-        // Exclude this app from the VPN so QUIC packets to the server do not loop.
-        try {
-            builder.addDisallowedApplication(packageName)
-        } catch (e: Exception) {
-            Log.w(TAG, "addDisallowedApplication: ${e.message}")
-        }
-
-        val iface = builder.establish()
-        if (iface == null) {
-            Log.e(TAG, "establish() returned null (VPN permission?)")
-            broadcast("Error: VPN permission unavailable")
-            stopSelf()
-            return
-        }
-        pfd = iface
-
-        // 2. Prepare the Go config: certificate paths in internal storage.
+        // Prepare the Go config: certificate paths in internal storage.
         val cfg = Config().apply {
             server = prof.server
             serverName = prof.serverName
@@ -118,10 +95,49 @@ class MasqueVpnService : VpnService() {
             }
         }
 
-        // 3. Start the Go core with the interface fd.
         try {
-            val fd = iface.fd
-            tunnel = Mobile.connect(cfg, fd.toLong(), cb)
+            // PHASE 1: establish the CONNECT-IP session WITHOUT a TUN yet, so we
+            // learn the address the server assigned to THIS client.
+            val t = Mobile.dial(cfg, cb)
+            tunnel = t
+
+            var addr = t.assignedAddr()
+            var prefix = t.assignedPrefixLen().toInt()
+            if (addr.isNullOrEmpty()) {
+                Log.w(TAG, "server assigned no address; using fallback $TUN_ADDR_FALLBACK/$TUN_PREFIX_FALLBACK")
+                addr = TUN_ADDR_FALLBACK
+                prefix = TUN_PREFIX_FALLBACK
+            }
+            if (prefix <= 0 || prefix > 32) prefix = TUN_PREFIX_FALLBACK
+            Log.i(TAG, "building TUN with server-assigned address $addr/$prefix")
+
+            // PHASE 2: build the TUN interface with the server-assigned /32
+            // address. Android configures address/routes/DNS.
+            val builder = Builder()
+                .setSession("MASQUE")
+                .setMtu(TUN_MTU)
+                .addAddress(addr, prefix)
+                .addRoute("0.0.0.0", 0)          // all traffic through the tunnel (full-route)
+                .addDnsServer(prof.dns)          // DNS from profile (1.1.1.1 by default)
+
+            // Exclude this app from the VPN so QUIC packets to the server do not loop.
+            try {
+                builder.addDisallowedApplication(packageName)
+            } catch (e: Exception) {
+                Log.w(TAG, "addDisallowedApplication: ${e.message}")
+            }
+
+            val iface = builder.establish()
+            if (iface == null) {
+                Log.e(TAG, "establish() returned null (VPN permission?)")
+                broadcast("Error: VPN permission unavailable")
+                stopVpn()
+                return
+            }
+            pfd = iface
+
+            // PHASE 3: attach the fd to the session and start forwarding.
+            t.startWithFD(iface.fd.toLong())
             broadcast("Connected")
             updateNotification("VPN active")
         } catch (e: Exception) {
@@ -172,8 +188,13 @@ class MasqueVpnService : VpnService() {
 
     private fun buildNotification(text: String): Notification {
         ensureChannel()
+        // Launch the flavor's own launcher activity (MainActivity on phone,
+        // TvMainActivity on TV) by resolving the package launch intent, so this
+        // shared service does not hard-reference a flavor-specific class.
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            ?: Intent()
         val pi = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this, 0, launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return Notification.Builder(this, CHANNEL_ID)

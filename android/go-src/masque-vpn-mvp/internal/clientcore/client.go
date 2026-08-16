@@ -100,6 +100,11 @@ func buildTLSConfig(p *Profile) (*tls.Config, error) {
 // (the core does not create TUN or modify routes). After Connect succeeds,
 // the caller configures the address/routes from s.AssignedPrefixes/s.Routes,
 // then starts s.Run(ctx).
+//
+// dev may be nil for a two-phase flow (needed on Android, where the TUN
+// address must be known before the interface is created): call Connect with
+// dev=nil, read s.AssignedPrefixes, build the platform TUN with that address,
+// then s.AttachTUN(dev) before s.Run(ctx).
 func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) {
 	if err := p.Validate(); err != nil {
 		return nil, err
@@ -185,10 +190,19 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 	}, nil
 }
 
+// AttachTUN binds a TUN device to a session that was created with dev=nil
+// (two-phase flow). It must be called before Run.
+func (s *Session) AttachTUN(dev tun.Device) {
+	s.dev = dev
+}
+
 // Run starts bidirectional conn↔TUN forwarding and blocks until
 // completion (an error on either side, s.Close(), or context cancellation).
 // It returns the first termination reason.
 func (s *Session) Run(ctx context.Context) error {
+	if s.dev == nil {
+		return fmt.Errorf("no TUN device attached (call AttachTUN before Run)")
+	}
 	errCh := make(chan error, 2)
 	mtu, err := s.dev.MTU()
 	if err != nil || mtu <= 0 {

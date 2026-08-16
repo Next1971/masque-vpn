@@ -30,6 +30,26 @@ android {
         versionName = "1.0"
     }
 
+    // Two form factors from one codebase:
+    //   phone -> handset/tablet APK  (applicationId com.next1971.masque)
+    //   tv    -> Android TV APK       (applicationId com.next1971.masque.tv)
+    // Both share the same Go core (masque.aar), MasqueVpnService and ProfileStore.
+    // The TV flavor adds a leanback launcher + D-pad UI + paste/text import,
+    // and installs side by side with the phone build (distinct applicationId).
+    flavorDimensions += "formFactor"
+    productFlavors {
+        create("phone") {
+            dimension = "formFactor"
+            // keeps applicationId = com.next1971.masque
+        }
+        create("tv") {
+            dimension = "formFactor"
+            applicationIdSuffix = ".tv"
+            versionNameSuffix = "-tv"
+            // app_name for TV is provided by src/tv/res/values/strings.xml
+        }
+    }
+
     signingConfigs {
         if (keystorePropsFile.exists()) {
             create("release") {
@@ -65,4 +85,6 @@ dependencies {
     implementation(files("libs/masque.aar"))
     implementation("androidx.activity:activity-ktx:1.9.2")
     implementation("androidx.appcompat:appcompat:1.7.0")
+    // Android TV (leanback) — used only by the tv flavor UI.
+    "tvImplementation"("androidx.leanback:leanback:1.0.0")
 }
