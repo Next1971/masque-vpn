@@ -93,6 +93,7 @@ See [`android/README-Android.md`](android/README-Android.md). In short:
 ## Project documentation
 
 - [Roadmap](docs/ROADMAP.md)
+- [Issuing client configs (one bundle per device)](docs/CLIENTS.md)
 - [Server installation guide](server/README.md)
 - [Android guide](android/README-Android.md)
 - [Windows guide](windows/README.md)
