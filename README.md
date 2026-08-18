@@ -94,6 +94,7 @@ Current testing was performed over Wi-Fi on:
 ### Known limitation
 
 On Android phones, with the screen off, the tunnel currently remains connected for approximately 8–12 minutes before it may disconnect. This is being investigated in the context of Android and vendor-specific battery and background-execution restrictions.
+
 ---
 
 ## 4. Security notes
