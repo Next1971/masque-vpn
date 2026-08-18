@@ -74,6 +74,26 @@ See [`android/README-Android.md`](android/README-Android.md). In short:
 2. Open the app and **import a profile** (`profile.masque` from the generator). The APK also ships a non-production `sample-profile.masque` in its assets so you can see the expected format.
 3. Grant the VPN permission and connect.
 
+### Stability testing
+
+Current testing was performed over Wi-Fi on:
+
+- Honor 200 — MagicOS 10, Android 16
+- POCO X4 Pro — Android 13 (TKQ1)
+- Haier Android TV
+
+- **Android TV:** The MASQUE tunnel remained connected for more than 36 hours without interruption on Haier Android TV.
+- **Android phones:** Six hours of continuous testing with the screen kept on completed without VPN tunnel disconnects or noticeable connectivity drops.
+
+### Network transitions
+
+- Switching between mobile network cell towers completed without issues in current testing.
+- Switching from mobile data to Wi-Fi completed without issues in current testing.
+- Switching from Wi-Fi to mobile data can occasionally interrupt the tunnel. Recovery for this transition is under active development.
+
+### Known limitation
+
+On Android phones, with the screen off, the tunnel currently remains connected for approximately 8–12 minutes before it may disconnect. This is being investigated in the context of Android and vendor-specific battery and background-execution restrictions.
 ---
 
 ## 4. Security notes
