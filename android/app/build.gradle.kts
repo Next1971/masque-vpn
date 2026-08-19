@@ -20,7 +20,7 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "com.next1971.masque"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.next1971.masque"
