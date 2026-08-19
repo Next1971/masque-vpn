@@ -72,10 +72,10 @@ func buildTLSConfig(p *Profile) (*tls.Config, error) {
 			return nil, fmt.Errorf("failed to parse CA %q", p.CA)
 		}
 		tlsConf.RootCAs = pool
-	} else {
-		// Without a CA there is nothing to verify the server against, so
-		// verification must be skipped regardless of the Insecure flag.
-		tlsConf.InsecureSkipVerify = true
+	} else if !p.Insecure {
+    	return nil, fmt.Errorf(
+        	"server CA certificate is required; configure CA or explicitly enable insecure mode for troubleshooting",
+    	)
 	}
 
 	// Optional "disable certificate verification" toggle ([tls].insecure in the
