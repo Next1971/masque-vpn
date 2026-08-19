@@ -191,8 +191,11 @@ class MasqueVpnService : VpnService() {
         // Launch the flavor's own launcher activity (MainActivity on phone,
         // TvMainActivity on TV) by resolving the package launch intent, so this
         // shared service does not hard-reference a flavor-specific class.
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-            ?: Intent()
+        val launchIntent = requireNotNull(
+            packageManager.getLaunchIntentForPackage(packageName)
+        ) {
+            "No launcher activity found for $packageName"
+        }.setPackage(packageName)
         val pi = PendingIntent.getActivity(
             this, 0, launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
