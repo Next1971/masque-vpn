@@ -86,7 +86,7 @@ dependencies {
     // Go core through gomobile. Place masque.aar in app/libs/ (see README).
     implementation(files("libs/masque.aar"))
     implementation("androidx.activity:activity-ktx:1.13.0")
-    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.appcompat:appcompat:1.8.0")
     // Android TV (leanback) — used only by the tv flavor UI.
     "tvImplementation"("androidx.leanback:leanback:1.0.0")
 }
