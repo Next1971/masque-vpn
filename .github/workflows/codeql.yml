@@ -86,17 +86,50 @@ jobs:
     # to build your code.
     # ℹ️ Command-line programs to run using the OS shell.
     # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
-    - name: Run manual build steps
-      if: matrix.build-mode == 'manual'
-      shell: bash
-      run: |
-        echo 'If you are using a "manual" build mode for one or more of the' \
-          'languages you are analyzing, replace this with the commands to build' \
-          'your code, for example:'
-        echo '  make bootstrap'
-        echo '  make release'
-        exit 1
+       - name: Set up Go
+      if: matrix.language == 'java-kotlin'
+      uses: actions/setup-go@v5
+      with:
+        go-version: "1.25"
 
+    - name: Set up Java
+      if: matrix.language == 'java-kotlin'
+      uses: actions/setup-java@v4
+      with:
+        distribution: "temurin"
+        java-version: "17"
+
+    - name: Set up Android SDK
+      if: matrix.language == 'java-kotlin'
+      uses: android-actions/setup-android@v3
+
+    - name: Install Android NDK
+      if: matrix.language == 'java-kotlin'
+      run: sdkmanager --install "ndk;27.0.12077973"
+
+    - name: Install Go Mobile tools
+      if: matrix.language == 'java-kotlin'
+      run: |
+        go install golang.org/x/mobile/cmd/gomobile@latest
+        go install golang.org/x/mobile/cmd/gobind@latest
+        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+        gomobile init
+
+    - name: Build Android AAR for CodeQL
+      if: matrix.language == 'java-kotlin'
+      working-directory: android/go-src/masque-vpn-mvp
+      env:
+        ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+      run: |
+        mkdir -p ../../app/libs
+        gomobile bind -target=android -androidapi 24 -o ../../app/libs/masque.aar ./mobile
+
+    - name: Build Android app for CodeQL
+      if: matrix.language == 'java-kotlin'
+      working-directory: android
+      run: |
+        chmod +x gradlew
+        ./gradlew :app:assembleDebug --no-daemon
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4
       with:
