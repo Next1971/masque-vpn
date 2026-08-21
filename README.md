@@ -30,6 +30,16 @@ The Go source for the server and the shared client core lives under `android/go-
 
 > **Security model.** A single internal Certificate Authority (CA) signs the server certificate and every client certificate. The server only accepts clients whose certificate is signed by that CA, and each client only trusts a server whose certificate is signed by the same CA. **Never commit or publish any `*.key` file** (CA key, server key, client keys).
 
+> [!IMPORTANT]
+> ## MVP status: core hypothesis validated
+>
+> The primary MVP goal has been achieved: a MASQUE tunnel based on
+> QUIC + HTTP/3 CONNECT-IP with mutual TLS works end-to-end in real use.
+>
+> The project is still experimental and is not yet a production-ready VPN
+> client. The v1.x line focuses on reliability, network transitions, and
+> client experience rather than changing the core tunnel design.
+> 
 ---
 
 ## 1. Server installation (HOWTO)
