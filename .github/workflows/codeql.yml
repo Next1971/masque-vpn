@@ -91,7 +91,9 @@ jobs:
       uses: actions/setup-go@v7
       with:
         go-version: "1.26.x"
-
+    - name: Check Go version
+      if: matrix.language == 'java-kotlin'
+      run: go version
     - name: Set up Java
       if: matrix.language == 'java-kotlin'
       uses: actions/setup-java@v5
