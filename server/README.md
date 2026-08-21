@@ -140,3 +140,4 @@ route     = "0.0.0.0/0"      # route advertised to clients (0.0.0.0/0 = full tun
 | TLS/mTLS error | Confirm server name, certificate chain, client certificate, and matching CA |
 
 Before sharing logs, remove domains, IP addresses, certificates, tokens, keys, and client-profile secrets.
+<!-- Build status refreshed -->
