@@ -4,9 +4,27 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
-### Documentation
+## [v1.3] - 2026-08-21
 
-- Added server deployment overview, security policy, contribution guidance, and issue templates.
+Requires a **server upgrade** together with the Android client. A v1.2 server will still accept clients, but reconnect after sleep or a network change can assign a new `/32` and leave the phone TUN silent (`datagram source address not allowed`).
+
+### Added
+
+- **QUIC keepalive** on the client and server (`KeepAlivePeriod` 15s, `MaxIdleTimeout` 3 minutes).
+- **Android battery-exemption** prompt before Connect (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`).
+- **Session reconnect** in the gomobile bridge: the TUN fd stays up; only QUIC/CONNECT-IP is redialed. The VPN service is not stopped on a transport error.
+- **Underlying network tracking** on Android (`NetworkCallback`, `setUnderlyingNetworks`, `protect` / `bindSocket` on the QUIC UDP fd) so Wi-Fi → LTE does not leave the socket on a dead path.
+- **Sticky tunnel addresses** on the server: the same client certificate CN gets the same `/32` across reconnects.
+
+### Fixed
+
+- Android UI no longer shows “profile ready” / Connect after sleep while the VPN is still running.
+- `poc-client` no longer defaults to `InsecureSkipVerify`; a CA (`-ca`) is required (closes CodeQL `go/disabled-certificate-check` on that tool).
+
+### Known limitations
+
+- Long OEM Doze freezes can still halt keepalives; the exemption dialog is not honored on every vendor.
+- Airplane mode for many minutes is not a dedicated code path; recovery is the same reconnect + sticky IP.
 
 ## [v1.2] - 2026-08-16
 

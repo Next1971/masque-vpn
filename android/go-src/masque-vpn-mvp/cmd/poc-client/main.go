@@ -32,7 +32,7 @@ func main() {
 		proxyAddr  = flag.String("proxy", "YOUR_SERVER_HOST:4433", "UDP host:port of the MASQUE proxy")
 		serverName = flag.String("server-name", "YOUR_SERVER_HOST", "TLS SNI / URI template host")
 		timeout    = flag.Duration("timeout", 10*time.Second, "overall timeout")
-		caFile     = flag.String("ca", "", "CA to verify server cert (enables verification instead of InsecureSkipVerify)")
+		caFile     = flag.String("ca", "", "CA to verify the server certificate (required)")
 		certFile   = flag.String("cert", "", "client certificate (PEM) for mTLS")
 		keyFile    = flag.String("key", "", "client private key (PEM) for mTLS")
 	)
@@ -63,21 +63,19 @@ func run(ctx context.Context, proxyAddr, serverName, caFile, certFile, keyFile s
 		NextProtos: []string{http3.NextProtoH3},
 	}
 
-	// Verify the server certificate against the CA if set; otherwise use InsecureSkipVerify.
-	if caFile != "" {
-		caPEM, err := os.ReadFile(caFile)
-		if err != nil {
-			return fmt.Errorf("read CA: %w", err)
-		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(caPEM) {
-			return fmt.Errorf("failed to parse CA %q", caFile)
-		}
-		tlsConf.RootCAs = pool
-		log.Printf("verifying server cert against CA %s", caFile)
-	} else {
-		tlsConf.InsecureSkipVerify = true
+	if caFile == "" {
+		return fmt.Errorf("server CA is required; pass -ca")
 	}
+	caPEM, err := os.ReadFile(caFile)
+	if err != nil {
+		return fmt.Errorf("read CA: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return fmt.Errorf("failed to parse CA %q", caFile)
+	}
+	tlsConf.RootCAs = pool
+	log.Printf("verifying server cert against CA %s", caFile)
 
 	// Client certificate for mTLS, if set.
 	if certFile != "" && keyFile != "" {
@@ -94,6 +92,8 @@ func run(ctx context.Context, proxyAddr, serverName, caFile, certFile, keyFile s
 		&quic.Config{
 			EnableDatagrams:   true,
 			InitialPacketSize: 1350,
+			KeepAlivePeriod:   15 * time.Second,
+			MaxIdleTimeout:    3 * time.Minute,
 		},
 	)
 	if err != nil {

@@ -1,10 +1,11 @@
 # Issuing client configs (one bundle per device)
 
 Every device that connects gets its **own** client bundle (its own certificate).
-This is not optional: the server assigns each client a unique address from the
-pool (`10.8.0.0/24`) based on its certificate, and it routes return traffic by
-that address. Two devices sharing the same bundle would collide on one address,
-and only one of them would receive traffic.
+This is not optional: from **v1.3** the server assigns each client a unique
+address from the pool (`10.8.0.0/24`) **and remembers it by the client
+certificate CN**, so reconnect (sleep, Wi-Fi → LTE) keeps the same `/32`. Two
+devices sharing the same bundle would still collide on that address, and only
+one of them would receive traffic.
 
 > **Rule of thumb:** N devices → N bundles. Never reuse one bundle on two
 > devices at the same time.

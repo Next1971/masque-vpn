@@ -90,7 +90,8 @@ native `.so` libraries for arm64/arm/x86_64).
 3. Ensure `app/libs/masque.aar` is present; otherwise the build will fail at
    `implementation(files("libs/masque.aar"))`).
 4. **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
-5. The output file is `app/build/outputs/apk/debug/app-debug.apk`.
+5. The output file is under `app/build/outputs/apk/` (phone debug:
+   `phone/debug/app-phone-debug.apk`).
 
 A debug APK is sufficient for device installation. For a release signature, use
 **Build → Generate Signed Bundle / APK** with your own keystore.
@@ -115,12 +116,14 @@ Disconnect using the **“Disconnect”** button in the app.
 
 ## How it works (briefly)
 
-- **VpnService** (Kotlin) creates TUN through `Builder`: address `10.8.0.254/24`,
+- **VpnService** (Kotlin) creates TUN through `Builder` using the **server-assigned** `/32` (two-phase: Dial → read address → `establish` → `StartWithFD`),
   route `0.0.0.0/0` (all traffic), and DNS from the profile. It obtains the interface
-  file descriptor.
-- The **Go core** receives this `fd` (`Mobile.connect(cfg, fd, cb)`),
-  wraps it in `tun.Device` (`CreateUnmonitoredTUNFromFD`), and forwards packets
-  between TUN and the QUIC/CONNECT-IP tunnel—the same code used on Windows/Linux.
+  file descriptor. It also tracks the current underlying network and asks Android
+  to ignore battery optimization so QUIC keepalives can run with the screen off.
+- The **Go core** receives this `fd`, wraps it in `tun.Device`
+  (`CreateUnmonitoredTUNFromFD`), and forwards packets between TUN and the
+  QUIC/CONNECT-IP tunnel. If QUIC dies, the same TUN is kept and a new session
+  is dialed.
 - **Android** (VpnService.Builder) configures routes, address, and DNS; the core
   does not modify them, keeping the bridge clean and portable.
 - Certificates (mTLS) are stored in the app’s internal storage
@@ -138,5 +141,6 @@ Disconnect using the **“Disconnect”** button in the app.
 - IPv4 only in the tunnel (IPv4 server).
 - Tunnel DNS uses plaintext UDP:53 (hidden from the local provider but visible on the
   server). DoH/DoT are planned for the future.
-- The actual server-assigned address comes from the 10.8.0.0/24 pool; the interface uses a
-  fixed `.254`, which is predictable and works for a single client.
+- Phone and TV are separate APKs (`:app:assemblePhoneDebug` / `:app:assembleTvDebug`).
+  The TV app talks to the same server; rebuild TV only if you want the v1.3 client
+  behaviour on the set-top box.

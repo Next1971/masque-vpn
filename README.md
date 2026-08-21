@@ -4,7 +4,7 @@
 
 A minimal VPN built on the IETF **MASQUE** framework: it tunnels IP traffic inside HTTP/3 (QUIC) using **CONNECT-IP** (RFC 9484) and authenticates both ends with **mutual TLS (mTLS)**.
 
-> **v1.0 is released.** This is experimental software and has not received an independent security audit.
+> **v1.3 is released.** This is experimental software and has not received an independent security audit.
 
 ## Quick start
 
@@ -46,8 +46,8 @@ The Go source for the server and the shared client core lives under `android/go-
 
 The core MASQUE tunnel is working. The next releases focus on making the Android and Windows clients resilient during normal mobile-device usage:
 
-- Better recovery after Wi-Fi ↔ mobile-network switching
-- Improved background behaviour while the screen is off
+- Better recovery after Wi-Fi ↔ mobile-network switching (**v1.3**)
+- Improved background behaviour while the screen is off (**v1.3**: QUIC keepalive, battery-exemption prompt, reconnect without tearing the TUN)
 - Automatic reconnection after temporary loss of connectivity, including recovery after airplane mode is turned off
 - MTU experiments and tuning for different network conditions
 - A full Windows desktop client, replacing the command-line-only workflow
@@ -115,17 +115,18 @@ Current testing was performed over Wi-Fi on:
 - Haier Android TV
 
 - **Android TV:** The MASQUE tunnel remained connected for more than 36 hours without interruption on Haier Android TV.
-- **Android phones:** Six hours of continuous testing with the screen kept on completed without VPN tunnel disconnects or noticeable connectivity drops.
+- **Android phones:** Six hours of continuous testing with the screen kept on completed without VPN tunnel disconnects or noticeable connectivity drops. **v1.3** additionally covers screen-off / sleep: keepalive plus reconnect; after wake the UI stays on Disconnect when the tunnel is still up.
 
 ### Network transitions
 
 - Switching between mobile network cell towers completed without issues in current testing.
 - Switching from mobile data to Wi-Fi completed without issues in current testing.
-- Switching from Wi-Fi to mobile data can occasionally interrupt the tunnel. Recovery for this transition is under active development.
+- **v1.3:** Wi-Fi → mobile data is recovered by updating the VPN underlying network, protecting the QUIC UDP socket, and reconnecting the MASQUE session if QUIC dies. The server keeps the same tunnel `/32` for a given client certificate so the Android TUN does not go silent after reconnect. Lab check: 12 Wi-Fi ↔ LTE switches in a row without losing traffic.
 
-### Known limitation
+### Remaining caveats
 
-On Android phones, with the screen off, the tunnel currently remains connected for approximately 8–12 minutes before it may disconnect. This is being investigated in the context of Android and vendor-specific battery and background-execution restrictions.
+- Some OEM battery savers still freeze the process; grant “ignore battery optimization” when the app asks. If the process is killed, the user must Connect again.
+- Airplane mode for a long stretch is still best treated as a reconnect-after-wake case, not a guaranteed instant restore.
 
 ---
 

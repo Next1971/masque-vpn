@@ -40,7 +40,7 @@ class TvMainActivity : ComponentActivity() {
         override fun onReceive(c: Context?, i: Intent?) {
             val msg = i?.getStringExtra("msg") ?: return
             statusView.text = "Status: $msg"
-            connected = msg == "Connected" || msg == "VPN active"
+            connected = VpnStatus.applyConnected(connected, msg)
             connectBtn.text = if (connected) "Disconnect" else "Connect"
         }
     }
@@ -65,6 +65,10 @@ class TvMainActivity : ComponentActivity() {
         }
     }
 
+    private val batteryExemption = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { connectVpn() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_tv_main)
@@ -87,16 +91,22 @@ class TvMainActivity : ComponentActivity() {
                 startService(Intent(this, MasqueVpnService::class.java).setAction(MasqueVpnService.ACTION_DISCONNECT))
             } else {
                 if (!ProfileStore.isConfigured(this)) { toast("Import a profile first"); return@setOnClickListener }
-                val prep = VpnService.prepare(this)
-                if (prep != null) vpnPermission.launch(prep)
-                else startService(Intent(this, MasqueVpnService::class.java).setAction(MasqueVpnService.ACTION_CONNECT))
+                try {
+                    val bat = BatteryExemption.intentIfNeeded(this)
+                    if (bat != null) {
+                        batteryExemption.launch(bat)
+                        return@setOnClickListener
+                    }
+                } catch (_: Exception) {
+                }
+                connectVpn()
             }
         }
 
         // Give the remote a sensible initial focus target.
         (if (ProfileStore.isConfigured(this)) connectBtn else pasteBtn).requestFocus()
 
-        refresh()
+        refreshUi()
     }
 
     /** Slight scale-up on focus so the active button is obvious on TV from distance. */
@@ -159,7 +169,7 @@ class TvMainActivity : ComponentActivity() {
 
     private fun applyProfile(text: String) {
         ProfileStore.import(this, text)
-            .onSuccess { toast("Profile imported"); refresh() }
+            .onSuccess { toast("Profile imported"); if (!MasqueVpnService.isRunning) refresh() }
             .onFailure { toast("Profile error: ${it.message}") }
     }
 
@@ -172,11 +182,30 @@ class TvMainActivity : ComponentActivity() {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(statusReceiver, filter)
         }
+        refreshUi()
     }
 
     override fun onPause() {
         super.onPause()
         try { unregisterReceiver(statusReceiver) } catch (_: Exception) {}
+    }
+
+    private fun connectVpn() {
+        val prep = VpnService.prepare(this)
+        if (prep != null) vpnPermission.launch(prep)
+        else startService(Intent(this, MasqueVpnService::class.java).setAction(MasqueVpnService.ACTION_CONNECT))
+    }
+
+    private fun refreshUi() {
+        if (MasqueVpnService.isRunning) {
+            connected = true
+            statusView.text = "Status: VPN active"
+            connectBtn.text = "Disconnect"
+        } else {
+            connected = false
+            connectBtn.text = "Connect"
+            refresh()
+        }
     }
 
     private fun refresh() {

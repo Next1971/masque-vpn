@@ -2,7 +2,10 @@
 
 This guide is tested on **Ubuntu 22.04**. Any modern systemd Linux with a public IP should work. All commands are run as `root` (or with `sudo`).
 
-The server tunnels IP traffic over QUIC + HTTP/3 CONNECT-IP and authenticates clients with mutual TLS (mTLS).
+The server tunnels IP traffic over QUIC + HTTP/3 CONNECT-IP and authenticates clients with mutual TLS (mTLS). From **v1.3** the server also:
+
+- sends QUIC keepalives (`KeepAlivePeriod` 15s, `MaxIdleTimeout` 3 minutes);
+- pins each client certificate CN to a stable tunnel `/32` so Android can reconnect without rebuilding the TUN.
 
 > Keep the CA private key, server private key, and client private keys out of Git and distribute client bundles only through a secure channel.
 
@@ -30,6 +33,8 @@ git clone https://github.com/Next1971/masque-vpn-mvp.git
 cd masque-vpn-mvp/android/go-src/masque-vpn-mvp
 go build -trimpath -ldflags "-s -w" -o vpn-server ./cmd/poc-server
 ```
+
+The binary is built from `cmd/poc-server`. On the VPS you can name it `vpn-server` or `poc-server`; the systemd unit’s `ExecStart=` must match. Common layouts are `/opt/masque/vpn-server` or `/opt/masque/bin/poc-server`. **v1.3 must replace this binary**; client reconnect is not enough if the server still hands out a new `/32` every session.
 
 ## 3. Deploy the binary
 

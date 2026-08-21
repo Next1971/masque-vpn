@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"os"
 	"sync"
+	"time"
 
 	connectip "github.com/quic-go/connect-ip-go"
 	"github.com/quic-go/quic-go"
@@ -73,9 +74,9 @@ func buildTLSConfig(p *Profile) (*tls.Config, error) {
 		}
 		tlsConf.RootCAs = pool
 	} else if !p.Insecure {
-    	return nil, fmt.Errorf(
-        	"server CA certificate is required; configure CA or explicitly enable insecure mode for troubleshooting",
-    	)
+		return nil, fmt.Errorf(
+			"server CA certificate is required; configure CA or explicitly enable insecure mode for troubleshooting",
+		)
 	}
 
 	// Optional "disable certificate verification" toggle ([tls].insecure in the
@@ -125,10 +126,7 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 		return nil, err
 	}
 
-	qconn, err := quic.Dial(ctx, udpConn, udpAddr, tlsConf, &quic.Config{
-		EnableDatagrams:   true,
-		InitialPacketSize: 1350,
-	})
+	qconn, err := quic.Dial(ctx, udpConn, udpAddr, tlsConf, newQUICConfig())
 	if err != nil {
 		udpConn.Close()
 		return nil, fmt.Errorf("QUIC dial: %w", err)
@@ -194,6 +192,23 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 // (two-phase flow). It must be called before Run.
 func (s *Session) AttachTUN(dev tun.Device) {
 	s.dev = dev
+}
+
+// UDPFd returns the underlying UDP socket fd for VpnService.protect / bindSocket.
+// -1 if the session has no live socket.
+func (s *Session) UDPFd() int {
+	if s == nil || s.udpConn == nil {
+		return -1
+	}
+	sc, err := s.udpConn.SyscallConn()
+	if err != nil {
+		return -1
+	}
+	var fd int
+	if err := sc.Control(func(raw uintptr) { fd = int(raw) }); err != nil || fd <= 0 {
+		return -1
+	}
+	return fd
 }
 
 // Run starts bidirectional conn↔TUN forwarding and blocks until
@@ -288,7 +303,8 @@ func (s *Session) Run(ctx context.Context) error {
 // Close terminates the session gracefully: it closes CONNECT-IP (the server immediately
 // returns the address to the pool), then QUIC and UDP. TUN is NOT closed here;
 // the platform wrapper manages its lifecycle (it created it and
-// closes it, together with route rollback).
+// closes it, together with route rollback). Android reconnect (Pump) relies
+// on that: a new Session is dialed against the same TUN device.
 func (s *Session) Close() error {
 	s.closeOnce.Do(func() {
 		close(s.done)
@@ -304,4 +320,22 @@ func (s *Session) Close() error {
 		log.Printf("session closed gracefully")
 	})
 	return nil
+}
+
+// Keepalive must be shorter than idle so PINGs reset the timeout while the
+// process is running. Idle is the negotiated minimum of both peers, so the
+// server uses the same values. This does not survive Android Doze freezing
+// the process; that needs a battery exemption (and later reconnect).
+const (
+	quicKeepAlivePeriod = 15 * time.Second
+	quicMaxIdleTimeout  = 3 * time.Minute
+)
+
+func newQUICConfig() *quic.Config {
+	return &quic.Config{
+		EnableDatagrams:   true,
+		InitialPacketSize: 1350,
+		KeepAlivePeriod:   quicKeepAlivePeriod,
+		MaxIdleTimeout:    quicMaxIdleTimeout,
+	}
 }

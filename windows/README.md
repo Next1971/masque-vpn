@@ -3,7 +3,8 @@
 A minimal Windows VPN client built on top of a portable Go core (`clientcore`)
 shared with the Android and Linux clients. It speaks **QUIC + HTTP/3 CONNECT-IP
 (MASQUE, RFC 9484)** with mutual TLS to a MASQUE server, and tunnels all traffic
-through a Wintun adapter.
+through a Wintun adapter. From **v1.3** the shared core enables QUIC keepalives
+(15s / 3 min idle), matching the server.
 
 This repository contains everything needed to **build `vpn-client.exe` from
 source on Windows**.

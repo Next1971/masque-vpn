@@ -5,14 +5,21 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import mobile.Callback
 import mobile.Config
 import mobile.Mobile
 import mobile.Tunnel
+import java.io.FileDescriptor
 
 /**
  * MasqueVpnService — Android VpnService wrapping the shared Go core (clientcore)
@@ -35,13 +42,10 @@ class MasqueVpnService : VpnService() {
         const val CHANNEL_ID = "masque_vpn"
         const val NOTIF_ID = 1
 
-        // Fallback tunnel address, used ONLY if the server does not report an
-        // assigned address (should not happen). The real address is obtained
-        // from the server via a two-phase connect (Dial → read assigned addr →
-        // build TUN with THAT address → establish → StartWithFD). This is
-        // essential for multiple devices: each client gets a UNIQUE address
-        // from the 10.8.0.0/24 pool, so return traffic is demultiplexed to the
-        // correct device. Hardcoding one address broke concurrent clients.
+        @Volatile
+        var isRunning: Boolean = false
+            private set
+
         const val TUN_ADDR_FALLBACK = "10.8.0.254"
         const val TUN_PREFIX_FALLBACK = 32
         const val TUN_MTU = 1400
@@ -49,6 +53,28 @@ class MasqueVpnService : VpnService() {
 
     private var tunnel: Tunnel? = null
     private var pfd: ParcelFileDescriptor? = null
+    private var networksRegistered = false
+    private var underlying: Network? = null
+
+    private val connectivity by lazy { getSystemService(ConnectivityManager::class.java) }
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            Log.i(TAG, "underlying network available: $network")
+            applyUnderlying(network)
+        }
+
+        override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+            applyUnderlying(network)
+        }
+
+        override fun onLost(network: Network) {
+            Log.i(TAG, "underlying network lost: $network")
+            if (underlying == network) {
+                underlying = null
+            }
+        }
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -62,6 +88,11 @@ class MasqueVpnService : VpnService() {
     }
 
     private fun startVpn() {
+        if (tunnel != null && pfd != null) {
+            Log.i(TAG, "VPN already running; ignore extra CONNECT")
+            return
+        }
+
         val prof = ProfileStore.load(this)
         if (prof == null) {
             Log.e(TAG, "no profile configured")
@@ -72,7 +103,6 @@ class MasqueVpnService : VpnService() {
 
         startForeground(NOTIF_ID, buildNotification("Connecting…"))
 
-        // Prepare the Go config: certificate paths in internal storage.
         val cfg = Config().apply {
             server = prof.server
             serverName = prof.serverName
@@ -87,17 +117,18 @@ class MasqueVpnService : VpnService() {
                 Log.i(TAG, "status: $msg")
                 broadcast(msg ?: "")
                 updateNotification(msg ?: "Connected")
+                if (msg != null && msg.startsWith("reconnect")) {
+                    underlying?.let { applyUnderlying(it) } ?: protectUdp()
+                }
             }
             override fun onError(msg: String?) {
-                Log.e(TAG, "error: $msg")
+                Log.e(TAG, "fatal: $msg")
                 broadcast("Error: $msg")
                 stopVpn()
             }
         }
 
         try {
-            // PHASE 1: establish the CONNECT-IP session WITHOUT a TUN yet, so we
-            // learn the address the server assigned to THIS client.
             val t = Mobile.dial(cfg, cb)
             tunnel = t
 
@@ -111,16 +142,13 @@ class MasqueVpnService : VpnService() {
             if (prefix <= 0 || prefix > 32) prefix = TUN_PREFIX_FALLBACK
             Log.i(TAG, "building TUN with server-assigned address $addr/$prefix")
 
-            // PHASE 2: build the TUN interface with the server-assigned /32
-            // address. Android configures address/routes/DNS.
             val builder = Builder()
                 .setSession("MASQUE")
                 .setMtu(TUN_MTU)
                 .addAddress(addr, prefix)
-                .addRoute("0.0.0.0", 0)          // all traffic through the tunnel (full-route)
-                .addDnsServer(prof.dns)          // DNS from profile (1.1.1.1 by default)
+                .addRoute("0.0.0.0", 0)
+                .addDnsServer(prof.dns)
 
-            // Exclude this app from the VPN so QUIC packets to the server do not loop.
             try {
                 builder.addDisallowedApplication(packageName)
             } catch (e: Exception) {
@@ -136,8 +164,10 @@ class MasqueVpnService : VpnService() {
             }
             pfd = iface
 
-            // PHASE 3: attach the fd to the session and start forwarding.
             t.startWithFD(iface.fd.toLong())
+            registerUnderlyingNetworks()
+            protectUdp()
+            isRunning = true
             broadcast("Connected")
             updateNotification("VPN active")
         } catch (e: Exception) {
@@ -147,7 +177,80 @@ class MasqueVpnService : VpnService() {
         }
     }
 
+    private fun registerUnderlyingNetworks() {
+        if (networksRegistered) return
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            .build()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                connectivity.registerNetworkCallback(
+                    request,
+                    networkCallback,
+                    Handler(Looper.getMainLooper())
+                )
+            } else {
+                connectivity.registerNetworkCallback(request, networkCallback)
+            }
+            networksRegistered = true
+        } catch (e: Exception) {
+            Log.w(TAG, "registerNetworkCallback: ${e.message}")
+        }
+    }
+
+    private fun unregisterUnderlyingNetworks() {
+        if (!networksRegistered) return
+        try {
+            connectivity.unregisterNetworkCallback(networkCallback)
+        } catch (e: Exception) {
+            Log.w(TAG, "unregisterNetworkCallback: ${e.message}")
+        }
+        networksRegistered = false
+        underlying = null
+    }
+
+    private fun applyUnderlying(network: Network) {
+        underlying = network
+        try {
+            setUnderlyingNetworks(arrayOf(network))
+        } catch (e: Exception) {
+            Log.w(TAG, "setUnderlyingNetworks: ${e.message}")
+        }
+        protectUdp()
+        bindUdp(network)
+    }
+
+    private fun protectUdp() {
+        val fd = tunnel?.udpFd()?.toInt() ?: return
+        if (fd <= 0) return
+        if (!protect(fd)) {
+            Log.w(TAG, "protect($fd) failed")
+        } else {
+            Log.i(TAG, "protected UDP fd $fd")
+        }
+    }
+
+    private fun bindUdp(network: Network) {
+        val fd = tunnel?.udpFd()?.toInt() ?: return
+        if (fd <= 0) return
+        try {
+            val javaFd = FileDescriptor()
+            val field = FileDescriptor::class.java.declaredFields.firstOrNull {
+                it.name == "descriptor" || it.name == "fd"
+            } ?: return
+            field.isAccessible = true
+            field.setInt(javaFd, fd)
+            network.bindSocket(javaFd)
+            Log.i(TAG, "bound UDP fd $fd to $network")
+        } catch (e: Exception) {
+            Log.w(TAG, "bindSocket: ${e.message}")
+        }
+    }
+
     private fun stopVpn() {
+        isRunning = false
+        unregisterUnderlyingNetworks()
         try {
             tunnel?.stop()
         } catch (e: Exception) {
@@ -173,8 +276,6 @@ class MasqueVpnService : VpnService() {
         sendBroadcast(Intent("com.next1971.masque.STATUS").putExtra("msg", msg).setPackage(packageName))
     }
 
-    // --- notification (required for the foreground service) ---
-
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java)
@@ -188,9 +289,6 @@ class MasqueVpnService : VpnService() {
 
     private fun buildNotification(text: String): Notification {
         ensureChannel()
-        // Launch the flavor's own launcher activity (MainActivity on phone,
-        // TvMainActivity on TV) by resolving the package launch intent, so this
-        // shared service does not hard-reference a flavor-specific class.
         val launchIntent = requireNotNull(
             packageManager.getLaunchIntentForPackage(packageName)
         ) {

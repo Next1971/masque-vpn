@@ -31,7 +31,7 @@ class MainActivity : ComponentActivity() {
         override fun onReceive(c: Context?, i: Intent?) {
             val msg = i?.getStringExtra("msg") ?: return
             statusView.text = "Status: $msg"
-            connected = msg == "Connected" || msg == "VPN active"
+            connected = VpnStatus.applyConnected(connected, msg)
             connectBtn.text = if (connected) "Disconnect" else "Connect"
         }
     }
@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
         ProfileStore.import(this, text)
             .onSuccess {
                 toast("Profile imported")
-                refresh()
+                if (!MasqueVpnService.isRunning) refresh()
             }
             .onFailure { toast("Profile error: ${it.message}") }
     }
@@ -64,6 +64,11 @@ class MainActivity : ComponentActivity() {
             toast("VPN permission denied")
         }
     }
+
+    // Battery-exemption result is unreliable on many OEMs; continue either way.
+    private val batteryExemption = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { connectVpn() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,13 +89,19 @@ class MainActivity : ComponentActivity() {
                     toast("Import a profile first")
                     return@setOnClickListener
                 }
-                val prep = VpnService.prepare(this)
-                if (prep != null) vpnPermission.launch(prep)
-                else startService(Intent(this, MasqueVpnService::class.java).setAction(MasqueVpnService.ACTION_CONNECT))
+                try {
+                    val bat = BatteryExemption.intentIfNeeded(this)
+                    if (bat != null) {
+                        batteryExemption.launch(bat)
+                        return@setOnClickListener
+                    }
+                } catch (_: Exception) {
+                }
+                connectVpn()
             }
         }
 
-        refresh()
+        refreshUi()
     }
 
     override fun onResume() {
@@ -102,11 +113,30 @@ class MainActivity : ComponentActivity() {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(statusReceiver, filter)
         }
+        refreshUi()
     }
 
     override fun onPause() {
         super.onPause()
         try { unregisterReceiver(statusReceiver) } catch (_: Exception) {}
+    }
+
+    private fun connectVpn() {
+        val prep = VpnService.prepare(this)
+        if (prep != null) vpnPermission.launch(prep)
+        else startService(Intent(this, MasqueVpnService::class.java).setAction(MasqueVpnService.ACTION_CONNECT))
+    }
+
+    private fun refreshUi() {
+        if (MasqueVpnService.isRunning) {
+            connected = true
+            statusView.text = "Status: VPN active"
+            connectBtn.text = "Disconnect"
+        } else {
+            connected = false
+            connectBtn.text = "Connect"
+            refresh()
+        }
     }
 
     private fun refresh() {

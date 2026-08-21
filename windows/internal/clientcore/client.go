@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"os"
 	"sync"
+	"time"
 
 	connectip "github.com/quic-go/connect-ip-go"
 	"github.com/quic-go/quic-go"
@@ -122,10 +123,7 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 		return nil, err
 	}
 
-	qconn, err := quic.Dial(ctx, udpConn, udpAddr, tlsConf, &quic.Config{
-		EnableDatagrams:   true,
-		InitialPacketSize: 1350,
-	})
+	qconn, err := quic.Dial(ctx, udpConn, udpAddr, tlsConf, newQUICConfig())
 	if err != nil {
 		udpConn.Close()
 		return nil, fmt.Errorf("QUIC dial: %w", err)
@@ -292,4 +290,21 @@ func (s *Session) Close() error {
 		log.Printf("session closed gracefully")
 	})
 	return nil
+}
+
+// Keepalive must be shorter than idle so PINGs reset the timeout while the
+// process is running. Idle is the negotiated minimum of both peers, so the
+// server uses the same values.
+const (
+	quicKeepAlivePeriod = 15 * time.Second
+	quicMaxIdleTimeout  = 3 * time.Minute
+)
+
+func newQUICConfig() *quic.Config {
+	return &quic.Config{
+		EnableDatagrams:   true,
+		InitialPacketSize: 1350,
+		KeepAlivePeriod:   quicKeepAlivePeriod,
+		MaxIdleTimeout:    quicMaxIdleTimeout,
+	}
 }

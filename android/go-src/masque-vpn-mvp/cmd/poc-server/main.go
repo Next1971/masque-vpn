@@ -155,6 +155,36 @@ func (r *Router) lookup(dst netip.Addr) (*connectip.Conn, bool) {
 	return conn, ok
 }
 
+// sessionIndex keeps at most one live CONNECT-IP session per client cert CN
+// so a reconnect can close the stale one before reusing the sticky /32.
+type sessionIndex struct {
+	mu   sync.Mutex
+	byCN map[string]*connectip.Conn
+}
+
+func (s *sessionIndex) take(cn string, conn *connectip.Conn) {
+	if cn == "" {
+		return
+	}
+	s.mu.Lock()
+	if old := s.byCN[cn]; old != nil && old != conn {
+		old.Close()
+	}
+	s.byCN[cn] = conn
+	s.mu.Unlock()
+}
+
+func (s *sessionIndex) drop(cn string, conn *connectip.Conn) {
+	if cn == "" {
+		return
+	}
+	s.mu.Lock()
+	if s.byCN[cn] == conn {
+		delete(s.byCN, cn)
+	}
+	s.mu.Unlock()
+}
+
 // Run is the single TUN reader. It reads batches from the shared TUN device,
 // finds the destination IP of each packet, and writes the packet to the owning
 // client connection. It runs for the whole server lifetime.
@@ -238,6 +268,7 @@ func run(cfg serverConfig) error {
 		}
 		log.Printf("IP pool %s ready (%d addresses available, server %s reserved)", cfg.poolCIDR, pool.Available(), serverTunAddr.Addr())
 	}
+	live := &sessionIndex{byCN: make(map[string]*connectip.Conn)}
 
 	udpAddr, err := net.ResolveUDPAddr("udp", bind)
 	if err != nil {
@@ -277,7 +308,11 @@ func run(cfg serverConfig) error {
 	ln, err := quic.ListenEarly(
 		udpConn,
 		http3.ConfigureTLSConfig(tlsConf),
-		&quic.Config{EnableDatagrams: true},
+		&quic.Config{
+			EnableDatagrams: true,
+			KeepAlivePeriod: 15 * time.Second,
+			MaxIdleTimeout:  3 * time.Minute,
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("QUIC listen: %w", err)
@@ -302,9 +337,10 @@ func run(cfg serverConfig) error {
 			return
 		}
 
-		// Log the client certificate CN (if mTLS).
+		cn := ""
 		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
-			log.Printf("client authenticated via mTLS: CN=%s", r.TLS.PeerCertificates[0].Subject.CommonName)
+			cn = r.TLS.PeerCertificates[0].Subject.CommonName
+			log.Printf("client authenticated via mTLS: CN=%s", cn)
 		}
 
 		conn, err := p.Proxy(w, req)
@@ -314,20 +350,21 @@ func run(cfg serverConfig) error {
 			return
 		}
 		log.Printf("CONNECT-IP session ESTABLISHED (HTTP/3 stream hijacked)")
+		live.take(cn, conn)
+		defer live.drop(cn, conn)
 
-		// Assign an address: from the pool when available, or the fixed fallback.
 		clientAddr := assign
 		if pool != nil {
-			alloc, err := pool.Allocate()
+			alloc, lease, err := pool.AllocateFor(cn)
 			if err != nil {
 				log.Printf("cannot allocate address: %v", err)
 				conn.Close()
 				return
 			}
 			clientAddr = alloc
-			log.Printf("allocated %s from pool (%d left)", clientAddr, pool.Available())
+			log.Printf("allocated %s for CN=%q from pool (%d left)", clientAddr, cn, pool.Available())
 			defer func() {
-				pool.Release(alloc)
+				pool.Release(cn, lease, alloc)
 				log.Printf("released %s back to pool (%d available)", alloc, pool.Available())
 			}()
 		}
