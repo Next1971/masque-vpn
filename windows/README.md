@@ -183,3 +183,4 @@ that your `certs\\\\` match the server's CA. Add `-verbose` for packet traces.
 server). DoH/DoT is future work.
 * Single server/profile.
 
+<!-- Build status refreshed -->
