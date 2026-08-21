@@ -21,7 +21,7 @@
 
     <application
         android:banner="@drawable/tv_banner"
-        android:theme="@style/Theme.Leanback">
+        android:theme="@style/Theme.MasqueTv">
 
         <activity
             android:name=".TvMainActivity"

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- TV shell -->
+    <color name="tv_background">#101418</color>
+    <color name="tv_text_primary">#FFFFFF</color>
+    <color name="tv_text_secondary">#B0BEC5</color>
+
+    <!-- Buttons: high contrast for D-pad focus on dark backgrounds -->
+    <color name="tv_button_bg">#2A3038</color>
+    <color name="tv_button_border">#5C6670</color>
+    <color name="tv_button_text">#E8EAED</color>
+
+    <color name="tv_button_focus_bg">#1A8CFF</color>
+    <color name="tv_button_focus_border">#FFFFFF</color>
+    <color name="tv_button_focus_text">#FFFFFF</color>
+
+    <color name="tv_button_pressed_bg">#0F6FD4</color>
+</resources>

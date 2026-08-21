@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <style name="Theme.MasqueTv" parent="Theme.Leanback">
+    <item name="android:windowBackground">@color/tv_background</item>
+    <item name="android:colorBackground">@color/tv_background</item>
+    <item name="android:defaultFocusHighlightEnabled">false</item>
+    <item name="android:buttonStyle">@style/TvButton</item>
+  </style>
+
+  <style name="Theme.MasqueTv.Dialog" parent="Theme.Leanback">
+    <item name="android:windowBackground">@color/tv_background</item>
+    <item name="android:colorBackground">@color/tv_background</item>
+    <item name="android:defaultFocusHighlightEnabled">false</item>
+    <item name="android:buttonStyle">@style/TvButton</item>
+    <item name="android:textColorPrimary">@color/tv_text_primary</item>
+    <item name="android:textColorSecondary">@color/tv_text_secondary</item>
+  </style>
+</resources>

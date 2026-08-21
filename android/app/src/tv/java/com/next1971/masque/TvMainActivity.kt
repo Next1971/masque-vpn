@@ -9,6 +9,7 @@ import android.content.IntentFilter
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -21,10 +22,10 @@ import androidx.activity.result.contract.ActivityResultContracts
  *
  * Same VPN core as the phone build (MasqueVpnService + ProfileStore + Go
  * masque.aar). The only differences are TV-oriented:
- *   - Large, D-pad-focusable buttons (no touch required).
- *   - Profile import via PASTED TEXT (works with the remote's on-screen
- *     keyboard), plus a file-picker fallback for TVs that expose a file
- *     provider or a plugged-in USB drive.
+ * - Large, D-pad-focusable buttons (no touch required).
+ * - Profile import via PASTED TEXT (works with the remote's on-screen
+ * keyboard), plus a file-picker fallback for TVs that expose a file
+ * provider or a plugged-in USB drive.
  *
  * Import is the only genuinely TV-specific concern: most TVs have no share
  * sheet or file manager, so paste-text is the reliable primary path.
@@ -71,8 +72,15 @@ class TvMainActivity : ComponentActivity() {
         statusView = findViewById(R.id.tvStatus)
         connectBtn = findViewById(R.id.tvBtnConnect)
 
-        findViewById<Button>(R.id.tvBtnPaste).setOnClickListener { showPasteDialog() }
-        findViewById<Button>(R.id.tvBtnImportFile).setOnClickListener { launchFilePicker() }
+        val pasteBtn = findViewById<Button>(R.id.tvBtnPaste)
+        val importFileBtn = findViewById<Button>(R.id.tvBtnImportFile)
+
+        pasteBtn.setOnClickListener { showPasteDialog() }
+        importFileBtn.setOnClickListener { launchFilePicker() }
+
+        setupTvFocusAnimation(pasteBtn)
+        setupTvFocusAnimation(importFileBtn)
+        setupTvFocusAnimation(connectBtn)
 
         connectBtn.setOnClickListener {
             if (connected) {
@@ -86,10 +94,21 @@ class TvMainActivity : ComponentActivity() {
         }
 
         // Give the remote a sensible initial focus target.
-        (if (ProfileStore.isConfigured(this)) connectBtn
-         else findViewById<Button>(R.id.tvBtnPaste)).requestFocus()
+        (if (ProfileStore.isConfigured(this)) connectBtn else pasteBtn).requestFocus()
 
         refresh()
+    }
+
+    /** Slight scale-up on focus so the active button is obvious on TV from distance. */
+    private fun setupTvFocusAnimation(view: View) {
+        view.onFocusChangeListener = View.OnFocusChangeListener { v, hasFocus ->
+            val scale = if (hasFocus) 1.06f else 1f
+            v.animate()
+                .scaleX(scale)
+                .scaleY(scale)
+                .setDuration(120)
+                .start()
+        }
     }
 
     /**
@@ -105,7 +124,7 @@ class TvMainActivity : ComponentActivity() {
         }
         val hasHandler = probe.resolveActivity(packageManager) != null
         if (!hasHandler) {
-            AlertDialog.Builder(this)
+            AlertDialog.Builder(this, R.style.Theme_MasqueTv_Dialog)
                 .setTitle("No file manager")
                 .setMessage("This TV has no file picker. Use \"Paste profile text\" instead: open the .masque profile on your phone/PC, copy its contents, and paste them here.")
                 .setPositiveButton("Paste text") { _, _ -> showPasteDialog() }
@@ -127,7 +146,7 @@ class TvMainActivity : ComponentActivity() {
             minLines = 6
             hint = "Paste the contents of your .masque profile here"
         }
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, R.style.Theme_MasqueTv_Dialog)
             .setTitle("Import profile (paste text)")
             .setView(input)
             .setPositiveButton("Import") { _, _ ->
