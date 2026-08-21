@@ -18,7 +18,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version: "1.26.1"
 
       - name: Build server
         working-directory: android/go-src/masque-vpn-mvp
@@ -36,7 +36,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.x"
+          go-version: "1.26.1"
 
       - name: Build Windows client
         working-directory: windows
@@ -54,7 +54,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.x"
+          go-version: "1.26.1"
 
       - uses: actions/setup-java@v5
         with:
