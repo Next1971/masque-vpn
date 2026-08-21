@@ -39,7 +39,29 @@ The Go source for the server and the shared client core lives under `android/go-
 > The project is still experimental and is not yet a production-ready VPN
 > client. The v1.x line focuses on reliability, network transitions, and
 > client experience rather than changing the core tunnel design.
-> 
+
+## Roadmap
+
+### v1.x — Reliability and client experience
+
+The core MASQUE tunnel is working. The next releases focus on making the Android and Windows clients resilient during normal mobile-device usage:
+
+- Better recovery after Wi-Fi ↔ mobile-network switching
+- Improved background behaviour while the screen is off
+- Automatic reconnection after temporary loss of connectivity, including recovery after airplane mode is turned off
+- MTU experiments and tuning for different network conditions
+- A full Windows desktop client, replacing the command-line-only workflow
+
+### v2.0 — Platform and protocol upgrade
+
+Version 2.0 is planned as a major upgrade:
+
+- IPv6 support
+- Major upgrades of the Android Gradle Plugin and Gradle wrapper
+
+> [!NOTE]
+> AGP 9.x and Gradle 9.x are a coordinated migration. They require Kotlin 2.x and target SDK changes, so this work will be planned and tested deliberately, not accepted through automated dependency-update pull requests. Minor and patch updates, including security fixes, remain welcome.
+
 ---
 
 ## 1. Server installation (HOWTO)
