@@ -144,3 +144,4 @@ Disconnect using the **“Disconnect”** button in the app.
 - Phone and TV are separate APKs (`:app:assemblePhoneDebug` / `:app:assembleTvDebug`).
   The TV app talks to the same server; rebuild TV only if you want the v1.3 client
   behaviour on the set-top box.
+<!-- Build status refreshed -->
