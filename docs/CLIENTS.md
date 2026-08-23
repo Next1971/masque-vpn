@@ -77,7 +77,7 @@ Android TV boxes frequently have **no file manager**, so importing
 
 1. Open `profile.masque` (from the device's bundle) on a phone or PC and copy
    the entire contents.
-2. On the TV, choose **“Import profile (paste text)”**, paste, and confirm.
+2. On the TV, prefer **“Paste config from clipboard”** (one remote click; copy the file on a phone/PC first). If the clipboard is empty, use **“Import profile (paste text)”**.
 3. Then **Connect**.
 
 ## Security

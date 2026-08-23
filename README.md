@@ -94,7 +94,7 @@ It is **off by default** (secure). Only enable it while troubleshooting — it d
 
 See [`android/README-Android.md`](android/README-Android.md). In short:
 
-1. Install the APK from the release archive (enable "install from unknown sources"), or build it yourself (Android SDK 34, NDK r27c, JDK 17):
+1. Install the APK from the release archive (enable "install from unknown sources"), or build it yourself (**Go 1.25.5+**, **JDK 17**, **compileSdk 36** / **targetSdk 34** / **minSdk 24**, **NDK 27.0.12077973**):
 
    ```bash
    cd android
@@ -104,7 +104,7 @@ See [`android/README-Android.md`](android/README-Android.md). In short:
    ./gradlew :app:assembleRelease
    ```
 
-2. Open the app and **import a profile** (`profile.masque` from the generator). The APK also ships a non-production `sample-profile.masque` in its assets so you can see the expected format.
+2. Open the app and **import a profile** (`profile.masque` from the generator). On **Android TV**, use **Paste config from clipboard** (or paste-text); many boxes have no file manager. The APK also ships a non-production `sample-profile.masque` in its assets so you can see the expected format.
 3. Grant the VPN permission and connect.
 
 ### Stability testing
