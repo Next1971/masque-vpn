@@ -4,6 +4,19 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
+## [v1.3.1] - 2026-08-23
+
+Pre-release. Automated GitHub Actions checks on this repository pass; there is still no third-party security audit.
+
+### Added
+
+- **Windows desktop client:** LocalSystem service + Fyne GUI (no UAC for daily use) + per-machine MSI. Import `.masque` or toml+`certs/`; the tunnel survives closing the GUI.
+- **Android TV:** “Paste config from clipboard” so TVs without working IME paste can import a profile in one click.
+
+### Changed
+
+- README wording: GitHub CI is acknowledged; lack of an independent pentest is still stated plainly.
+
 ## [v1.3] - 2026-08-21
 
 Requires a **server upgrade** together with the Android client. A v1.2 server will still accept clients, but reconnect after sleep or a network change can assign a new `/32` and leave the phone TUN silent (`datagram source address not allowed`).

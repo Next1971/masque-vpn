@@ -1,6 +1,13 @@
 # Build output
-/dist/vpn-client.exe
+/dist/
 vpn-client.exe
+masque-svc.exe
+masque-gui.exe
+*.msi
+
+# Wintun runtime library (ship in release archive, do not commit).
+# Download from https://www.wintun.net/ and place next to the service EXE.
+wintun.dll
 
 # Wintun runtime library (ship in release archive, do not commit).
 # Download from https://www.wintun.net/ and place next to vpn-client.exe.

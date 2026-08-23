@@ -9,16 +9,6 @@
         android:name="android.software.leanback"
         android:required="true" />
 
-    <!-- Android 11+ package visibility: allow resolveActivity() to detect a
-         file picker (ACTION_GET_CONTENT) so the app can gracefully fall back
-         to paste-text when no file manager exists (e.g. Haier TV). -->
-    <queries>
-        <intent>
-            <action android:name="android.intent.action.GET_CONTENT" />
-            <data android:mimeType="*/*" />
-        </intent>
-    </queries>
-
     <application
         android:banner="@drawable/tv_banner"
         android:theme="@style/Theme.MasqueTv">

@@ -74,9 +74,9 @@ func buildTLSConfig(p *Profile) (*tls.Config, error) {
 		}
 		tlsConf.RootCAs = pool
 	} else if !p.Insecure {
-    	return nil, fmt.Errorf(
-        	"server CA certificate is required; configure CA or explicitly enable insecure mode for troubleshooting",
-    	)
+		return nil, fmt.Errorf(
+			"server CA certificate is required; configure CA or explicitly enable insecure mode for troubleshooting",
+		)
 	}
 
 	// Optional "disable certificate verification" toggle (checkbox in the UI /
@@ -183,6 +183,12 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 		Routes:           routes,
 		done:             make(chan struct{}),
 	}, nil
+}
+
+// AttachTUN binds a TUN device to a session created with dev=nil (two-phase
+// connect / reconnect). Must be called before Run or Pump.
+func (s *Session) AttachTUN(dev tun.Device) {
+	s.dev = dev
 }
 
 // Run starts bidirectional conn↔TUN forwarding and blocks until

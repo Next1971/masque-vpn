@@ -1,139 +1,64 @@
 package main
 
 import (
-    "context"
-   
-    "flag"
-    "fmt"
-    "io"
-    "log"
-    "net/http"
-    "net/netip"
-    "os"
-    "os/signal"
-    "syscall"
-    "time"
+	"context"
+	"flag"
+	"fmt"
+	"log"
+	"net/netip"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-     clientcore "masque-client/internal/clientcore"
-    "golang.zx2c4.com/wireguard/tun"
-)
-
-
-
-var (
-    globalCancel context.CancelFunc
-    globalProf   *clientcore.Profile
+	"golang.zx2c4.com/wireguard/tun"
+	clientcore "masque-client/internal/clientcore"
 )
 
 func main() {
-    // 1. Restore command-line flags.
-    profilePath := flag.String("profile", "", "path to client profile TOML (required)")
-    testMode := flag.Bool("test", true, "test mode: route only -test-dst via TUN")
-    fullRoute := flag.Bool("full-route", false, "full mode: route all traffic via TUN")
-    testDst := flag.String("test-dst", "1.1.1.1", "test-mode: destination to route through tunnel")
-    pingCount := flag.Int("ping", 3, "test-mode: number of ICMP echo requests to send")
-    timeout := flag.Duration("timeout", 25*time.Second, "overall timeout")
-    insecure := flag.Bool("insecure", false, "disable server certificate verification (INSECURE; troubleshooting only)")
-    flag.Parse()
+	// 1. Restore command-line flags.
+	profilePath := flag.String("profile", "", "path to client profile TOML (required)")
+	testMode := flag.Bool("test", true, "test mode: route only -test-dst via TUN")
+	fullRoute := flag.Bool("full-route", false, "full mode: route all traffic via TUN")
+	testDst := flag.String("test-dst", "1.1.1.1", "test-mode: destination to route through tunnel")
+	pingCount := flag.Int("ping", 3, "test-mode: number of ICMP echo requests to send")
+	timeout := flag.Duration("timeout", 25*time.Second, "overall timeout")
+	insecure := flag.Bool("insecure", false, "disable server certificate verification (INSECURE; troubleshooting only)")
+	svcStatus := flag.Bool("svc-status", false, "query the MASQUE Windows service")
+	svcConnect := flag.Bool("svc-connect", false, "ask the service to connect")
+	svcDisconnect := flag.Bool("svc-disconnect", false, "ask the service to disconnect")
+	svcImport := flag.String("svc-import", "", "import a profile file via the Windows service")
+	flag.Parse()
 
-    // 2. If -profile is supplied, run in the console.
-    if *profilePath != "" {
-        prof, err := clientcore.LoadProfile(*profilePath)
-        if err != nil {
-            log.Fatalf("FAIL: load profile: %v", err)
-        }
-        // The -insecure flag overrides the profile setting when provided.
-        if *insecure {
-            prof.Insecure = true
-        }
-        ctx, cancel := context.WithTimeout(context.Background(), *timeout)
-        defer cancel()
+	if *svcStatus || *svcConnect || *svcDisconnect || *svcImport != "" {
+		if err := runServiceCLI(*svcStatus, *svcConnect, *svcDisconnect, *svcImport); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 
-        err = run(ctx, prof, *testMode, *fullRoute, *testDst, *pingCount)
-        if err != nil {
-            log.Fatalf("FAIL: %v", err)
-        }
-        return
-    }
+	// 2. If -profile is supplied, run in the console (standalone; needs admin).
+	if *profilePath != "" {
+		prof, err := clientcore.LoadProfile(*profilePath)
+		if err != nil {
+			log.Fatalf("FAIL: load profile: %v", err)
+		}
+		// The -insecure flag overrides the profile setting when provided.
+		if *insecure {
+			prof.Insecure = true
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+		defer cancel()
 
-    // 3. If no flags are supplied, start the web interface.
-    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-        data, err := os.ReadFile("index.html")
-        if err != nil {
-            http.Error(w, "Unable to read index.html", 500)
-            return
-        }
-        w.Write(data)
-    })
+		err = run(ctx, prof, *testMode, *fullRoute, *testDst, *pingCount)
+		if err != nil {
+			log.Fatalf("FAIL: %v", err)
+		}
+		return
+	}
 
-    http.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
-        if r.Method != "POST" {
-            http.Error(w, "Method not allowed", 405)
-            return
-        }
-        file, _, err := r.FormFile("file")
-        if err != nil {
-            http.Error(w, "File read error", 400)
-            return
-        }
-        defer file.Close()
-
-        tempPath := "uploaded_profile.toml"
-        out, err := os.Create(tempPath)
-        if err != nil {
-            http.Error(w, "Unable to save file", 500)
-            return
-        }
-        defer out.Close()
-        io.Copy(out, file)
-
-        prof, err := clientcore.LoadProfile(tempPath)
-        if err != nil {
-            http.Error(w, "TOML parsing error: "+err.Error(), 400)
-            return
-        }
-        globalProf = prof
-        w.WriteHeader(200)
-    })
-
-    http.HandleFunc("/connect", func(w http.ResponseWriter, r *http.Request) {
-        if globalProf == nil {
-            w.Write([]byte(`{"status":"error", "error":"Upload a configuration first"}`))
-            return
-        }
-        if globalCancel != nil {
-            w.Write([]byte(`{"status":"error", "error":"Already connected"}`))
-            return
-        }
-
-        // "Disable certificate verification" checkbox from the web UI.
-        // insecure=1 turns off server certificate validation for this session.
-        globalProf.Insecure = r.URL.Query().Get("insecure") == "1"
-
-        ctx, cancel := context.WithCancel(context.Background())
-        globalCancel = cancel
-
-        go func() {
-            err := run(ctx, globalProf, false, true, "1.1.1.1", 3)
-            if err != nil {
-                log.Printf("VPN Error: %v", err)
-            }
-            globalCancel = nil
-        }()
-
-        w.Write([]byte(`{"status":"ok", "ip":"Connected"}`))
-    })
-
-    http.HandleFunc("/disconnect", func(w http.ResponseWriter, r *http.Request) {
-        if globalCancel != nil {
-            globalCancel()
-            globalCancel = nil
-        }
-        w.Write([]byte(`{"status":"ok"}`))
-    })
-
-    log.Println("Web interface started. Open http://localhost:8080 in a browser")
-    log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Println("Usage: vpn-client -profile profile.toml -full-route")
+	log.Println("Or talk to the Windows service: vpn-client -svc-status | -svc-connect | -svc-import file")
 }
 
 func run(ctx context.Context, prof *clientcore.Profile, testMode, fullRoute bool, testDst string, pingCount int) error {
@@ -144,14 +69,14 @@ func run(ctx context.Context, prof *clientcore.Profile, testMode, fullRoute bool
 	}
 	name, _ := dev.Name()
 	log.Printf("TUN %s created (mtu %d)", name, prof.MTU)
-	
+
 	defer func() {
 		dev.Close()
 		log.Printf("TUN %s closed", name)
 	}()
 
 	// 2. Connect with the core (QUIC + mTLS + CONNECT-IP).
-	
+
 	sess, err := clientcore.Connect(ctx, prof, dev)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)

@@ -33,15 +33,15 @@
         android:layout_height="wrap_content"
         android:text="Import profile (paste text)"
         android:textSize="20sp"
-        android:nextFocusDown="@+id/tvBtnImportFile"
+        android:nextFocusDown="@+id/tvBtnClipboard"
         android:layout_marginBottom="20dp" />
 
     <Button
-        android:id="@+id/tvBtnImportFile"
+        android:id="@+id/tvBtnClipboard"
         style="@style/TvButton"
         android:layout_width="520dp"
         android:layout_height="wrap_content"
-        android:text="Import from file / USB (optional)"
+        android:text="Paste config from clipboard"
         android:textSize="20sp"
         android:nextFocusUp="@+id/tvBtnPaste"
         android:nextFocusDown="@+id/tvBtnConnect"
@@ -55,6 +55,6 @@
         android:text="Connect"
         android:textSize="22sp"
         android:textStyle="bold"
-        android:nextFocusUp="@+id/tvBtnImportFile" />
+        android:nextFocusUp="@+id/tvBtnClipboard" />
 
 </LinearLayout>

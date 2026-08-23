@@ -3,6 +3,7 @@ package com.next1971.masque
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.BroadcastReceiver
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -23,12 +24,8 @@ import androidx.activity.result.contract.ActivityResultContracts
  * Same VPN core as the phone build (MasqueVpnService + ProfileStore + Go
  * masque.aar). The only differences are TV-oriented:
  * - Large, D-pad-focusable buttons (no touch required).
- * - Profile import via PASTED TEXT (works with the remote's on-screen
- * keyboard), plus a file-picker fallback for TVs that expose a file
- * provider or a plugged-in USB drive.
- *
- * Import is the only genuinely TV-specific concern: most TVs have no share
- * sheet or file manager, so paste-text is the reliable primary path.
+ * - Profile import via PASTED TEXT (on-screen keyboard) or CLIPBOARD
+ * (one remote click; no IME paste, which many TVs cannot do).
  */
 class TvMainActivity : ComponentActivity() {
 
@@ -43,16 +40,6 @@ class TvMainActivity : ComponentActivity() {
             connected = VpnStatus.applyConnected(connected, msg)
             connectBtn.text = if (connected) "Disconnect" else "Connect"
         }
-    }
-
-    // Optional file-picker fallback (USB drive / documents provider).
-    private val pickProfile = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri == null) return@registerForActivityResult
-        val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-        if (text == null) { toast("Unable to read file"); return@registerForActivityResult }
-        applyProfile(text)
     }
 
     private val vpnPermission = registerForActivityResult(
@@ -77,13 +64,13 @@ class TvMainActivity : ComponentActivity() {
         connectBtn = findViewById(R.id.tvBtnConnect)
 
         val pasteBtn = findViewById<Button>(R.id.tvBtnPaste)
-        val importFileBtn = findViewById<Button>(R.id.tvBtnImportFile)
+        val clipboardBtn = findViewById<Button>(R.id.tvBtnClipboard)
 
         pasteBtn.setOnClickListener { showPasteDialog() }
-        importFileBtn.setOnClickListener { launchFilePicker() }
+        clipboardBtn.setOnClickListener { pasteFromClipboard() }
 
         setupTvFocusAnimation(pasteBtn)
-        setupTvFocusAnimation(importFileBtn)
+        setupTvFocusAnimation(clipboardBtn)
         setupTvFocusAnimation(connectBtn)
 
         connectBtn.setOnClickListener {
@@ -104,7 +91,7 @@ class TvMainActivity : ComponentActivity() {
         }
 
         // Give the remote a sensible initial focus target.
-        (if (ProfileStore.isConfigured(this)) connectBtn else pasteBtn).requestFocus()
+        (if (ProfileStore.isConfigured(this)) connectBtn else clipboardBtn).requestFocus()
 
         refreshUi()
     }
@@ -122,34 +109,34 @@ class TvMainActivity : ComponentActivity() {
     }
 
     /**
-     * File-picker fallback. Many TVs (e.g. Haier) have NO app that handles
-     * ACTION_GET_CONTENT, which previously froze the UI. Guard it: only launch
-     * when a handler exists, and catch ActivityNotFoundException otherwise so
-     * the app stays responsive and directs the user to paste-text.
+     * Reads the system clipboard on a user click (app is in the foreground,
+     * so Android 10+ clipboard restrictions do not apply). Avoids the IME
+     * paste path, which is missing or broken on some TVs.
      */
-    private fun launchFilePicker() {
-        val probe = Intent(Intent.ACTION_GET_CONTENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*"
-        }
-        val hasHandler = probe.resolveActivity(packageManager) != null
-        if (!hasHandler) {
-            AlertDialog.Builder(this, R.style.Theme_MasqueTv_Dialog)
-                .setTitle("No file manager")
-                .setMessage("This TV has no file picker. Use \"Paste profile text\" instead: open the .masque profile on your phone/PC, copy its contents, and paste them here.")
-                .setPositiveButton("Paste text") { _, _ -> showPasteDialog() }
-                .setNegativeButton("Cancel", null)
-                .show()
+    private fun pasteFromClipboard() {
+        val cm = getSystemService(ClipboardManager::class.java) ?: run {
+            toast("Clipboard is unavailable on this TV")
             return
         }
-        try {
-            pickProfile.launch("*/*")
+        val clip = try {
+            cm.primaryClip
         } catch (e: Exception) {
-            toast("Cannot open file picker: ${e.message}. Use paste-text instead.")
+            toast("Cannot read clipboard: ${e.message}")
+            return
         }
+        if (clip == null || clip.itemCount == 0) {
+            toast("Clipboard is empty. Copy the .masque profile on this TV, then try again.")
+            return
+        }
+        val text = clip.getItemAt(0).coerceToText(this).toString()
+        if (text.isBlank()) {
+            toast("Clipboard is empty. Copy the .masque profile on this TV, then try again.")
+            return
+        }
+        applyProfile(text)
     }
 
-    /** Paste-text import: reliable on TV where file managers are absent. */
+    /** Fallback import: type or IME-paste into a dialog. */
     private fun showPasteDialog() {
         val input = EditText(this).apply {
             setSingleLine(false)

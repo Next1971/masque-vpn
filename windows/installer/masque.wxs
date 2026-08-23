@@ -1,0 +1,43 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="MASQUE VPN" Language="1033" Version="1.4.0" Manufacturer="MASQUE" UpgradeCode="6B2E8A41-9C3F-4D1A-B7E5-2F8C91A04D66" Scope="perMachine">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of MASQUE VPN is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Feature Id="Main" Title="MASQUE VPN" Level="1">
+      <ComponentRef Id="SvcExe" />
+      <ComponentRef Id="GuiExe" />
+      <ComponentRef Id="CliExe" />
+      <ComponentRef Id="WintunDll" />
+      <ComponentRef Id="GuiShortcut" />
+    </Feature>
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLDIR" Name="MASQUE">
+        <Component Id="SvcExe" Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901" Bitness="always64">
+          <File Id="MasqueSvc" Source="!(bindpath.bin)\masque-svc.exe" KeyPath="yes" />
+          <ServiceInstall Id="MasqueVpnSvc" Name="MasqueVpn" DisplayName="MASQUE VPN" Description="MASQUE VPN tunnel (Wintun + QUIC)" Start="auto" Type="ownProcess" ErrorControl="normal" Account="LocalSystem" />
+          <ServiceControl Id="MasqueVpnSvcCtl" Name="MasqueVpn" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+        </Component>
+        <Component Id="GuiExe" Guid="C3D4E5F6-A7B8-9012-CDEF-123456789012" Bitness="always64">
+          <File Id="MasqueGui" Source="!(bindpath.bin)\masque-gui.exe" KeyPath="yes" />
+        </Component>
+        <Component Id="CliExe" Guid="D4E5F6A7-B8C9-0123-DEF0-234567890123" Bitness="always64">
+          <File Id="VpnClient" Source="!(bindpath.bin)\vpn-client.exe" KeyPath="yes" />
+        </Component>
+        <Component Id="WintunDll" Guid="E5F6A7B8-C9D0-1234-EF01-345678901234" Bitness="always64">
+          <File Id="Wintun" Source="!(bindpath.bin)\wintun.dll" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppMenu" Name="MASQUE">
+        <Component Id="GuiShortcut" Guid="F6A7B8C9-D0E1-2345-F012-456789012345">
+          <Shortcut Id="GuiStartMenu" Name="MASQUE VPN" Description="MASQUE VPN" Target="[INSTALLDIR]masque-gui.exe" WorkingDirectory="INSTALLDIR" />
+          <RemoveFolder Id="AppMenu" On="uninstall" />
+          <RegistryValue Root="HKCU" Key="Software\MASQUE\VPN" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+  </Package>
+</Wix>

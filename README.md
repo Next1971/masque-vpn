@@ -4,7 +4,7 @@
 
 A minimal VPN built on the IETF **MASQUE** framework: it tunnels IP traffic inside HTTP/3 (QUIC) using **CONNECT-IP** (RFC 9484) and authenticates both ends with **mutual TLS (mTLS)**.
 
-> **v1.3 is released.** This is experimental software and has not received an independent security audit.
+> **v1.3.1 is a pre-release.** Builds are checked in GitHub Actions (compile, tests, and the repo’s CI security jobs). That is not a substitute for a third-party penetration test; treat the project as experimental.
 
 ## Quick start
 
@@ -23,7 +23,7 @@ The repository contains three parts:
 | Directory | What it is |
 |---|---|
 | `server/` | Server build instructions, systemd unit, and config generator |
-| `windows/` | Windows client (console + local web UI) |
+| `windows/` | Windows client (service + GUI + MSI; console remains for debug) |
 | `android/` | Android client (Kotlin app + Go core via gomobile) |
 
 The Go source for the server and the shared client core lives under `android/go-src/masque-vpn-mvp/` (one Go module, `github.com/Next1971/masque-vpn-mvp`) and is used to build both the server and the Android core.
@@ -50,7 +50,7 @@ The core MASQUE tunnel is working. The next releases focus on making the Android
 - Improved background behaviour while the screen is off (**v1.3**: QUIC keepalive, battery-exemption prompt, reconnect without tearing the TUN)
 - Automatic reconnection after temporary loss of connectivity, including recovery after airplane mode is turned off
 - MTU experiments and tuning for different network conditions
-- A full Windows desktop client, replacing the command-line-only workflow
+- A full Windows desktop client (**v1.3.1 pre-release**: LocalSystem service + GUI without UAC + MSI)
 
 ### v2.0 — Platform and protocol upgrade
 
@@ -74,10 +74,11 @@ The complete, copyable server setup is maintained in [server/README.md](server/R
 
 See [`windows/README.md`](windows/README.md) for full details. In short:
 
-1. Get `vpn-client.exe` and `wintun.dll` from the release archive (or build with `windows/scripts/build.ps1`).
-2. Put the `windows/` bundle from the generator next to the EXE: this gives you `profile.client.toml` and a `certs/` folder.
-3. Run `vpn-client.exe` (no arguments) and open <http://localhost:8080> — select the profile, then click **CONNECT**.
-   - Console mode alternative: `vpn-client.exe -profile profile.client.toml -full-route`.
+1. Install `masque.msi` from the release (one UAC prompt). That installs the `MasqueVpn` service, `wintun.dll`, and the GUI.
+2. Open **MASQUE VPN** from the Start menu (no admin). **Import profile**: `profile.masque`, or `profile.client.toml` together with its `certs/` folder.
+3. Click **Connect**. Closing the window does not tear down the tunnel.
+
+Console debug (admin): `vpn-client.exe -profile profile.client.toml -full-route`.
 
 **"Disable certificate verification" toggle.** Some setups fail the TLS handshake on server certificate validation (self-signed CA, hostname mismatch). The client offers an opt-in switch to skip that check:
 
