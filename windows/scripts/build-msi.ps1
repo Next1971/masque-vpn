@@ -21,6 +21,7 @@ foreach ($f in @("masque-svc.exe", "masque-gui.exe", "vpn-client.exe", "wintun.d
     if (-not (Test-Path $p)) { throw "missing $p - run scripts\build.ps1 first" }
 }
 
-& $wix build .\installer\masque.wxs -bindpath bin=dist -out dist\masque.msi -arch x64
+# -acceptEula wix7: required by WiX v7 OSMF (https://wixtoolset.org/osmf/). Harmless no-op on v5.
+& $wix build -acceptEula wix7 .\installer\masque.wxs -bindpath bin=dist -out dist\masque.msi -arch x64
 if ($LASTEXITCODE -ne 0) { throw "wix build failed with exit $LASTEXITCODE" }
 Write-Host "MSI: dist\masque.msi"

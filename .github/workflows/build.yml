@@ -74,11 +74,12 @@ jobs:
           go vet ./...
 
       - name: Install WiX
-        run: dotnet tool install --global wix
+        run: dotnet tool install --global wix --version 7.0.0
 
       - name: Build MSI
         working-directory: windows
-        run: wix build .\installer\masque.wxs -bindpath bin=dist -out dist\masque.msi -arch x64
+        # WiX v7 OSMF: https://wixtoolset.org/osmf/ (fee $0 under $10k revenue)
+        run: wix build -acceptEula wix7 .\installer\masque.wxs -bindpath bin=dist -out dist\masque.msi -arch x64
 
   android-build:
     name: Android (AAR + APK)
