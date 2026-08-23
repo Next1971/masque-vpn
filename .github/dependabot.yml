@@ -15,15 +15,17 @@ updates:
     schedule:
       interval: "weekly"
     # Skip major upgrades of the Android Gradle Plugin and the Gradle wrapper.
-    # AGP 9.x / Gradle 9.x is a coordinated migration (requires Kotlin 2.x and
-    # targetSdk changes) and must be done deliberately, not via automatic PRs.
+    # AGP 9.x / Gradle 9.x is a coordinated migration for v2.0 (not automatic PRs).
     # Minor and patch updates (including security fixes) are still allowed.
+    # Dependabot names the wrapper "gradle-wrapper"; "gradle" is kept as a fallback.
     ignore:
       - dependency-name: "com.android.application"
         update-types: ["version-update:semver-major"]
       - dependency-name: "com.android.library"
         update-types: ["version-update:semver-major"]
       - dependency-name: "gradle"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "gradle-wrapper"
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
