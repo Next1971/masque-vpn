@@ -1,186 +1,188 @@
-# MASQUE VPN — Windows Client
+# MASQUE VPN — Windows client
 
-A minimal Windows VPN client built on top of a portable Go core (`clientcore`)
-shared with the Android and Linux clients. It speaks **QUIC + HTTP/3 CONNECT-IP
-(MASQUE, RFC 9484)** with mutual TLS to a MASQUE server, and tunnels all traffic
-through a Wintun adapter. From **v1.3** the shared core enables QUIC keepalives
-(15s / 3 min idle), matching the server.
+A Windows VPN client on the shared Go core (`clientcore`). It speaks **QUIC + HTTP/3 CONNECT-IP (MASQUE, RFC 9484)** with mutual TLS, and tunnels traffic through a **Wintun** adapter.
 
-This repository contains everything needed to **build `vpn-client.exe` from
-source on Windows**.
+From **v1.3.1** the normal install is a per-machine **MSI**: a **LocalSystem** service runs the tunnel, and a **Fyne GUI** (Start menu, no UAC) imports a profile and connects. Closing the window does not tear down the tunnel. The console `vpn-client.exe` remains for debug.
 
-\---
+---
+
+## Install from a release (recommended)
+
+1. Download `masque.msi` from the [latest release](../../releases/latest).
+2. Run the installer (one UAC prompt). It installs `MasqueVpn` (auto-start), `wintun.dll`, `masque-gui.exe`, and `vpn-client.exe` under `C:\Program Files\MASQUE`.
+3. Open **MASQUE VPN** from the Start menu (no admin).
+4. **Import profile** — either:
+   - `profile.masque` (single file, same bundle as Android), or
+   - `profile.client.toml` together with its `certs/` folder (`ca.crt`, `client.crt`, `client.key`).
+5. Click **Connect**. Optional: **Connect automatically when the service starts**.
+
+Each device needs its own bundle. See [Issuing client configs](../docs/CLIENTS.md).
+
+The imported profile is stored under `%ProgramData%\MASQUE\` (not next to the EXE). The GUI talks to the service over a named pipe; the tray **Show / Connect / Disconnect** items do the same. Closing or hiding the window leaves the tunnel up — use **Disconnect**.
+
+Verify the exit IP:
+
+```bat
+curl -4 http://ifconfig.me/ip
+```
+
+It should show the **server’s** IP, not your ISP’s.
+
+### TLS troubleshooting
+
+Server certificate checks are **on by default**. If a self-signed CA or hostname mismatch blocks the handshake, you can skip verification only while debugging:
+
+- Console: `-insecure`
+- Profile: `insecure = true` under `[tls]`
+
+Do not leave this enabled for daily use.
+
+---
 
 ## Repository layout
 
 ```
-masque-windows-client/
-├─ cmd/vpn-client/            # platform wrapper (TUN + routing + DNS)
-│  ├─ main.go                 # flags, profile loading, run loop
-│  ├─ iface\\\_windows.go        # Windows: Wintun, routes, DNS (build tag)
-│  └─ iface\\\_linux.go          # Linux equivalent (build tag)
-├─ internal/clientcore/       # shared, platform-independent core
-│  ├─ client.go               # QUIC dial, mTLS, CONNECT-IP session, forwarding
-│  ├─ iphdr.go                # IPv4/IPv6 header helpers (TTL normalization)
-│  └─ profile.go              # TOML profile parsing + validation
-├─ dist/
-│  └─ wintun.dll              # Wintun driver 0.14.1 (amd64), required at runtime
+windows/
+├─ cmd/
+│  ├─ vpn-service/          # LocalSystem service → dist\masque-svc.exe
+│  ├─ vpn-gui/              # Fyne GUI → dist\masque-gui.exe
+│  └─ vpn-client/           # console + -svc-* CLI → dist\vpn-client.exe
+├─ internal/
+│  ├─ clientcore/           # QUIC, mTLS, CONNECT-IP, forwarding
+│  ├─ engine/               # service tunnel lifecycle
+│  ├─ ipc/                  # named-pipe protocol (GUI ↔ service)
+│  ├─ store/                # ProgramData profile + certs
+│  └─ winnet/               # Wintun, routes, DNS
+├─ installer/masque.wxs     # WiX per-machine MSI
 ├─ scripts/
-│  ├─ build.bat               # build via cmd.exe
-│  └─ build.ps1               # build via PowerShell
-├─ certs/                     # put ca.crt / client.crt / client.key here
-│  └─ README.md
+│  ├─ build.bat / build.ps1
+│  ├─ build-msi.ps1
+│  ├─ install-service.ps1   # copy dist\ into Program Files without MSI
+│  └─ fetch-wintun.ps1
+├─ certs/README.md
 ├─ profile.client.toml.example
-├─ go.mod / go.sum
-└─ README.md                  # this file
+└─ README.md
 ```
 
-\---
+---
 
-## Prerequisites
+## Prerequisites (build from source)
 
-* **Go 1.21+** for Windows — https://go.dev/dl/ (verify with `go version`)
-* Windows 10/11 x64
-* Administrator rights (only to **run** the VPN, not to build it)
+| Tool | Version |
+|---|---|
+| **Go** | **1.25.5 or later** (`windows/go.mod`). CI builds with **1.26.1**. |
+| OS | Windows 10/11 **x64** |
+| **MinGW gcc** | Required only for `masque-gui.exe` (Fyne + CGO). Service and console are `CGO_ENABLED=0`. |
+| **WiX** | Optional; for `masque.msi` (`dotnet tool install --global wix`, v7 as in CI). |
 
-No CGO, no C toolchain required — it is pure Go.
+Install MinGW if the GUI build cannot find `gcc`:
 
-\---
+```bat
+pacman -S --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-pkg-config
+```
+
+(from an **MSYS2 MINGW64** shell; `gcc` typically lives in `C:\msys64\mingw64\bin`).
+
+Administrator rights are needed to **install** the service or MSI, not to **build**, and not to use the GUI after install.
+
+---
 
 ## Build
 
-### Option A — script
-
-From `cmd.exe`:
-
-```bat
-scripts\\\\build.bat
-```
-
-or from PowerShell:
+From `windows\`:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\\\\build.ps1
+powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 ```
 
-### Option B — manual
+or `scripts\build.bat`. Output in `dist\`:
 
-```bat
-go mod download
-set GOOS=windows
-set GOARCH=amd64
-go build -trimpath -ldflags "-s -w" -o dist\\\\vpn-client.exe .\\\\cmd\\\\vpn-client
+- `masque-svc.exe`
+- `masque-gui.exe`
+- `vpn-client.exe`
+- `wintun.dll` (fetched if missing)
+
+MSI:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-msi.ps1
 ```
 
-Output: **`dist\\\\vpn-client.exe`** (\~11 MB). `dist\\\\wintun.dll` is already
-included and must stay next to the EXE.
+Without an MSI, from an **elevated** PowerShell:
 
-\---
-
-## Configure
-
-1. Copy the profile template and edit it:
-
-```bat
-   copy profile.client.toml.example dist\\\\profile.client.toml
-   ```
-
-Set `server`, `server\\\_name`, and the DNS you want. `server\\\_name` must match
-the server certificate's CN/SAN.
-
-2. Put your mTLS certificates in `dist\\\\certs\\\\`:
-
-   * `ca.crt`     — CA that signed the server certificate
-   * `client.crt` — your client certificate
-   * `client.key` — your client private key (**keep private**)
-
-   These are issued by the server operator. The paths in the profile
-(`certs\\\\ca.crt`, ...) are relative to the folder you run the EXE from.
-
-Your `dist\\\\` folder should end up like:
-
-```
-dist\\\\
-├─ vpn-client.exe
-├─ wintun.dll
-├─ profile.client.toml
-└─ certs\\\\ { ca.crt, client.crt, client.key }
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1
 ```
 
-\---
+That copies `dist\*` to `C:\Program Files\MASQUE` and creates/starts `MasqueVpn`. Then run `masque-gui.exe` as a normal user.
 
-## Run
+---
 
-Open a terminal **as Administrator**, then:
+## Console debug (Administrator)
+
+Standalone mode does **not** use the service. Run an elevated terminal:
 
 ```bat
 cd dist
 vpn-client.exe -profile profile.client.toml -full-route -timeout 0
 ```
 
-* `-full-route` — route **all** traffic through the tunnel (real VPN).
-* `-timeout 0` — run until you press `Ctrl+C` (on exit it restores routes/DNS).
-* DNS from the profile is applied to the tunnel automatically.
+Use a copy of `profile.client.toml.example` plus `certs\` next to the EXE (paths in the TOML are relative to the working directory).
 
-A `masque0` Wintun adapter appears while connected. Verify your exit IP:
+Talk to an **already installed** service (no extra admin if the pipe is available):
 
 ```bat
-curl -4 http://ifconfig.me/ip
+vpn-client.exe -svc-status
+vpn-client.exe -svc-import path\to\profile.masque
+vpn-client.exe -svc-connect
+vpn-client.exe -svc-disconnect
 ```
-
-It should show the **server's** IP, not your ISP's.
 
 ### Command-line flags
 
-|Flag|Default|Meaning|
-|-|-|-|
-|`-profile`|(req.)|Path to the client profile TOML|
-|`-full-route`|false|Route all traffic via the tunnel (real VPN)|
-|`-timeout`|25s|Overall timeout; use `0` to run until Ctrl+C|
-|`-verbose`|false|Verbose per-packet diagnostics (troubleshooting only)|
-|`-test`|true|Test mode: route only `-test-dst` via TUN (safe on a server)|
-|`-test-dst`|1.1.1.1|Test-mode destination|
-|`-ping`|3|Test-mode ICMP echo count|
+| Flag | Default | Meaning |
+|---|---|---|
+| `-profile` | (standalone req.) | Path to client TOML |
+| `-full-route` | false | Route all traffic via the tunnel |
+| `-timeout` | 25s | Overall timeout; `0` runs until Ctrl+C |
+| `-insecure` | false | Skip server certificate verification |
+| `-svc-status` / `-svc-connect` / `-svc-disconnect` | | Named-pipe commands to the service |
+| `-svc-import` | | Import a profile file via the service |
+| `-test` | true | Test mode: only `-test-dst` via TUN |
+| `-test-dst` | 1.1.1.1 | Test-mode destination |
+| `-ping` | 3 | Test-mode ICMP echo count |
 
-For a normal VPN you only need `-profile` and `-full-route` (with `-timeout 0`).
+For a real VPN in console mode you only need `-profile` and `-full-route` (with a long `-timeout`, e.g. `0` or `24h`). `-full-route` already installs a default route; `-test` only applies when full-route is off.
 
-\---
+---
 
 ## How it works
 
-* `internal/clientcore` is platform-independent: it dials QUIC, does mTLS,
-opens a CONNECT-IP session, and forwards packets between a `tun.Device` and
-the tunnel. It never touches the OS routing table.
-* `cmd/vpn-client/iface\\\_windows.go` does the Windows-specific part: creates the
-Wintun adapter, assigns the server-issued address, installs a `0.0.0.0/0`
-route plus a host route to the server via the original gateway (so QUIC does
-not loop), and sets DNS on `masque0` (restored on exit).
-* The same `main.go` builds for Linux via `iface\\\_linux.go` (Go build tags).
+- `internal/clientcore` dials QUIC, does mTLS, opens CONNECT-IP, and forwards packets. It does not edit the OS routing table.
+- `masque-svc.exe` owns Wintun, routes (`0.0.0.0/0` plus a host route to the server via the original gateway so QUIC does not loop), DNS on `masque0`, and reconnect. Keepalives match the server (15s / 3 min idle, **v1.3**).
+- `masque-gui.exe` only sends import / connect / disconnect / autoconnect over IPC.
 
-\---
+---
 
 ## Troubleshooting
 
-* **"wintun.dll not found"** — keep `wintun.dll` in the same folder as the EXE.
-* **"Access is denied" / adapter not created** — run the terminal as
-Administrator.
-* **No connectivity but adapter is up** — check `server` / `server\\\_name` and
-that your `certs\\\\` match the server's CA. Add `-verbose` for packet traces.
-* **Build fails on `go mod download`** — ensure internet access and Go 1.21+.
+- **Service unavailable** in the GUI — install the MSI (or `install-service.ps1`) and confirm `MasqueVpn` is running in `services.msc`. Log: `%ProgramData%\MASQUE\masque-svc.log`.
+- **wintun.dll not found** — it must sit next to `masque-svc.exe` (the MSI does this).
+- **Access is denied** in console mode — elevate the terminal; the GUI path does not need UAC after install.
+- **No traffic** — check `server` / `server_name` vs the certificate SAN, and that the bundle matches this server’s CA. One bundle per device.
+- **GUI build fails (gcc)** — put MinGW `gcc` on `PATH` as in Prerequisites.
+- **`go` too old** — need **1.25.5+**, not 1.21.
 
-\---
+---
 
 ## Security
 
-* Never commit real `\\\*.crt` / `\\\*.key` or a filled-in `profile.client.toml` —
-`.gitignore` already excludes them.
-* `client.key` is a secret; treat the whole `certs\\\\` folder as sensitive.
+- Never commit real `*.crt` / `*.key` or a filled-in profile. `.gitignore` already excludes them.
+- Treat `%ProgramData%\MASQUE\certs\` as secrets.
+- `insecure` / `-insecure` authenticates only the client to the server; the client no longer authenticates the server.
 
 ## Limitations
 
-* IPv4 inside the tunnel only.
-* In-tunnel DNS is plaintext UDP:53 (hidden from your local ISP, visible at the
-server). DoH/DoT is future work.
-* Single server/profile.
-
-<!-- Build status refreshed -->
+- IPv4 inside the tunnel only.
+- In-tunnel DNS is plaintext UDP:53 (hidden from the local ISP, visible at the server).
+- Single server/profile per machine.

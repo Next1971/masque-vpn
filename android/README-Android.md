@@ -1,147 +1,161 @@
-# MASQUE VPN — Android client (build in Android Studio)
+# MASQUE VPN — Android client
 
-A minimal Android VPN client based on the same Go core (`clientcore`) as the
-Windows/Linux versions. It uses a shared profile format and shared QUIC/CONNECT-IP (MASQUE) logic.
+A minimal Android VPN client on the same Go core (`clientcore`) as Windows/Linux: shared profile format and shared QUIC / HTTP/3 CONNECT-IP (MASQUE) logic.
 
-The core is integrated through **gomobile** (Go → `.aar`), with a thin 
-Kotlin layer: `VpnService`, a minimal UI, and profile import.
+The core is an `.aar` from **gomobile**. Kotlin supplies `VpnService`, a small UI, and profile import.
+
+**v1.3** added QUIC keepalives, a battery-exemption prompt, reconnect without tearing the TUN, and Wi-Fi → LTE recovery (sticky `/32` on the server). **v1.3.1** added **Paste config from clipboard** on Android TV.
+
+Use a **release APK** if you only want to connect. The rest of this file is for building from source.
 
 ---
 
 ## Contents
 
 ```
-masque-android/
+android/
 ├─ app/
-│  ├─ src/main/
-│  │  ├─ java/com/next1971/masque/
-│  │  │  ├─ MainActivity.kt        UI: profile import, connection button, status
-│  │  │  ├─ MasqueVpnService.kt    VpnService: creates TUN and passes its fd to the Go core
-│  │  │  └─ ProfileStore.kt        parses .masque files and writes certificates to storage
-│  │  ├─ res/…                     layout + strings
-│  │  └─ AndroidManifest.xml
-│  ├─ libs/                        Place masque.aar HERE (step 2)
-│  └─ build.gradle.kts
-├─ go-src/masque-vpn-mvp/               Go core source + bridge (for gomobile bind)
-│  ├─ mobile/masque.go             gomobile bridge (exports Connect/Tunnel/Config/Callback)
-│  ├─ internal/clientcore/         shared core (the same as Windows/Linux)
-│  ├─ cmd/…                        desktop wrappers (not required to build the AAR)
-│  ├─ go.mod / go.sum
-├─ scripts/build-aar.bat           builds masque.aar through gomobile (Windows)
-├─ profile.masque                  ready-to-use profile with inline certificates
-└─ README-Android.md               this file
+│  ├─ src/main/             # shared: VpnService, ProfileStore, BatteryExemption
+│  ├─ src/phone/            # handset UI (file import)
+│  ├─ src/tv/               # leanback UI (clipboard + paste-text)
+│  ├─ src/main/assets/sample-profile.masque   # format sample, not a real secret
+│  └─ libs/                 # place masque.aar here (build step)
+├─ go-src/masque-vpn-mvp/   # Go module (core + gomobile `mobile/` + server)
+├─ scripts/build-aar.bat
+└─ README-Android.md
 ```
 
----
+Product flavors (side by side):
 
-## Prerequisites
+| Flavor | Application ID | Import |
+|---|---|---|
+| **phone** | `com.next1971.masque` | **Import Profile** (file picker) |
+| **tv** | `com.next1971.masque.tv` | **Paste config from clipboard** (preferred) or **Import profile (paste text)** |
 
-1. **Android Studio** (latest stable version) with the following installed through SDK Manager:
-   - Android SDK Platform 34
-   - **NDK** (Side by side) — required by gomobile
-   - CMake (usually installed with the NDK)
-2. **Go** (already installed on Windows) — version 1.21 or later.
-3. Internet access for the initial download of Gradle plugins and `gomobile`.
+Each device needs its own `profile.masque`. See [Issuing client configs](../docs/CLIENTS.md).
 
 ---
 
-## Step 1. Build `masque.aar` (Go core)
+## Toolchain (must match the build)
 
-gomobile converts the `mobile` Go package into an Android `.aar` library.
+These are the versions in Gradle, `go.mod`, and GitHub Actions — not the older “Go 1.21 / SDK 34 only” wording.
 
-### Option A — use the script (recommended)
+| Piece | Version |
+|---|---|
+| **Go** | **1.25.5 or later** (`android/go-src/masque-vpn-mvp/go.mod`). CI uses **1.26.1**. |
+| **JDK** | **17** (`sourceCompatibility` / `jvmTarget`; CI Temurin 17) |
+| **compileSdk** | **36** |
+| **targetSdk** | **34** |
+| **minSdk** | **24** (Android 7.0; same as `gomobile bind -androidapi 24`) |
+| **NDK** | **27.0.12077973** (r27 side-by-side), as installed in CI. Not the obsolete NDK package. |
+| **Gradle / AGP / Kotlin** | Wrapper **8.13**, Android Gradle Plugin **8.13.2**, Kotlin **2.4.10** |
 
-1. Set the environment variables (File Explorer → “Edit environment variables”):
-   - `ANDROID_HOME` → SDK path, for example `C:\Users\YOUR_USER\AppData\Local\Android\Sdk`
-   - `ANDROID_NDK_HOME` → NDK path, for example
-     `C:\Users\YOUR_USER\AppData\Local\Android\Sdk\ndk\<version>`
-2. Open `cmd` in the project directory and run:
-   ```
-   scripts\build-aar.bat
-   ```
-   The script installs `gomobile`/`gobind`, runs `gomobile init`, and builds
-   `app\libs\masque.aar`.
+In Android Studio, install via SDK Manager:
 
-### Option B — manual setup
+- Android SDK Platform **36** (compile) and platform tools
+- **NDK (Side by side)** matching **27.0.12077973** (or set `ANDROID_NDK_HOME` to that folder)
+- CMake if Studio offers it with the NDK
+
+---
+
+## Use a release APK
+
+1. Install the phone or TV APK (allow installation from unknown sources).
+2. Import a real `profile.masque` from the server generator (not the in-app sample).
+3. Grant **VPN** permission. On Connect the app may ask to **ignore battery optimizations** — allow it so keepalives can run with the screen off.
+4. Connect. A key icon in the status bar means the VPN is up.
+5. Check `https://ifconfig.me` — you should see the **server** address.
+
+Disconnect with **Disconnect** in the app.
+
+### Phone
+
+Transfer `profile.masque` to the device → **Import Profile** → pick the file → **Connect**.
+
+### Android TV
+
+Many TVs have no file manager and a broken IME paste. Prefer:
+
+1. On a phone or PC, copy the **entire** contents of that TV’s `profile.masque`.
+2. Get the text onto the TV clipboard (USB / nearby share / a TV browser — whatever works on that box).
+3. In **MASQUE VPN (TV)** choose **Paste config from clipboard** (one remote click; the app must be in the foreground).
+4. If the clipboard is empty or unreadable, use **Import profile (paste text)** and paste into the dialog.
+5. **Connect** (VPN permission, then battery exemption if shown).
+
+Do not reuse one bundle on the phone and the TV at the same time.
+
+---
+
+## Build from source
+
+### 1. Build `masque.aar`
+
+Set:
+
+- `ANDROID_HOME` — SDK, e.g. `%LOCALAPPDATA%\Android\Sdk`
+- `ANDROID_NDK_HOME` — NDK, e.g. `%LOCALAPPDATA%\Android\Sdk\ndk\27.0.12077973`
+
+**Windows** (from `android\`):
 
 ```bat
-go install golang.org/x/mobile/cmd/gomobile@latest
-go install golang.org/x/mobile/cmd/gobind@latest
-set PATH=%GOPATH%\bin;%PATH%     REM  See GOPATH with `go env GOPATH`
-gomobile init
-
-cd go-src\masque-vpn-mvp
-gomobile bind -target=android -androidapi 24 -o ..\..\app\libs\masque.aar .\mobile
+scripts\build-aar.bat
 ```
 
-On success, **`app/libs/masque.aar`** is created (several MB and contains
-native `.so` libraries for arm64/arm/x86_64).
+**Manual / Linux** (same as CI):
 
-> If `gomobile bind` reports an NDK issue, check `ANDROID_NDK_HOME` and ensure the NDK
-> is actually installed through SDK Manager (not only “NDK (obsolete)”).
+```bash
+go install golang.org/x/mobile/cmd/gomobile@latest
+go install golang.org/x/mobile/cmd/gobind@latest
+export PATH="$(go env GOPATH)/bin:$PATH"
+gomobile init
 
----
+cd go-src/masque-vpn-mvp
+gomobile bind -target=android -androidapi 24 -o ../../app/libs/masque.aar ./mobile
+```
 
-## Step 2. Open and build the APK in Android Studio
+Success: `app/libs/masque.aar` (native `.so` for arm64 / armeabi-v7a / x86_64).
 
-1. Choose **File → Open** and select the `masque-android` directory.
-2. Wait for Gradle Sync. On the first run, Studio may offer to create
-   `local.properties` with `sdk.dir`; accept it (or it will be created automatically).
-3. Ensure `app/libs/masque.aar` is present; otherwise the build will fail at
-   `implementation(files("libs/masque.aar"))`).
-4. **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
-5. The output file is under `app/build/outputs/apk/` (phone debug:
-   `phone/debug/app-phone-debug.apk`).
+If `gomobile bind` complains about the NDK, check `ANDROID_NDK_HOME` points at **27.0.12077973**, not “NDK (obsolete)”.
 
-A debug APK is sufficient for device installation. For a release signature, use
-**Build → Generate Signed Bundle / APK** with your own keystore.
+### 2. APK in Android Studio or Gradle
 
----
+1. **File → Open** the `android/` directory. Accept `local.properties` / `sdk.dir` if asked.
+2. Confirm `app/libs/masque.aar` exists (`implementation(files("libs/masque.aar"))`).
+3. Build:
+   - Studio: **Build → Build Bundle(s) / APK(s) → Build APK(s)** (picks the selected flavor), or
+   - CLI:
 
-## Step 3. Install and run on a phone
+```bash
+cd android
+./gradlew :app:assemblePhoneDebug
+./gradlew :app:assembleTvDebug
+```
 
-1. Transfer `app-debug.apk` to the phone and install it (you must allow
-   “installation from unknown sources”).
-2. Transfer **`profile.masque`** to the phone’s device storage.
-3. Open **MASQUE VPN** → **“Import Profile”** and select
-   `profile.masque`. “Profile imported” should appear.
-4. Tap **“Connect”**. Android will display the system VPN permission request;
-   allow it. A key icon appears in the notification area (VPN active).
-5. To test, open `https://ifconfig.me` in a browser; it should show
-   `YOUR_SERVER_HOST` (the server IP), rather than your actual IP.
+Outputs under `app/build/outputs/apk/` (e.g. `phone/debug/app-phone-debug.apk`, `tv/debug/app-tv-debug.apk`).
 
-Disconnect using the **“Disconnect”** button in the app.
+Release: `./gradlew :app:assemblePhoneRelease` / `:app:assembleTvRelease`, or **Generate Signed Bundle / APK** with your keystore. Without `keystore.properties` the release APK is unsigned (sideload only).
 
 ---
 
-## How it works (briefly)
+## How it works
 
-- **VpnService** (Kotlin) creates TUN through `Builder` using the **server-assigned** `/32` (two-phase: Dial → read address → `establish` → `StartWithFD`),
-  route `0.0.0.0/0` (all traffic), and DNS from the profile. It obtains the interface
-  file descriptor. It also tracks the current underlying network and asks Android
-  to ignore battery optimization so QUIC keepalives can run with the screen off.
-- The **Go core** receives this `fd`, wraps it in `tun.Device`
-  (`CreateUnmonitoredTUNFromFD`), and forwards packets between TUN and the
-  QUIC/CONNECT-IP tunnel. If QUIC dies, the same TUN is kept and a new session
-  is dialed.
-- **Android** (VpnService.Builder) configures routes, address, and DNS; the core
-  does not modify them, keeping the bridge clean and portable.
-- Certificates (mTLS) are stored in the app’s internal storage
-  (`files/certs/`), which is inaccessible to other apps.
+- **VpnService** creates TUN with the **server-assigned** `/32` (two-phase: Dial → read address → `establish` → `StartWithFD`), `0.0.0.0/0`, and DNS from the profile. It tracks the underlying network (`NetworkCallback`, `setUnderlyingNetworks`, `protect` / `bindSocket` on the QUIC UDP fd) so Wi-Fi → LTE does not leave the socket on a dead path.
+- The **Go core** wraps the TUN `fd` and forwards packets. If QUIC dies, the same TUN stays up and a new session is dialed. Keepalives: 15s period, 3 min idle.
+- Certificates live in app-private `files/certs/`.
+- After sleep, the UI stays on **Disconnect** if the VPN is still running (it does not show a false “profile ready / Connect”).
+
+---
 
 ## Security
 
-- `profile.masque` contains the **client private key**. Treat it as a secret;
-  do not publish or commit it to the repository.
-- `.gitignore` already excludes the `app/libs/masque.aar` binary from git.
+- A real `profile.masque` contains the **client private key**. Distribute out-of-band; do not commit it. The asset `sample-profile.masque` is a non-production format example.
+- `.gitignore` excludes `app/libs/masque.aar`.
 
-## Known limitations (E stage)
+## Known limitations
 
-- One server/profile (no list). The UI is intentionally minimal.
-- IPv4 only in the tunnel (IPv4 server).
-- Tunnel DNS uses plaintext UDP:53 (hidden from the local provider but visible on the
-  server). DoH/DoT are planned for the future.
+- One server/profile (no list). UI is intentionally small.
+- IPv4 only in the tunnel.
+- Tunnel DNS is plaintext UDP:53 (hidden from the local ISP, visible on the server).
+- Some OEM battery savers ignore the exemption dialog; if the process is killed, Connect again.
+- Long airplane-mode stretches use the same reconnect path, not a dedicated restore.
 - Phone and TV are separate APKs (`:app:assemblePhoneDebug` / `:app:assembleTvDebug`).
-  The TV app talks to the same server; rebuild TV only if you want the v1.3 client
-  behaviour on the set-top box.
-<!-- Build status refreshed -->
