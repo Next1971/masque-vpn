@@ -3,7 +3,7 @@
 A minimal Android VPN client based on the same Go core (`clientcore`) as the
 Windows/Linux versions. It uses a shared profile format and shared QUIC/CONNECT-IP (MASQUE) logic.
 
-The core is integrated through **gomobile** (Go → `.aar`), with a thin
+The core is integrated through **gomobile** (Go → `.aar`), with a thin 
 Kotlin layer: `VpnService`, a minimal UI, and profile import.
 
 ---
