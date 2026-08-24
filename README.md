@@ -1,6 +1,6 @@
 # MASQUE VPN
 
-> **Status: working.** This project has been operational and tested end-to-end since **July 15, 2026** (server, Windows client, and Android client).
+> **Status: working.** Self-hosted MASQUE CONNECT-IP VPN over HTTP/3/QUIC with mTLS — Go server, Android and Windows clients.
 
 A minimal VPN built on the IETF **MASQUE** framework: it tunnels IP traffic inside HTTP/3 (QUIC) using **CONNECT-IP** (RFC 9484) and authenticates both ends with **mutual TLS (mTLS)**.
 
