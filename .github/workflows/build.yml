@@ -30,7 +30,7 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o vpn-server-linux-amd64 ./cmd/poc-server
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o vpn-server-linux-arm64 ./cmd/poc-server
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vpn-server-linux
           path: |
