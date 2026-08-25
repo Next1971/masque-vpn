@@ -6,9 +6,8 @@ REM  and the ANDROID_HOME and ANDROID_NDK_HOME variables.
 REM ============================================================
 setlocal
 
-REM --- 1. Path to the masque-vpn-mvp Go module source ---
-REM  IMPORTANT: replace with the actual path where you unpacked go-src\masque-vpn-mvp
-set GOSRC=%~dp0..\go-src\masque-vpn-mvp
+REM --- 1. Path to the masque-vpn Go module source ---
+set GOSRC=%~dp0..\go-src\masque-vpn
 
 echo === Checking environment ===
 where go >nul 2>&1 || (echo [ERROR] Go was not found in PATH & exit /b 1)

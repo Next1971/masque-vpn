@@ -2,7 +2,7 @@
 
 A Windows VPN client on the shared Go core (`clientcore`). It speaks **QUIC + HTTP/3 CONNECT-IP (MASQUE, RFC 9484)** with mutual TLS, and tunnels traffic through a **Wintun** adapter.
 
-From **v1.3.1** the normal install is a per-machine **MSI**: a **LocalSystem** service runs the tunnel, and a **Fyne GUI** (Start menu, no UAC) imports a profile and connects. Closing the window does not tear down the tunnel. The console `vpn-client.exe` remains for debug.
+From **v1.3.1** the normal install is a per-machine **MSI**: a **LocalSystem** service runs the tunnel, and a **Fyne GUI** (Start menu, no UAC) imports a profile and connects. Closing the window does not tear down the tunnel. The console `vpn-client.exe` remains for debug. **v1.4** adds the app icon (tray, window, Start menu, MSI, EXE) and **Ping** on the GUI (smoothed QUIC RTT to the server).
 
 ---
 
@@ -14,7 +14,7 @@ From **v1.3.1** the normal install is a per-machine **MSI**: a **LocalSystem** s
 4. **Import profile** — either:
    - `profile.masque` (single file, same bundle as Android), or
    - `profile.client.toml` together with its `certs/` folder (`ca.crt`, `client.crt`, `client.key`).
-5. Click **Connect**. Optional: **Connect automatically when the service starts**.
+5. Click **Connect**. While connected, the GUI shows **Ping** to the server. Optional: **Connect automatically when the service starts**.
 
 Each device needs its own bundle. See [Issuing client configs](../docs/CLIENTS.md).
 
@@ -53,7 +53,7 @@ windows/
 │  ├─ ipc/                  # named-pipe protocol (GUI ↔ service)
 │  ├─ store/                # ProgramData profile + certs
 │  └─ winnet/               # Wintun, routes, DNS
-├─ installer/masque.wxs     # WiX per-machine MSI
+├─ installer/               # WiX per-machine MSI + masque.ico
 ├─ scripts/
 │  ├─ build.bat / build.ps1
 │  ├─ build-msi.ps1
@@ -160,7 +160,7 @@ For a real VPN in console mode you only need `-profile` and `-full-route` (with 
 
 - `internal/clientcore` dials QUIC, does mTLS, opens CONNECT-IP, and forwards packets. It does not edit the OS routing table.
 - `masque-svc.exe` owns Wintun, routes (`0.0.0.0/0` plus a host route to the server via the original gateway so QUIC does not loop), DNS on `masque0`, and reconnect. Keepalives match the server (15s / 3 min idle, **v1.3**).
-- `masque-gui.exe` only sends import / connect / disconnect / autoconnect over IPC.
+- `masque-gui.exe` sends import / connect / disconnect / autoconnect over IPC and shows status, assigned IP, and ping.
 
 ---
 
@@ -183,6 +183,7 @@ For a real VPN in console mode you only need `-profile` and `-full-route` (with 
 
 ## Limitations
 
-- IPv4 inside the tunnel only.
 - In-tunnel DNS is plaintext UDP:53 (hidden from the local ISP, visible at the server).
 - Single server/profile per machine.
+
+Other platform limits are listed in the [roadmap](../docs/ROADMAP.md).

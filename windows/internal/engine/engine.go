@@ -21,6 +21,7 @@ type Status struct {
 	Configured  bool
 	Autoconnect bool
 	AssignedIP  string
+	RTTMs       int64
 }
 
 type Engine struct {
@@ -29,6 +30,7 @@ type Engine struct {
 	cancel   context.CancelFunc
 	hub      *ipc.Hub
 	onChange func(Status)
+	pump     *clientcore.Pump
 }
 
 func New(hub *ipc.Hub) *Engine {
@@ -48,6 +50,12 @@ func (e *Engine) Snapshot() Status {
 	s := e.status
 	s.Configured = store.Configured()
 	s.Autoconnect = store.LoadSettings().Autoconnect
+	s.RTTMs = 0
+	if e.pump != nil && (s.State == ipc.StateConnected || s.State == ipc.StateReconnecting) {
+		if d := e.pump.RTT(); d > 0 {
+			s.RTTMs = d.Milliseconds()
+		}
+	}
 	return s
 }
 
@@ -74,6 +82,7 @@ func (e *Engine) set(state, detail, ip string) {
 		hub.Broadcast(ipc.Response{
 			OK: true, State: snap.State, Detail: snap.Detail,
 			Configured: snap.Configured, Autoconnect: snap.Autoconnect, AssignedIP: snap.AssignedIP,
+			RTTMs: snap.RTTMs,
 		})
 	}
 }
@@ -189,6 +198,14 @@ func (e *Engine) loop(ctx context.Context) {
 	e.set(ipc.StateConnected, "connected", clientAddr.Addr().String())
 
 	pump := clientcore.NewPump(sess, dev)
+	e.mu.Lock()
+	e.pump = pump
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		e.pump = nil
+		e.mu.Unlock()
+	}()
 	pump.OnRedial = func() {
 		e.set(ipc.StateReconnecting, "connection dropped by the network; reconnecting", clientAddr.Addr().String())
 	}

@@ -106,6 +106,11 @@ func (p *Pump) session() *Session {
 	return p.sess
 }
 
+// RTT is the live session's smoothed QUIC RTT, or zero.
+func (p *Pump) RTT() time.Duration {
+	return p.session().RTT()
+}
+
 func (p *Pump) setSession(s *Session) {
 	p.mu.Lock()
 	p.sess = s

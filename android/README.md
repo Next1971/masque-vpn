@@ -4,7 +4,7 @@ A minimal Android VPN client on the same Go core (`clientcore`) as Windows/Linux
 
 The core is an `.aar` from **gomobile**. Kotlin supplies `VpnService`, a small UI, and profile import.
 
-**v1.3** added QUIC keepalives, a battery-exemption prompt, reconnect without tearing the TUN, and Wi-Fi → LTE recovery (sticky `/32` on the server). **v1.3.1** added **Paste config from clipboard** on Android TV.
+**v1.3** added QUIC keepalives, a battery-exemption prompt, reconnect without tearing the TUN, and Wi-Fi → LTE recovery (sticky `/32` on the server). **v1.3.1** added **Paste config from clipboard** on Android TV. **v1.4** added the app icon (launcher, notification, TV banner) and on-screen **Ping** (smoothed QUIC RTT to the server). Android stability tests for this line are finished, including recovery after **8 hours of airplane mode**.
 
 Use a **release APK** if you only want to connect. The rest of this file is for building from source.
 
@@ -20,9 +20,9 @@ android/
 │  ├─ src/tv/               # leanback UI (clipboard + paste-text)
 │  ├─ src/main/assets/sample-profile.masque   # format sample, not a real secret
 │  └─ libs/                 # place masque.aar here (build step)
-├─ go-src/masque-vpn-mvp/   # Go module (core + gomobile `mobile/` + server)
+├─ go-src/masque-vpn/   # Go module (core + gomobile `mobile/` + server)
 ├─ scripts/build-aar.bat
-└─ README-Android.md
+└─ README.md
 ```
 
 Product flavors (side by side):
@@ -38,17 +38,17 @@ Each device needs its own `profile.masque`. See [Issuing client configs](../docs
 
 ## Toolchain (must match the build)
 
-These are the versions in Gradle, `go.mod`, and GitHub Actions — not the older “Go 1.21 / SDK 34 only” wording.
+These are the versions in `go.mod`, the Android project files, and GitHub Actions — not the older “Go 1.21 / SDK 34 only” wording.
 
 | Piece | Version |
 |---|---|
-| **Go** | **1.25.5 or later** (`android/go-src/masque-vpn-mvp/go.mod`). CI uses **1.26.1**. |
+| **Go** | **1.25.5 or later** (`android/go-src/masque-vpn/go.mod`). CI uses **1.26.1**. |
 | **JDK** | **17** (`sourceCompatibility` / `jvmTarget`; CI Temurin 17) |
 | **compileSdk** | **36** |
 | **targetSdk** | **34** |
 | **minSdk** | **24** (Android 7.0; same as `gomobile bind -androidapi 24`) |
 | **NDK** | **27.0.12077973** (r27 side-by-side), as installed in CI. Not the obsolete NDK package. |
-| **Gradle / AGP / Kotlin** | Wrapper **8.13**, Android Gradle Plugin **8.13.2**, Kotlin **2.4.10** |
+| **Kotlin** | **2.4.10** |
 
 In Android Studio, install via SDK Manager:
 
@@ -63,7 +63,7 @@ In Android Studio, install via SDK Manager:
 1. Install the phone or TV APK (allow installation from unknown sources).
 2. Import a real `profile.masque` from the server generator (not the in-app sample).
 3. Grant **VPN** permission. On Connect the app may ask to **ignore battery optimizations** — allow it so keepalives can run with the screen off.
-4. Connect. A key icon in the status bar means the VPN is up.
+4. Connect. A MASQUE icon in the status bar means the VPN is up. The screen shows **Ping** (QUIC RTT to the server).
 5. Check `https://ifconfig.me` — you should see the **server** address.
 
 Disconnect with **Disconnect** in the app.
@@ -109,7 +109,7 @@ go install golang.org/x/mobile/cmd/gobind@latest
 export PATH="$(go env GOPATH)/bin:$PATH"
 gomobile init
 
-cd go-src/masque-vpn-mvp
+cd go-src/masque-vpn
 gomobile bind -target=android -androidapi 24 -o ../../app/libs/masque.aar ./mobile
 ```
 
@@ -117,23 +117,13 @@ Success: `app/libs/masque.aar` (native `.so` for arm64 / armeabi-v7a / x86_64).
 
 If `gomobile bind` complains about the NDK, check `ANDROID_NDK_HOME` points at **27.0.12077973**, not “NDK (obsolete)”.
 
-### 2. APK in Android Studio or Gradle
+### 2. APK in Android Studio
 
 1. **File → Open** the `android/` directory. Accept `local.properties` / `sdk.dir` if asked.
 2. Confirm `app/libs/masque.aar` exists (`implementation(files("libs/masque.aar"))`).
-3. Build:
-   - Studio: **Build → Build Bundle(s) / APK(s) → Build APK(s)** (picks the selected flavor), or
-   - CLI:
+3. **Build → Build Bundle(s) / APK(s) → Build APK(s)** (uses the selected flavor), or **Generate Signed Bundle / APK** with your keystore.
 
-```bash
-cd android
-./gradlew :app:assemblePhoneDebug
-./gradlew :app:assembleTvDebug
-```
-
-Outputs under `app/build/outputs/apk/` (e.g. `phone/debug/app-phone-debug.apk`, `tv/debug/app-tv-debug.apk`).
-
-Release: `./gradlew :app:assemblePhoneRelease` / `:app:assembleTvRelease`, or **Generate Signed Bundle / APK** with your keystore. Without `keystore.properties` the release APK is unsigned (sideload only).
+Outputs land under `app/build/outputs/apk/` (e.g. `phone/debug/app-phone-debug.apk`, `tv/debug/app-tv-debug.apk`). Without `keystore.properties` a release APK is unsigned (sideload only). Rebuild `masque.aar` after Go-core changes (including ping) or the UI will not see them.
 
 ---
 
@@ -154,8 +144,8 @@ Release: `./gradlew :app:assemblePhoneRelease` / `:app:assembleTvRelease`, or **
 ## Known limitations
 
 - One server/profile (no list). UI is intentionally small.
-- IPv4 only in the tunnel.
 - Tunnel DNS is plaintext UDP:53 (hidden from the local ISP, visible on the server).
 - Some OEM battery savers ignore the exemption dialog; if the process is killed, Connect again.
-- Long airplane-mode stretches use the same reconnect path, not a dedicated restore.
-- Phone and TV are separate APKs (`:app:assemblePhoneDebug` / `:app:assembleTvDebug`).
+- Phone and TV are separate APKs (build the **phone** or **tv** flavor in Studio).
+
+Android stability tests for this line are complete (including **8 hours** of airplane mode, after which the tunnel came back cleanly). Other platform limits are listed in the [roadmap](../docs/ROADMAP.md).

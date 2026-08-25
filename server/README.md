@@ -7,6 +7,8 @@ The server tunnels IP traffic over QUIC + HTTP/3 CONNECT-IP and authenticates cl
 - sends QUIC keepalives (`KeepAlivePeriod` 15s, `MaxIdleTimeout` 3 minutes);
 - pins each client certificate CN to a stable tunnel `/32` so Android can reconnect without rebuilding the TUN.
 
+**v1.4** clients (icon, on-screen ping) talk to the same v1.3 server protocol. You still need a v1.3+ binary if you want sticky `/32` after reconnect.
+
 > Keep the CA private key, server private key, and client private keys out of Git and distribute client bundles only through a secure channel.
 
 ## 1. Prerequisites
@@ -28,9 +30,18 @@ Open the server's UDP port in your firewall and cloud security group. The defaul
 
 ## 2. Get the code and build the server
 
+You can compile on the VPS, or copy a **prebuilt** `vpn-server-linux-amd64` / `vpn-server-linux-arm64` from GitHub Actions artifacts (and, when a GitHub Release is published, from the release files). The binary contains **no certificates or keys** — you still run `gen-config.sh` on the server (or keep an existing CA).
+
 ```bash
-git clone https://github.com/Next1971/masque-vpn-mvp.git
-cd masque-vpn-mvp/android/go-src/masque-vpn-mvp
+# Example: copy the matching artifact onto the VPS, then:
+install -m 0755 vpn-server-linux-amd64 /opt/masque/vpn-server
+```
+
+To build from source (Go 1.25+):
+
+```bash
+git clone https://github.com/Next1971/masque-vpn.git
+cd masque-vpn/android/go-src/masque-vpn
 go build -trimpath -ldflags "-s -w" -o vpn-server ./cmd/poc-server
 ```
 
@@ -48,7 +59,7 @@ cp vpn-server /opt/masque/vpn-server
 The generator creates the CA, the server certificate with the correct SAN, and ready-to-use client bundles for Windows and Android in one step.
 
 ```bash
-cd /path/to/masque-vpn-mvp/server/scripts
+cd /path/to/masque-vpn/server/scripts
 
 # Replace the host with YOUR server's public domain or IP.
 # --ip adds an extra IP to the server certificate SAN. Use it when clients may

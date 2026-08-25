@@ -13,6 +13,18 @@ Write-Host "Using:"; go version
 Write-Host "=== Downloading modules ==="
 go mod download
 
+Write-Host "=== Embedding Windows icons ==="
+$ico = Join-Path $PWD "installer\masque.ico"
+if (Test-Path $ico) {
+    foreach ($pkg in @("cmd\vpn-gui", "cmd\vpn-service", "cmd\vpn-client")) {
+        $manifest = if ($pkg -eq "cmd\vpn-gui") { "gui" } else { "cli" }
+        Push-Location $pkg
+        go run github.com/tc-hib/go-winres@latest simply --icon $ico --arch amd64 --manifest $manifest --product-name "MASQUE VPN" --file-description "MASQUE VPN" --product-version "1.4.0.0" --file-version "1.4.0.0"
+        if ($LASTEXITCODE -ne 0) { Pop-Location; throw "go-winres failed in $pkg" }
+        Pop-Location
+    }
+}
+
 Write-Host "=== Building vpn-client.exe (console / debug) ==="
 $env:GOOS = "windows"; $env:GOARCH = "amd64"; $env:CGO_ENABLED = "0"
 go build -trimpath -ldflags "-s -w" -o dist\vpn-client.exe .\cmd\vpn-client

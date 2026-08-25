@@ -20,6 +20,10 @@ ca.srl
 profile.client.toml
 **/uploaded_profile.toml
 
+# Locally built Linux server binaries (attach to a GitHub Release, do not commit)
+dist-server/
+/vpn-server
+
 # Build output
 build/
 .gradle/

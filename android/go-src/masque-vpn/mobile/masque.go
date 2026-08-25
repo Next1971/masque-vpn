@@ -8,7 +8,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/Next1971/masque-vpn-mvp/internal/clientcore"
+	"github.com/Next1971/masque-vpn/internal/clientcore"
 	"golang.zx2c4.com/wireguard/tun"
 )
 
@@ -76,6 +76,21 @@ func (t *Tunnel) UDPFd() int {
 		return -1
 	}
 	return t.sess.UDPFd()
+}
+
+// RTTMillis is the smoothed QUIC RTT to the VPN server in milliseconds.
+// Zero if the session is down or no sample exists yet.
+func (t *Tunnel) RTTMillis() int64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.sess == nil {
+		return 0
+	}
+	d := t.sess.RTT()
+	if d <= 0 {
+		return 0
+	}
+	return d.Milliseconds()
 }
 
 func profileFromConfig(cfg *Config) *clientcore.Profile {

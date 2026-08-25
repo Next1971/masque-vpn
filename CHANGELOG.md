@@ -4,6 +4,19 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
+## [v1.4.0] - 2026-08-25
+
+### Added
+
+- **App icon** on Android (launcher, adaptive icon, notification, TV banner) and Windows (tray, window, Start menu, MSI Add/Remove Programs, EXE resources).
+- **Ping to server** on the Android and Windows screens: smoothed QUIC RTT to the MASQUE node (not ICMP through the tunnel).
+- CI now publishes **linux-amd64** and **linux-arm64** server binaries as workflow artifacts (no certificates inside).
+- Repository renamed from `masque-vpn-mvp` to `masque-vpn` (GitHub redirects the old URL).
+
+### Tests
+
+- Android stability for this line is complete. After **8 hours of airplane mode** the tunnel came back cleanly.
+
 ## [v1.3.1] - 2026-08-23
 
 Pre-release. Automated GitHub Actions checks on this repository pass; there is still no third-party security audit.

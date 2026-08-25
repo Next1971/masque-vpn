@@ -26,7 +26,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Next1971/masque-vpn-mvp/internal/clientcore"
+	"github.com/Next1971/masque-vpn/internal/clientcore"
 	"golang.zx2c4.com/wireguard/tun"
 )
 

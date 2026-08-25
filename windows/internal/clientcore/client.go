@@ -191,6 +191,14 @@ func (s *Session) AttachTUN(dev tun.Device) {
 	s.dev = dev
 }
 
+// RTT is the smoothed QUIC path RTT to the MASQUE server. Zero if unknown.
+func (s *Session) RTT() time.Duration {
+	if s == nil || s.qconn == nil {
+		return 0
+	}
+	return s.qconn.ConnectionStats().SmoothedRTT
+}
+
 // Run starts bidirectional conn↔TUN forwarding and blocks until
 // completion (an error on either side, s.Close(), or ctx cancellation).
 // Returns the first stop reason.

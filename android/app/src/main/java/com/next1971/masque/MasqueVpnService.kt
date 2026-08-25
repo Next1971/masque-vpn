@@ -55,6 +55,22 @@ class MasqueVpnService : VpnService() {
     private var pfd: ParcelFileDescriptor? = null
     private var networksRegistered = false
     private var underlying: Network? = null
+    private val rttHandler = Handler(Looper.getMainLooper())
+    private val rttTick = object : Runnable {
+        override fun run() {
+            val t = tunnel
+            if (!isRunning || t == null) return
+            val ms = try {
+                t.rttMillis()
+            } catch (_: Exception) {
+                0L
+            }
+            val text = if (ms > 0) "VPN active · ping $ms ms" else "VPN active"
+            broadcast(text)
+            updateNotification(text)
+            rttHandler.postDelayed(this, 2000)
+        }
+    }
 
     private val connectivity by lazy { getSystemService(ConnectivityManager::class.java) }
 
@@ -170,6 +186,8 @@ class MasqueVpnService : VpnService() {
             isRunning = true
             broadcast("Connected")
             updateNotification("VPN active")
+            rttHandler.removeCallbacks(rttTick)
+            rttHandler.post(rttTick)
         } catch (e: Exception) {
             Log.e(TAG, "connect failed", e)
             broadcast("Connection error: ${e.message}")
@@ -250,6 +268,7 @@ class MasqueVpnService : VpnService() {
 
     private fun stopVpn() {
         isRunning = false
+        rttHandler.removeCallbacks(rttTick)
         unregisterUnderlyingNetworks()
         try {
             tunnel?.stop()
@@ -301,7 +320,7 @@ class MasqueVpnService : VpnService() {
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("MASQUE VPN")
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setSmallIcon(R.drawable.ic_stat_masque)
             .setContentIntent(pi)
             .setOngoing(true)
             .build()

@@ -62,8 +62,8 @@ func runServiceCLI(status, connect, disconnect bool, importPath string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("state=%s configured=%v autoconnect=%v ip=%s\n%s\n",
-			resp.State, resp.Configured, resp.Autoconnect, resp.AssignedIP, resp.Detail)
+		fmt.Printf("state=%s configured=%v autoconnect=%v ip=%s rtt_ms=%d\n%s\n",
+			resp.State, resp.Configured, resp.Autoconnect, resp.AssignedIP, resp.RTTMs, resp.Detail)
 	}
 	return nil
 }
