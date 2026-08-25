@@ -41,7 +41,7 @@ The Go source for the server and the shared client core lives under `android/go-
 
 ## 1. Server installation (HOWTO)
 
-The complete, copyable server setup is maintained in [server/README.md](server/README.md). It covers Ubuntu 22.04 prerequisites, a prebuilt Linux binary or a source build, certificates and profiles, systemd/NAT, verification, and the configuration reference.
+The complete, copyable server setup is maintained in [server/README.md](server/README.md). It covers Ubuntu 22.04 prerequisites, a prebuilt Linux binary or a source build, certificates and profiles, **64 MiB UDP socket buffers** (required for QUIC), systemd/NAT, verification, and the configuration reference.
 
 ---
 
