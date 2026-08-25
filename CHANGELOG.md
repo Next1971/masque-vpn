@@ -4,6 +4,10 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Server install now **requires 64 MiB UDP socket buffers** (`rmem_max` / `wmem_max`). Documented in `server/README.md`; `masque.service` and `server/sysctl/99-masque-udp.conf` apply `67108864`.
+
 ## [v1.4.0] - 2026-08-25
 
 ### Added

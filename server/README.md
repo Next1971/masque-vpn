@@ -28,6 +28,21 @@ apt-get install -y git build-essential openssl iptables
 
 Open the server's UDP port in your firewall and cloud security group. The default is **UDP 4433**. If you choose another port, change it consistently in the server configuration, client profiles, firewall rules, and service setup.
 
+### UDP socket buffers (required)
+
+QUIC holds many UDP datagrams in the kernel while the process reads them. Stock Linux `net.core.rmem_max` / `net.core.wmem_max` are about **208 KiB**. Under VPN load the receive queue fills, the kernel **drops datagrams**, and clients see loss, retransmits, and a slow tunnel.
+
+Raise both ceilings to **64 MiB** (`67108864` bytes) — the size used on the reference server:
+
+```bash
+cp server/sysctl/99-masque-udp.conf /etc/sysctl.d/99-masque-udp.conf
+sysctl --system
+sysctl net.core.rmem_max net.core.wmem_max
+# expect: 67108864
+```
+
+The systemd unit also applies the same `sysctl -w` values on every start. Keep the `/etc/sysctl.d/` file so the limits survive reboot even if the service is not running yet. You do not need to change `config.server.toml` for this.
+
 ## 2. Get the code and build the server
 
 You can compile on the VPS, or copy a **prebuilt** `vpn-server-linux-amd64` / `vpn-server-linux-arm64` from GitHub Actions artifacts (and, when a GitHub Release is published, from the release files). The binary contains **no certificates or keys** — you still run `gen-config.sh` on the server (or keep an existing CA).
@@ -103,7 +118,7 @@ systemctl enable --now masque.service
 systemctl status masque.service --no-pager
 ```
 
-The unit enables IP forwarding and adds an iptables MASQUERADE rule so client traffic is NATed out to the internet.
+The unit enables IP forwarding, raises UDP `rmem_max`/`wmem_max` to 64 MiB, and adds an iptables MASQUERADE rule so client traffic is NATed out to the internet.
 
 ## 6. Verify
 
@@ -147,6 +162,7 @@ route     = "0.0.0.0/0"      # route advertised to clients (0.0.0.0/0 = full tun
 |---|---|
 | No connection | Confirm UDP 4433 is open in the VPS firewall and cloud firewall; check DNS/IP, service status, and certificate SAN |
 | Service fails to start | Run `systemctl status masque.service --no-pager` and `journalctl -u masque -f` |
+| Connected but slow / high loss | Confirm `sysctl net.core.rmem_max` and `wmem_max` are **67108864** (64 MiB); see [UDP socket buffers](#udp-socket-buffers-required) |
 | Connected but no internet | Check forwarding, the interface name in `masque.service`, iptables NAT, and routes |
 | TLS/mTLS error | Confirm server name, certificate chain, client certificate, and matching CA |
 
