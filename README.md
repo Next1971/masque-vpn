@@ -15,6 +15,29 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 
 Latest line: **v1.4**. Android soak tests for this line are done, including recovery after eight hours of airplane mode. What is next lives in the [roadmap](docs/ROADMAP.md).
 
+## Is this for me?
+
+Use MASQUE VPN if you:
+- want to run a VPN server on a VPS you control;
+- need Android, Android TV or Windows clients;
+- are comfortable creating and managing client credentials;
+- want an experimental HTTP/3/QUIC CONNECT-IP implementation.
+
+Do not use it if you:
+- need a commercial VPN service or public shared endpoints;
+- need anonymous access or a security-audited product;
+- need iOS (maybe later- end of 2026), router or browser-extension support today.
+  
+
+| What you get                   | Current status            |
+| ------------------------------ | ------------------------- |
+| Self-hosted server on your VPS | Available                 |
+| Android phone/tablet client    | Available                 |
+| Android TV client              | Available                 |
+| Windows desktop client         | Available                 |
+| QUIC tunnel latency in app     | New in v1.4               |
+| Client authentication          | mTLS with your private CA |
+
 ## Quick start
 
 | Goal | Start here |
