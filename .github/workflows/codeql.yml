@@ -119,7 +119,7 @@ jobs:
 
     - name: Build Android AAR for CodeQL
       if: matrix.language == 'java-kotlin'
-      working-directory: android/go-src/masque-vpn-mvp
+      working-directory: android/go-src/masque-vpn
       env:
         ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
       run: |

@@ -21,11 +21,24 @@ jobs:
           go-version: "1.26.1"
 
       - name: Build server
-        working-directory: android/go-src/masque-vpn-mvp
+        working-directory: android/go-src/masque-vpn
         run: go build -v ./...
 
+      - name: Build Linux binaries
+        working-directory: android/go-src/masque-vpn
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o vpn-server-linux-amd64 ./cmd/poc-server
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o vpn-server-linux-arm64 ./cmd/poc-server
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vpn-server-linux
+          path: |
+            android/go-src/masque-vpn/vpn-server-linux-amd64
+            android/go-src/masque-vpn/vpn-server-linux-arm64
+
       - name: Vet
-        working-directory: android/go-src/masque-vpn-mvp
+        working-directory: android/go-src/masque-vpn
         run: go vet ./...
 
   windows-build:
@@ -47,6 +60,17 @@ jobs:
       - name: Fetch wintun.dll
         working-directory: windows
         run: powershell -ExecutionPolicy Bypass -File scripts/fetch-wintun.ps1
+
+      - name: Embed EXE icons
+        working-directory: windows
+        run: |
+          $ico = Join-Path (Get-Location) "installer\masque.ico"
+          foreach ($pkg in @("cmd\vpn-gui", "cmd\vpn-service", "cmd\vpn-client")) {
+            $manifest = if ($pkg -eq "cmd\vpn-gui") { "gui" } else { "cli" }
+            Push-Location $pkg
+            go run github.com/tc-hib/go-winres@latest simply --icon $ico --arch amd64 --manifest $manifest --product-name "MASQUE VPN" --file-description "MASQUE VPN" --product-version "1.4.0.0" --file-version "1.4.0.0"
+            Pop-Location
+          }
 
       - name: Build service and console client
         working-directory: windows
@@ -116,7 +140,7 @@ jobs:
         run: mkdir -p app/libs
 
       - name: Build AAR
-        working-directory: android/go-src/masque-vpn-mvp
+        working-directory: android/go-src/masque-vpn
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
         run: gomobile bind -target=android -androidapi 24 -o ../../app/libs/masque.aar ./mobile

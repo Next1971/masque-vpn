@@ -151,6 +151,7 @@ func handle(eng *engine.Engine, req ipc.Request) ipc.Response {
 		Configured:  snap.Configured,
 		Autoconnect: snap.Autoconnect,
 		AssignedIP:  snap.AssignedIP,
+		RTTMs:       snap.RTTMs,
 	}
 	switch req.Cmd {
 	case ipc.CmdStatus:
@@ -173,9 +174,11 @@ func handle(eng *engine.Engine, req ipc.Request) ipc.Response {
 			resp.Error = err.Error()
 			return resp
 		}
-		snap = eng.Snapshot()
+        snap = eng.Snapshot()
 		resp.State = snap.State
 		resp.Detail = snap.Detail
+		resp.AssignedIP = snap.AssignedIP
+		resp.RTTMs = snap.RTTMs
 		return resp
 	case ipc.CmdDisconnect:
 		eng.Disconnect()

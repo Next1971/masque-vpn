@@ -21,6 +21,15 @@
         android:text="Status: —"
         android:textSize="16sp"
         android:gravity="center"
+        android:layout_marginBottom="8dp" />
+
+    <TextView
+        android:id="@+id/ping"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Ping: —"
+        android:textSize="14sp"
+        android:gravity="center"
         android:layout_marginBottom="24dp" />
 
     <Button

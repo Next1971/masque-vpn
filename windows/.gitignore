@@ -22,9 +22,8 @@ certs/*.key
 certs/*.pem
 profile.client.toml
 
-# Go
-*.test
-*.out
+rsrc_windows_*.syso
+winres.json
 
 # OS / editor
 Thumbs.db

@@ -194,6 +194,14 @@ func (s *Session) AttachTUN(dev tun.Device) {
 	s.dev = dev
 }
 
+// RTT is the smoothed QUIC path RTT to the MASQUE server. Zero if unknown.
+func (s *Session) RTT() time.Duration {
+	if s == nil || s.qconn == nil {
+		return 0
+	}
+	return s.qconn.ConnectionStats().SmoothedRTT
+}
+
 // UDPFd returns the underlying UDP socket fd for VpnService.protect / bindSocket.
 // -1 if the session has no live socket.
 func (s *Session) UDPFd() int {

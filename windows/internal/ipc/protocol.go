@@ -39,4 +39,5 @@ type Response struct {
 	Configured  bool   `json:"configured"`
 	Autoconnect bool   `json:"autoconnect"`
 	AssignedIP  string `json:"assigned_ip,omitempty"`
+	RTTMs       int64  `json:"rtt_ms,omitempty"`
 }

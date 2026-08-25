@@ -2,6 +2,8 @@
   <Package Name="MASQUE VPN" Language="1033" Version="1.4.0" Manufacturer="MASQUE" UpgradeCode="6B2E8A41-9C3F-4D1A-B7E5-2F8C91A04D66" Scope="perMachine">
     <MajorUpgrade DowngradeErrorMessage="A newer version of MASQUE VPN is already installed." />
     <MediaTemplate EmbedCab="yes" />
+    <Icon Id="AppIcon" SourceFile="installer\masque.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
 
     <Feature Id="Main" Title="MASQUE VPN" Level="1">
       <ComponentRef Id="SvcExe" />
@@ -33,7 +35,7 @@
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="AppMenu" Name="MASQUE">
         <Component Id="GuiShortcut" Guid="F6A7B8C9-D0E1-2345-F012-456789012345">
-          <Shortcut Id="GuiStartMenu" Name="MASQUE VPN" Description="MASQUE VPN" Target="[INSTALLDIR]masque-gui.exe" WorkingDirectory="INSTALLDIR" />
+          <Shortcut Id="GuiStartMenu" Name="MASQUE VPN" Description="MASQUE VPN" Target="[INSTALLDIR]masque-gui.exe" WorkingDirectory="INSTALLDIR" Icon="AppIcon" />
           <RemoveFolder Id="AppMenu" On="uninstall" />
           <RegistryValue Root="HKCU" Key="Software\MASQUE\VPN" Name="installed" Type="integer" Value="1" KeyPath="yes" />
         </Component>

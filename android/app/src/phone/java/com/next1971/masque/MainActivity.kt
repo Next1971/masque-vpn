@@ -23,6 +23,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 class MainActivity : ComponentActivity() {
 
     private lateinit var statusView: TextView
+    private lateinit var pingView: TextView
     private lateinit var connectBtn: Button
     private var connected = false
 
@@ -30,9 +31,10 @@ class MainActivity : ComponentActivity() {
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) {
             val msg = i?.getStringExtra("msg") ?: return
-            statusView.text = "Status: $msg"
+            statusView.text = VpnStatus.statusLabel(msg)
             connected = VpnStatus.applyConnected(connected, msg)
             connectBtn.text = if (connected) "Disconnect" else "Connect"
+            pingView.text = VpnStatus.pingLabel(msg) ?: if (connected) pingView.text else "Ping: —"
         }
     }
 
@@ -75,6 +77,7 @@ class MainActivity : ComponentActivity() {
         setContentView(R.layout.activity_main)
 
         statusView = findViewById(R.id.status)
+        pingView = findViewById(R.id.ping)
         connectBtn = findViewById(R.id.btnConnect)
 
         findViewById<Button>(R.id.btnImport).setOnClickListener {
@@ -135,6 +138,7 @@ class MainActivity : ComponentActivity() {
         } else {
             connected = false
             connectBtn.text = "Connect"
+            pingView.text = "Ping: —"
             refresh()
         }
     }

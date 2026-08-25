@@ -1,16 +1,16 @@
 # Roadmap
 
-> Status snapshot: last updated 2026-08-21. See [CHANGELOG.md](../CHANGELOG.md) for release history.
+> Status snapshot: last updated 2026-08-25. See [CHANGELOG.md](../CHANGELOG.md) for release history.
 
 ## Current status
 
-MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** across all three components (server, Windows client, Android client). **v1.0** was publicly released on **August 14, 2026**. **v1.3** (21 August 2026) is the Android stability release: keepalive, reconnect, Wi-Fi ↔ LTE, sleep/resume, and sticky tunnel IPs.
+MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** across all three components (server, Windows client, Android client). **v1.0** was publicly released on **August 14, 2026**. **v1.3** (21 August 2026) is the Android reconnect release. **v1.4** (25 August 2026) is the client polish release (icon + on-screen ping); Android stability tests for this line are complete, including recovery after 8 hours of airplane mode.
 
 | Component | Status | Notes |
 |---|---|---|
 | Server | Stable | QUIC keepalive, sticky `/32` per client cert CN, mTLS, systemd, cert generator |
-| Windows client | Stable | Signed EXE + Wintun DLL in release, console + local web UI, same QUIC keepalive |
-| Android client | Stable | Phone + TV flavors; reconnect without tearing TUN; underlying-network callback |
+| Windows client | Stable | Signed EXE + Wintun DLL in release, GUI + tray icon, on-screen ping |
+| Android client | Stable | Phone + TV; reconnect without tearing TUN; 8h airplane-mode recovery verified |
 
 This is experimental software and has not received an independent security audit.
 
@@ -40,6 +40,12 @@ This is experimental software and has not received an independent security audit
 - Sticky IP pool keyed by client certificate CN.
 - `poc-client` requires a CA (no default `InsecureSkipVerify`).
 
+## Completed (v1.4)
+
+- App icon on Android and Windows (launcher, tray, MSI, notification, TV banner).
+- On-screen ping: smoothed QUIC RTT to the MASQUE server.
+- Android airplane-mode soak: after 8 hours offline the tunnel came back cleanly (reconnect + sticky `/32`).
+
 ## Known limitations (all platforms)
 
 - IPv4 only inside the tunnel (no IPv6 support yet).
@@ -50,10 +56,8 @@ This is experimental software and has not received an independent security audit
 
 ## In progress / next (v1.x remainder)
 
-- [ ] Automatic recovery after a long airplane-mode stretch (beyond reconnect-on-wake).
 - [ ] DNS over HTTPS/TLS (DoH/DoT) inside the tunnel.
 - [ ] MTU experiments for different networks.
-- [ ] Full Windows desktop client (beyond console + local web UI).
 - [ ] Dependency review process for quic-go / connect-ip-go version pinning (see notes below).
 
 ## v2.0 (planned)
