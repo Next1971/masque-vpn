@@ -1,10 +1,19 @@
 # MASQUE VPN
 
-> **Status: working.** Self-hosted MASQUE CONNECT-IP VPN over HTTP/3/QUIC with mTLS — Go server, Android and Windows clients.
+**Self-hosted VPN:** you run the server on your VPS and issue configs only to your own devices. The tunnel rides inside **HTTP/3** (IETF [MASQUE](https://datatracker.ietf.org/doc/html/rfc9484) CONNECT-IP), so it looks like ordinary web traffic rather than a classic VPN handshake. Clients authenticate with **mutual TLS** — the server accepts only certificates you signed.
 
-A minimal VPN built on the IETF **MASQUE** framework: it tunnels IP traffic inside HTTP/3 (QUIC) using **CONNECT-IP** (RFC 9484) and authenticates both ends with **mutual TLS (mTLS)**.
+Clients today: **Android**, **Android TV**, and **Windows** (tray app, no UAC for daily use).
 
-> **v1.4.0** adds a real app icon and on-screen ping (QUIC RTT to the server). Android stability testing for this line is finished, including recovery after **8 hours of airplane mode**. Builds are checked in GitHub Actions (compile, tests, and the repo’s CI security jobs). That is not a substitute for a third-party penetration test; treat the project as experimental.
+This is not a commercial VPN brand and not an audited enterprise client. It is a working personal or family server with open source. Treat it as **experimental**: GitHub Actions compile and test the tree; that is not a third-party penetration test.
+
+**Why people pick it**
+
+- **Your machine, your keys.** Traffic exits at your VPS. You keep the CA; only issued client certs can connect.
+- **HTTP/3 transport.** QUIC + CONNECT-IP is harder to fingerprint than default OpenVPN or WireGuard. It does **not** promise to bypass any particular national firewall.
+- **Real clients.** Phone, TV, and Windows installers from [GitHub Releases](../../releases/latest) — not a CLI-only toy.
+- **One bundle per device.** Reconnect (sleep, Wi-Fi → LTE, long airplane mode) keeps a stable tunnel address.
+
+Latest line: **v1.4**. Android soak tests for this line are done, including recovery after eight hours of airplane mode. What is next lives in the [roadmap](docs/ROADMAP.md).
 
 ## Quick start
 
@@ -18,7 +27,7 @@ A minimal VPN built on the IETF **MASQUE** framework: it tunnels IP traffic insi
 | Report a bug or feature request | [Open an issue](../../issues/new/choose) |
 | Report a security issue | [Security policy](SECURITY.md) |
 
-The repository contains three parts:
+## Repository layout
 
 | Directory | What it is |
 |---|---|
@@ -26,31 +35,9 @@ The repository contains three parts:
 | `windows/` | Windows client (service + GUI + MSI; console remains for debug) |
 | `android/` | Android client (Kotlin app + Go core via gomobile) |
 
-The Go source for the server and the shared client core lives under `android/go-src/masque-vpn/` (one Go module, `github.com/Next1971/masque-vpn`) and is used to build both the server and the Android core.
+The Go source for the server and the shared client core lives under `android/go-src/masque-vpn/` (module `github.com/Next1971/masque-vpn`).
 
 > **Security model.** A single internal Certificate Authority (CA) signs the server certificate and every client certificate. The server only accepts clients whose certificate is signed by that CA, and each client only trusts a server whose certificate is signed by the same CA. **Never commit or publish any `*.key` file** (CA key, server key, client keys).
-
-> [!IMPORTANT]
-> ## MVP status: core hypothesis validated
->
-> The primary MVP goal has been achieved: a MASQUE tunnel based on
-> QUIC + HTTP/3 CONNECT-IP with mutual TLS works end-to-end in real use.
->
-> The project is still experimental and is not yet a production-ready VPN
-> client. The v1.x line focuses on reliability, network transitions, and
-> client experience rather than changing the core tunnel design.
-
-## What is in v1.x
-
-The core MASQUE tunnel is working. Recent releases focused on making the Android and Windows clients resilient in normal use:
-
-- Wi-Fi ↔ mobile-network switching, screen-off keepalives, and reconnect without tearing the TUN (**v1.3**)
-- Windows service + GUI + MSI (**v1.3.1**); app icon and on-screen ping (**v1.4**)
-- Android recovery after a long airplane-mode stretch (**v1.4**: tunnel came back cleanly after 8 hours)
-
-Later platform work is tracked only in the [roadmap](docs/ROADMAP.md).
-
----
 
 ## 1. Server installation (HOWTO)
 
