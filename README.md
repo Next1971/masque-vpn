@@ -63,15 +63,8 @@ The complete, copyable server setup is maintained in [server/README.md](server/R
 See [`windows/README.md`](windows/README.md) for full details. In short:
 
 1. Install `masque.msi` from the release (one UAC prompt). That installs the `MasqueVpn` service, `wintun.dll`, and the GUI (tray and Start-menu icon).
-2. Open **MASQUE VPN** from the Start menu (no admin). **Import profile**: `profile.masque`, or `profile.client.toml` together with its `certs/` folder.
+2. Open **MASQUE VPN** from the Start menu (no admin). **Import profile**: `profile.masque`.
 3. Click **Connect**. The window shows **Ping** (smoothed QUIC RTT to the server). Closing the window does not tear down the tunnel.
-
-Console debug (admin): `vpn-client.exe -profile profile.client.toml -full-route`.
-
-**"Disable certificate verification".** Some setups fail the TLS handshake on server certificate validation (self-signed CA, hostname mismatch). It is **off by default**. Only enable it while troubleshooting — it disables authentication of the server:
-
-- Console: add the `-insecure` flag.
-- Profile: set `insecure = true` under `[tls]`.
 
 ---
 
@@ -80,7 +73,7 @@ Console debug (admin): `vpn-client.exe -profile profile.client.toml -full-route`
 See [`android/README.md`](android/README.md). In short:
 
 1. Install the APK from the release archive (enable "install from unknown sources"), or [build it from source](android/README.md) (**Go 1.25.5+**, **JDK 17**, **compileSdk 36** / **targetSdk 34** / **minSdk 24**, **NDK 27.0.12077973**).
-2. Open the app and **import a profile** (`profile.masque` from the generator). On **Android TV**, use **Paste config from clipboard** (or paste-text); many boxes have no file manager. The APK also ships a non-production `sample-profile.masque` in its assets so you can see the expected format.
+2. Open the app and **import a profile** (`profile.masque` from the generator). On **Android TV**, use **Paste config from clipboard** (or paste-text).
 3. Grant the VPN permission and connect. While connected, the screen shows **Ping** (smoothed QUIC RTT to the server).
 
 ### Stability testing

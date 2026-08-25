@@ -11,9 +11,9 @@ From **v1.3.1** the normal install is a per-machine **MSI**: a **LocalSystem** s
 1. Download `masque.msi` from the [latest release](../../releases/latest).
 2. Run the installer (one UAC prompt). It installs `MasqueVpn` (auto-start), `wintun.dll`, `masque-gui.exe`, and `vpn-client.exe` under `C:\Program Files\MASQUE`.
 3. Open **MASQUE VPN** from the Start menu (no admin).
-4. **Import profile** — either:
-   - `profile.masque` (single file, same bundle as Android), or
-   - `profile.client.toml` together with its `certs/` folder (`ca.crt`, `client.crt`, `client.key`).
+4. **Import profile**: `profile.masque` (same single-file bundle as Android).
+
+   A second, older form still works: `profile.client.toml` together with its `certs/` folder (`ca.crt`, `client.crt`, `client.key`). It will be removed in the next release — use `profile.masque`.
 5. Click **Connect**. While connected, the GUI shows **Ping** to the server. Optional: **Connect automatically when the service starts**.
 
 Each device needs its own bundle. See [Issuing client configs](../docs/CLIENTS.md).
