@@ -204,13 +204,26 @@ func (t *Tunnel) runPump(ctx context.Context, pump *clientcore.Pump, prof *clien
 			return nil, context.Canceled
 		}
 		prev := t.lastAddr
+		newAddr := ""
+		if len(s.AssignedPrefixes) > 0 {
+			newAddr = s.AssignedPrefixes[0].Addr().String()
+		}
+		cancel := t.cancel
+		if prev != "" && newAddr != "" && prev != newAddr {
+			t.mu.Unlock()
+			log.Printf("assigned address changed %s -> %s; requesting TUN rebuild", prev, newAddr)
+			s.Close()
+			if cb != nil {
+				cb.OnStatus("assigned-ip-changed")
+			}
+			if cancel != nil {
+				cancel()
+			}
+			return nil, context.Canceled
+		}
 		t.sess = s
 		rememberAssigned(t, s)
-		newAddr := t.lastAddr
 		t.mu.Unlock()
-		if prev != "" && newAddr != "" && prev != newAddr {
-			log.Printf("reconnect assigned %s (TUN still has %s); return path may fail until the pool gives the same /32", newAddr, prev)
-		}
 		if cb != nil {
 			if newAddr != "" {
 				cb.OnStatus("reconnected, assigned " + newAddr)

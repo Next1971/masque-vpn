@@ -119,3 +119,42 @@ func describePkt(pkt []byte) string {
 		return fmt.Sprintf("unknown-version %d", pkt[0]>>4)
 	}
 }
+
+// prepareOutgoing drops packets the CONNECT-IP server would reject, and rewrites
+// a wrong IPv4 source to the assigned tunnel address (some Android OEMs source
+// from Wi-Fi when the TUN is configured as /32).
+//
+// Returns drop=true to skip WritePacket; rewritten=true if the IPv4 header changed.
+func prepareOutgoing(pkt []byte, assigned netip.Addr) (drop, rewritten bool) {
+	if len(pkt) < 1 || !assigned.IsValid() {
+		return true, false
+	}
+	switch pkt[0] >> 4 {
+	case 6:
+		// Tunnel is IPv4-only today; sink IPv6 on the Android TUN and drop here
+		// so CONNECT-IP never sees :: / fe80 sources.
+		return true, false
+	case 4:
+		if len(pkt) < 20 || !assigned.Is4() {
+			return true, false
+		}
+		src := netip.AddrFrom4([4]byte{pkt[12], pkt[13], pkt[14], pkt[15]})
+		if src == assigned {
+			return false, false
+		}
+		b := assigned.As4()
+		pkt[12], pkt[13], pkt[14], pkt[15] = b[0], b[1], b[2], b[3]
+		ihl := int(pkt[0]&0x0f) * 4
+		if ihl < 20 || ihl > len(pkt) {
+			ihl = 20
+		}
+		pkt[10] = 0
+		pkt[11] = 0
+		csum := ipv4Checksum(pkt[:ihl])
+		pkt[10] = byte(csum >> 8)
+		pkt[11] = byte(csum & 0xff)
+		return false, true
+	default:
+		return true, false
+	}
+}

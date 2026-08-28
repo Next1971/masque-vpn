@@ -47,7 +47,10 @@ class MasqueVpnService : VpnService() {
             private set
 
         const val TUN_ADDR_FALLBACK = "10.8.0.254"
-        const val TUN_PREFIX_FALLBACK = 32
+        // Server still assigns a CONNECT-IP /32. VpnService needs /24 on-link
+        // or some OEMs source packets from Wi-Fi (192.168.x.x); the server
+        // drops them and DNS never reaches 1.1.1.1.
+        const val TUN_PREFIX = 24
         const val TUN_MTU = 1400
     }
 
@@ -131,6 +134,10 @@ class MasqueVpnService : VpnService() {
         val cb = object : Callback {
             override fun onStatus(msg: String?) {
                 Log.i(TAG, "status: $msg")
+                if (msg == "assigned-ip-changed") {
+                    Handler(Looper.getMainLooper()).post { rebuildTunnel() }
+                    return
+                }
                 broadcast(msg ?: "")
                 updateNotification(msg ?: "Connected")
                 if (msg != null && msg.startsWith("reconnect")) {
@@ -149,21 +156,25 @@ class MasqueVpnService : VpnService() {
             tunnel = t
 
             var addr = t.assignedAddr()
-            var prefix = t.assignedPrefixLen().toInt()
             if (addr.isNullOrEmpty()) {
-                Log.w(TAG, "server assigned no address; using fallback $TUN_ADDR_FALLBACK/$TUN_PREFIX_FALLBACK")
+                Log.w(TAG, "server assigned no address; using fallback $TUN_ADDR_FALLBACK")
                 addr = TUN_ADDR_FALLBACK
-                prefix = TUN_PREFIX_FALLBACK
             }
-            if (prefix <= 0 || prefix > 32) prefix = TUN_PREFIX_FALLBACK
-            Log.i(TAG, "building TUN with server-assigned address $addr/$prefix")
+            Log.i(TAG, "building TUN $addr/$TUN_PREFIX (server assigned /${t.assignedPrefixLen()})")
 
             val builder = Builder()
                 .setSession("MASQUE")
                 .setMtu(TUN_MTU)
-                .addAddress(addr, prefix)
+                .addAddress(addr, TUN_PREFIX)
+                // Sink IPv6 into the TUN (core drops it). Without ::/0, Telegram and
+                // others use IPv6 on the underlying network and bypass the VPN.
+                .addAddress("fd00::1", 128)
                 .addRoute("0.0.0.0", 0)
+                .addRoute("::", 0)
                 .addDnsServer(prof.dns)
+            if (prof.dns != "8.8.8.8") {
+                builder.addDnsServer("8.8.8.8")
+            }
 
             try {
                 builder.addDisallowedApplication(packageName)
@@ -266,7 +277,17 @@ class MasqueVpnService : VpnService() {
         }
     }
 
+    private fun rebuildTunnel() {
+        Log.i(TAG, "assigned IP changed; rebuilding VPN session")
+        tearDownTunnel(stopService = false)
+        startVpn()
+    }
+
     private fun stopVpn() {
+        tearDownTunnel(stopService = true)
+    }
+
+    private fun tearDownTunnel(stopService: Boolean) {
         isRunning = false
         rttHandler.removeCallbacks(rttTick)
         unregisterUnderlyingNetworks()
@@ -282,8 +303,10 @@ class MasqueVpnService : VpnService() {
         }
         pfd = null
         broadcast("Disconnected")
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        if (stopService) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     override fun onDestroy() {

@@ -79,6 +79,7 @@ class MainActivity : ComponentActivity() {
         statusView = findViewById(R.id.status)
         pingView = findViewById(R.id.ping)
         connectBtn = findViewById(R.id.btnConnect)
+        findViewById<TextView>(R.id.version).text = appVersionLabel()
 
         findViewById<Button>(R.id.btnImport).setOnClickListener {
             pickProfile.launch("*/*")

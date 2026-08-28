@@ -28,7 +28,9 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	connectip "github.com/quic-go/connect-ip-go"
@@ -385,9 +387,14 @@ func run(cfg serverConfig) error {
 		log.Printf("assigning fixed address %s; advertising route %s", assign, route)
 	}
 	go srv.ServeListener(ln)
-	defer srv.Close()
 
-	select {} // block forever
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	<-ctx.Done()
+	log.Printf("shutdown signal received; closing QUIC listener")
+	_ = srv.Close()
+	_ = ln.Close()
+	return nil
 }
 
 // handleConn assigns an address, advertises a route, then:

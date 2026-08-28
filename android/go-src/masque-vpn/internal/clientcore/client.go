@@ -279,14 +279,18 @@ func (s *Session) Run(ctx context.Context) error {
 			}
 			for i := 0; i < k; i++ {
 				pkt := bufs[i][tunOffset : tunOffset+sizes[i]]
-				// Raise an excessively low TTL/Hop Limit; otherwise connect-ip
-				// drops the packet ("Hop Limit too small"). This shared fix applies to all
-				// platforms (especially Windows routing into TUN).
 				if orig, fixed := normalizeTTL(pkt); fixed {
 					fixedCount++
 					if fixedCount <= 3 {
 						vlog("raised low TTL/HopLimit %d→%d on outgoing packet (%d bytes)", orig, fixTTL, len(pkt))
 					}
+				}
+				assigned := netip.Addr{}
+				if len(s.AssignedPrefixes) > 0 {
+					assigned = s.AssignedPrefixes[0].Addr()
+				}
+				if drop, _ := prepareOutgoing(pkt, assigned); drop {
+					continue
 				}
 				if _, err := s.ipconn.WritePacket(pkt); err != nil {
 					errCh <- fmt.Errorf("conn write: %w", err)

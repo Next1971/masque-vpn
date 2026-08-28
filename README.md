@@ -13,7 +13,7 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 - **Real clients.** Phone, TV, and Windows installers from [GitHub Releases](../../releases/latest) — not a CLI-only toy.
 - **One bundle per device.** Reconnect (sleep, Wi-Fi → LTE, long airplane mode) keeps a stable tunnel address.
 
-Latest line: **v1.4**. Android soak tests for this line are done, including recovery after eight hours of airplane mode. What is next lives in the [roadmap](docs/ROADMAP.md).
+Latest line: **v1.4.1** (maintenance pre-release: Docker packaging, AGP 9, Android IPv6-bypass hardening). Profiles from v1.4.0 keep working. What is next lives in the [roadmap](docs/ROADMAP.md).
 
 ## Is this for me?
 
@@ -54,7 +54,7 @@ Do not use it if you:
 
 | Directory | What it is |
 |---|---|
-| `server/` | Server build instructions, systemd unit, and config generator |
+| `server/` | Server build instructions, systemd unit, Docker, and config generator |
 | `windows/` | Windows client (service + GUI + MSI; console remains for debug) |
 | `android/` | Android client (Kotlin app + Go core via gomobile) |
 
@@ -64,7 +64,7 @@ The Go source for the server and the shared client core lives under `android/go-
 
 ## 1. Server installation (HOWTO)
 
-The complete, copyable server setup is maintained in [server/README.md](server/README.md). It covers Ubuntu 22.04 prerequisites, a prebuilt Linux binary or a source build, certificates and profiles, **64 MiB UDP socket buffers** (required for QUIC), systemd/NAT, verification, and the configuration reference.
+The complete, copyable server setup is maintained in [server/README.md](server/README.md). It covers Ubuntu 22.04 prerequisites, a prebuilt Linux binary or a source build, **optional Docker Compose**, certificates and profiles, **64 MiB UDP socket buffers** (required for QUIC), systemd/NAT, verification, and the configuration reference.
 
 ---
 

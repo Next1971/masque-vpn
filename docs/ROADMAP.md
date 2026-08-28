@@ -1,16 +1,16 @@
 # Roadmap
 
-> Status snapshot: last updated 2026-08-25. See [CHANGELOG.md](../CHANGELOG.md) for release history.
+> Status snapshot: last updated 2026-08-28. See [CHANGELOG.md](../CHANGELOG.md) for release history.
 
 ## Current status
 
-MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** across all three components (server, Windows client, Android client). **v1.0** was publicly released on **August 14, 2026**. **v1.3** (21 August 2026) is the Android reconnect release. **v1.4** (25 August 2026) is the client polish release (icon + on-screen ping); Android stability tests for this line are complete, including recovery after 8 hours of airplane mode.
+MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** across all three components (server, Windows client, Android client). **v1.0** was publicly released on **August 14, 2026**. **v1.3** is the Android reconnect release. **v1.4** added client polish (icon + on-screen ping). **v1.4.1** (pre-release) is a maintenance line: AGP 9 / Gradle 9, Docker packaging, graceful server shutdown, and Android IPv6-bypass hardening.
 
 | Component | Status | Notes |
 |---|---|---|
-| Server | Stable | QUIC keepalive, sticky `/32` per client cert CN, mTLS, systemd, cert generator |
+| Server | Stable | QUIC keepalive, sticky `/32` per CN, mTLS, systemd, optional Docker, graceful SIGTERM |
 | Windows client | Stable | Signed EXE + Wintun DLL in release, GUI + tray icon, on-screen ping |
-| Android client | Stable | Phone + TV; reconnect without tearing TUN; 8h airplane-mode recovery verified |
+| Android client | Stable | Phone + TV; TUN `/24` + IPv6 sink; version label in UI; reconnect without tearing TUN |
 
 This is experimental software and has not received an independent security audit.
 
@@ -46,9 +46,17 @@ This is experimental software and has not received an independent security audit
 - On-screen ping: smoothed QUIC RTT to the MASQUE server.
 - Android airplane-mode soak: after 8 hours offline the tunnel came back cleanly (reconnect + sticky `/32`).
 
+## Completed (v1.4.1)
+
+- Android toolchain: AGP 9.0.1 + Gradle 9.1.0 + built-in Kotlin.
+- Docker image / Compose for the server (host network, TUN, NAT).
+- Server graceful shutdown on SIGTERM/SIGINT.
+- Android IPv6 sink + TUN `/24` (block dual-stack bypass; not full dual-stack VPN).
+- Version label in Android UI; high-contrast launcher icon.
+
 ## Known limitations (all platforms)
 
-- IPv4 only inside the tunnel (no IPv6 support yet).
+- Tunnel data-plane is still **IPv4-only** (IPv6 is sunk/dropped on Android so apps cannot bypass the VPN; full IPv6-in-tunnel is not shipped).
 - In-tunnel DNS is plaintext UDP:53 — hidden from the local ISP but visible to the server operator. DoH/DoT is planned.
 - Single server/profile per client — no profile list or automatic failover.
 - No independent security audit yet.
@@ -60,10 +68,9 @@ This is experimental software and has not received an independent security audit
 - [ ] MTU experiments for different networks.
 - [ ] Dependency review process for quic-go / connect-ip-go version pinning (see notes below).
 
-## v2.0 (planned)
+## v1.5 (planned)
 
-- [ ] IPv6 support.
-- [ ] Coordinated Android Gradle Plugin 9.x + Gradle 9.x migration (not via unattended Dependabot majors).
+- [ ] Full IPv6 in the tunnel (pool, NAT66/forwarding, client assigned v6).
 
 ## Dependency notes
 
