@@ -48,7 +48,7 @@ This is experimental software and has not received an independent security audit
 
 ## Completed (v1.4.1)
 
-- Android toolchain: AGP 9.0.1 + Gradle 9.1.0 + built-in Kotlin.
+- Android toolchain: AGP 9.x + Gradle 9.x + built-in Kotlin (see `android/README.md` for current versions).
 - Docker image / Compose for the server (host network, TUN, NAT).
 - Server graceful shutdown on SIGTERM/SIGINT.
 - Android IPv6 sink + TUN `/24` (block dual-stack bypass; not full dual-stack VPN).

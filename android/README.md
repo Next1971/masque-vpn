@@ -44,8 +44,8 @@ These are the versions in `go.mod`, the Android project files, and GitHub Action
 |---|---|
 | **Go** | **1.25.5 or later** (`android/go-src/masque-vpn/go.mod`). CI uses **1.26.1**. |
 | **JDK** | **17** (`sourceCompatibility` / `jvmTarget`; CI Temurin 17) |
-| **Gradle** | **9.1.0** (wrapper) |
-| **Android Gradle Plugin** | **9.0.1** (built-in Kotlin; no separate `kotlin-android` plugin) |
+| **Gradle** | **9.5.0** (wrapper; required by AGP 9.3+) |
+| **Android Gradle Plugin** | **9.3.2** (built-in Kotlin; no separate `kotlin-android` plugin) |
 | **compileSdk** | **36** |
 | **targetSdk** | **34** (set explicitly; AGP 9 would otherwise default to compileSdk) |
 | **minSdk** | **24** (Android 7.0; same as `gomobile bind -androidapi 24`) |
