@@ -65,6 +65,7 @@ class TvMainActivity : ComponentActivity() {
         statusView = findViewById(R.id.tvStatus)
         pingView = findViewById(R.id.tvPing)
         connectBtn = findViewById(R.id.tvBtnConnect)
+        findViewById<TextView>(R.id.tvVersion).text = appVersionLabel()
 
         val pasteBtn = findViewById<Button>(R.id.tvBtnPaste)
         val clipboardBtn = findViewById<Button>(R.id.tvBtnClipboard)

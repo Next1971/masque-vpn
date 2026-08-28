@@ -1,5 +1,5 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="MASQUE VPN" Language="1033" Version="1.4.0" Manufacturer="MASQUE" UpgradeCode="6B2E8A41-9C3F-4D1A-B7E5-2F8C91A04D66" Scope="perMachine">
+  <Package Name="MASQUE VPN" Language="1033" Version="1.4.1" Manufacturer="MASQUE" UpgradeCode="6B2E8A41-9C3F-4D1A-B7E5-2F8C91A04D66" Scope="perMachine">
     <MajorUpgrade DowngradeErrorMessage="A newer version of MASQUE VPN is already installed." />
     <MediaTemplate EmbedCab="yes" />
     <Icon Id="AppIcon" SourceFile="installer\masque.ico" />

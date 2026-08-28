@@ -4,9 +4,26 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
+## [v1.4.1] - 2026-08-28
+
+Maintenance / packaging release. Same CONNECT-IP protocol as v1.4.0; existing profiles keep working.
+
+### Added
+
+- **Docker** image and Compose for the server (`server/Dockerfile`, `server/docker-compose.yml`): host network, TUN, NAT via entrypoint.
+- Android UI shows **version** (`v1.4.1 (16)`) on phone and TV.
+- High-contrast **blue mask** launcher / TV banner icons.
+
+### Fixed
+
+- Server **graceful shutdown** on `SIGTERM`/`SIGINT` (no more `select {}`).
+- Android **IPv6 sink** (`::/0` + ULA address) so apps cannot bypass the VPN on dual-stack networks; Go core drops IPv6 datagrams and rewrites wrong IPv4 TUN sources.
+- Android TUN uses **`/24`** on-link (server still assigns `/32`) to avoid OEM Wi-Fi source addresses.
+- Rebuild TUN when reconnect assigns a different IP (`assigned-ip-changed`).
+
 ### Changed
 
-- Server install now **requires 64 MiB UDP socket buffers** (`rmem_max` / `wmem_max`). Documented in `server/README.md`; `masque.service` and `server/sysctl/99-masque-udp.conf` apply `67108864`.
+- Android toolchain: **AGP 9.0.1**, **Gradle 9.1.0**, built-in Kotlin (no separate `kotlin-android` plugin). NDK pinned to **27.0.12077973**.
 
 ## [v1.4.0] - 2026-08-25
 
@@ -16,6 +33,10 @@ All notable changes to MASQUE VPN are documented here.
 - **Ping to server** on the Android and Windows screens: smoothed QUIC RTT to the MASQUE node (not ICMP through the tunnel).
 - CI now publishes **linux-amd64** and **linux-arm64** server binaries as workflow artifacts (no certificates inside).
 - Repository renamed from `masque-vpn-mvp` to `masque-vpn` (GitHub redirects the old URL).
+
+### Changed
+
+- Server install now **requires 64 MiB UDP socket buffers** (`rmem_max` / `wmem_max`). Documented in `server/README.md`; `masque.service` and `server/sysctl/99-masque-udp.conf` apply `67108864`.
 
 ### Tests
 

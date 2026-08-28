@@ -4,7 +4,7 @@ A minimal Android VPN client on the same Go core (`clientcore`) as Windows/Linux
 
 The core is an `.aar` from **gomobile**. Kotlin supplies `VpnService`, a small UI, and profile import.
 
-**v1.3** added QUIC keepalives, a battery-exemption prompt, reconnect without tearing the TUN, and Wi-Fi → LTE recovery (sticky `/32` on the server). **v1.3.1** added **Paste config from clipboard** on Android TV. **v1.4** added the app icon (launcher, notification, TV banner) and on-screen **Ping** (smoothed QUIC RTT to the server). Android stability tests for this line are finished, including recovery after **8 hours of airplane mode**.
+**v1.3** added QUIC keepalives, a battery-exemption prompt, reconnect without tearing the TUN, and Wi-Fi → LTE recovery (sticky `/32` on the server). **v1.3.1** added **Paste config from clipboard** on Android TV. **v1.4** added the app icon and on-screen **Ping**. **v1.4.1** bumps the Android toolchain (AGP 9 / Gradle 9), shows the **version** in the UI, sinks IPv6 so apps cannot bypass the VPN, and uses TUN `/24` on-link.
 
 Use a **release APK** if you only want to connect. The rest of this file is for building from source.
 
@@ -44,11 +44,12 @@ These are the versions in `go.mod`, the Android project files, and GitHub Action
 |---|---|
 | **Go** | **1.25.5 or later** (`android/go-src/masque-vpn/go.mod`). CI uses **1.26.1**. |
 | **JDK** | **17** (`sourceCompatibility` / `jvmTarget`; CI Temurin 17) |
+| **Gradle** | **9.1.0** (wrapper) |
+| **Android Gradle Plugin** | **9.0.1** (built-in Kotlin; no separate `kotlin-android` plugin) |
 | **compileSdk** | **36** |
-| **targetSdk** | **34** |
+| **targetSdk** | **34** (set explicitly; AGP 9 would otherwise default to compileSdk) |
 | **minSdk** | **24** (Android 7.0; same as `gomobile bind -androidapi 24`) |
-| **NDK** | **27.0.12077973** (r27 side-by-side), as installed in CI. Not the obsolete NDK package. |
-| **Kotlin** | **2.4.10** |
+| **NDK** | **27.0.12077973** (r27 side-by-side), pinned as `ndkVersion` and in CI. Not the obsolete NDK package. |
 
 In Android Studio, install via SDK Manager:
 

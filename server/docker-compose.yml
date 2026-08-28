@@ -1,0 +1,31 @@
+# Example Compose for MASQUE VPN server.
+# 1. Generate certs/config with server/scripts/gen-config.sh
+# 2. Copy out/server/* into ./data/ (config.server.toml + cert/)
+# 3: docker compose -f server/docker-compose.yml up -d
+#
+# Host networking is used so UDP/QUIC and TUN/NAT behave like a bare-metal install.
+# On Docker Desktop (Windows/macOS) host networking is limited — use a Linux VPS.
+
+services:
+  masque:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    image: masque-vpn-server:1.4.1
+    container_name: masque
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ./data/config.server.toml:/opt/masque/config.server.toml:ro
+      - ./data/cert:/opt/masque/cert:ro
+    environment:
+      # Optional overrides (entrypoint auto-detects WAN if unset):
+      # MASQUE_WAN_IF: eth0
+      # MASQUE_POOL: 10.8.0.0/24
+    sysctls:
+      net.ipv4.ip_forward: "1"

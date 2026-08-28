@@ -120,6 +120,25 @@ systemctl status masque.service --no-pager
 
 The unit enables IP forwarding, raises UDP `rmem_max`/`wmem_max` to 64 MiB, and adds an iptables MASQUERADE rule so client traffic is NATed out to the internet.
 
+## 5b. Docker (optional)
+
+Prefer a **Linux VPS** with Docker Engine. Host networking + `/dev/net/tun` match the systemd install. Docker Desktop on Windows/macOS is a poor fit for TUN/NAT.
+
+```bash
+# From the repo root, after gen-config.sh:
+mkdir -p server/data/cert
+cp out/server/config.server.toml server/data/
+cp out/server/server.crt out/server/server.key out/server/ca.crt server/data/cert/
+# Edit bind/server_name in config if needed (e.g. 0.0.0.0:443).
+
+docker compose -f server/docker-compose.yml up -d --build
+docker logs -f masque
+```
+
+The image builds `vpn-server` from `android/go-src/masque-vpn`. The entrypoint enables forwarding, 64 MiB UDP buffers, and MASQUERADE on the default WAN interface (`MASQUE_WAN_IF` to override). Mount only config + certs — no secrets are baked into the image.
+
+Graceful shutdown: the process exits on `SIGTERM`/`SIGINT` (Compose `stop`, systemd stop).
+
 ## 6. Verify
 
 ```bash

@@ -2,7 +2,6 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 // Optional release signing. Create a keystore.properties file in the project
@@ -21,13 +20,16 @@ val keystoreProps = Properties().apply {
 android {
     namespace = "com.next1971.masque"
     compileSdk = 36
+    // Pin NDK for reproducible packaging; gomobile AAR builds use the same
+    // side-by-side NDK via ANDROID_NDK_HOME (CI + local README).
+    ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = "com.next1971.masque"
         minSdk = 24          // Android 7.0 — CreateUnmonitoredTUNFromFD and VpnService are available
         targetSdk = 34
-        versionCode = 15
-        versionName = "1.4.0"
+        versionCode = 16
+        versionName = "1.4.1"
     }
 
     // Two form factors from one codebase:
@@ -75,13 +77,15 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    
 }
+
+// AGP 9 built-in Kotlin provides the kotlin {} extension (no kotlin-android plugin).
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
+
 dependencies {
     // Go core through gomobile. Place masque.aar in app/libs/ (see README).
     implementation(files("libs/masque.aar"))

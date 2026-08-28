@@ -1,0 +1,5 @@
+# Runtime mounts for Docker Compose (certs + config). Keep secrets out of git.
+data/
+*.key
+*.crt
+*.pem
