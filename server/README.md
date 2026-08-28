@@ -7,7 +7,7 @@ The server tunnels IP traffic over QUIC + HTTP/3 CONNECT-IP and authenticates cl
 - sends QUIC keepalives (`KeepAlivePeriod` 15s, `MaxIdleTimeout` 3 minutes);
 - pins each client certificate CN to a stable tunnel `/32` so Android can reconnect without rebuilding the TUN.
 
-**v1.4** clients (icon, on-screen ping) talk to the same v1.3 server protocol. You still need a v1.3+ binary if you want sticky `/32` after reconnect.
+**v1.4** / **v1.4.1** clients talk to the same v1.3+ server protocol (sticky `/32` after reconnect). **v1.4.1** adds optional **Docker** packaging (`server/docker-compose.yml`) and **graceful shutdown** on `SIGTERM`/`SIGINT`.
 
 > Keep the CA private key, server private key, and client private keys out of Git and distribute client bundles only through a secure channel.
 
