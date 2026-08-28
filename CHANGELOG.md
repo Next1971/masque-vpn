@@ -4,13 +4,9 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
-### Changed
-
-- Android toolchain: **AGP 9.3.2**, **Gradle 9.5.0** (AGP 9.3 requires Gradle ≥ 9.5).
-
 ## [v1.4.1] - 2026-08-28
 
-Maintenance / packaging release. Same CONNECT-IP protocol as v1.4.0; existing profiles keep working.
+Maintenance / packaging pre-release. Same CONNECT-IP protocol as v1.4.0; existing profiles keep working.
 
 ### Added
 
@@ -27,7 +23,8 @@ Maintenance / packaging release. Same CONNECT-IP protocol as v1.4.0; existing pr
 
 ### Changed
 
-- Android toolchain: **AGP 9.0.1**, **Gradle 9.1.0**, built-in Kotlin (no separate `kotlin-android` plugin). NDK pinned to **27.0.12077973**.
+- Android toolchain: **AGP 9.3.2**, **Gradle 9.5.0**, built-in Kotlin (no separate `kotlin-android` plugin). NDK pinned to **27.0.12077973**.
+- Windows installer / EXE product version **1.4.1**.
 
 ## [v1.4.0] - 2026-08-25
 

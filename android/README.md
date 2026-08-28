@@ -61,11 +61,12 @@ In Android Studio, install via SDK Manager:
 
 ## Use a release APK
 
-1. Install the phone or TV APK (allow installation from unknown sources).
-2. Import a real `profile.masque` from the server generator. The APK also ships a non-production `sample-profile.masque` in assets so you can see the expected format — do not use it to connect.
-3. Grant **VPN** permission. On Connect the app may ask to **ignore battery optimizations** — allow it so keepalives can run with the screen off.
-4. Connect. A MASQUE icon in the status bar means the VPN is up. The screen shows **Ping** (QUIC RTT to the server).
-5. Check `https://ifconfig.me` — you should see the **server** address.
+1. Download `masque-phone-*-unsigned.apk` or `masque-tv-*-unsigned.apk` from [v1.4.1](../../releases/tag/v1.4.1) (pre-release) or the [latest stable](../../releases/latest).
+2. Install the phone or TV APK (allow installation from unknown sources).
+3. Import a real `profile.masque` from the server generator. The APK also ships a non-production `sample-profile.masque` in assets so you can see the expected format — do not use it to connect.
+4. Grant **VPN** permission. On Connect the app may ask to **ignore battery optimizations** — allow it so keepalives can run with the screen off.
+5. Connect. A MASQUE icon in the status bar means the VPN is up. The screen shows **Ping** (QUIC RTT to the server) and the app **version**.
+6. Check `https://ifconfig.me` — you should see the **server** address.
 
 Disconnect with **Disconnect** in the app.
 

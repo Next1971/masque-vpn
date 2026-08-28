@@ -13,7 +13,7 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 - **Real clients.** Phone, TV, and Windows installers from [GitHub Releases](../../releases/latest) — not a CLI-only toy.
 - **One bundle per device.** Reconnect (sleep, Wi-Fi → LTE, long airplane mode) keeps a stable tunnel address.
 
-Latest line: **v1.4.1** (maintenance pre-release: Docker packaging, AGP 9, Android IPv6-bypass hardening). Profiles from v1.4.0 keep working. What is next lives in the [roadmap](docs/ROADMAP.md).
+Latest line: **[v1.4.1](../../releases/tag/v1.4.1)** (maintenance pre-release: Docker packaging, AGP 9, Android IPv6-bypass hardening). Profiles from v1.4.0 keep working. Stable downloads stay on [Latest release](../../releases/latest) (v1.4.0) until 1.4.1 is promoted. What is next lives in the [roadmap](docs/ROADMAP.md).
 
 ## Is this for me?
 
@@ -42,7 +42,8 @@ Do not use it if you:
 
 | Goal | Start here |
 |---|---|
-| Download the latest build | [Latest release](../../releases/latest) |
+| Download stable (v1.4.0) | [Latest release](../../releases/latest) |
+| Download v1.4.1 pre-release | [v1.4.1](../../releases/tag/v1.4.1) |
 | Deploy a Linux server | [Detailed server guide](server/README.md) |
 | Connect from Android | [Android guide](android/README.md) |
 | Connect from Windows | [Windows guide](windows/README.md) |
