@@ -116,6 +116,8 @@ func main() {
 		return c, err
 	}
 
+	var confirmBtn, installBtn *widget.Button
+
 	connectBtn := widget.NewButton("1. Connect and check OS", func() {
 		if busy {
 			return
@@ -161,7 +163,7 @@ func main() {
 		}()
 	})
 
-	confirmBtn := widget.NewButton("2. Confirm UDP port", func() {
+	confirmBtn = widget.NewButton("2. Confirm UDP port", func() {
 		if busy {
 			return
 		}
@@ -183,7 +185,7 @@ func main() {
 		probeLabel.SetText("Reachability: — (install first)")
 	})
 
-	installBtn := widget.NewButton("3. Install MASQUE server", func() {
+	installBtn = widget.NewButton("3. Install MASQUE server", func() {
 		if busy {
 			return
 		}
