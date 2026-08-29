@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -16,6 +17,8 @@ func extractTar(raw []byte, dest string) error {
 	if err != nil {
 		return err
 	}
+	destAbs = filepath.Clean(destAbs)
+	prefix := destAbs + string(os.PathSeparator)
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -24,13 +27,11 @@ func extractTar(raw []byte, dest string) error {
 		if err != nil {
 			return err
 		}
-		name := filepath.Clean(hdr.Name)
-		if strings.HasPrefix(name, "..") || filepath.IsAbs(name) {
-			return fmt.Errorf("refusing tar path %q", hdr.Name)
+		target, err := tarSafePath(destAbs, hdr.Name)
+		if err != nil {
+			return err
 		}
-		target := filepath.Join(destAbs, name)
-		rel, err := filepath.Rel(destAbs, target)
-		if err != nil || strings.HasPrefix(rel, "..") {
+		if target != destAbs && !strings.HasPrefix(target, prefix) {
 			return fmt.Errorf("refusing tar path %q", hdr.Name)
 		}
 		switch hdr.Typeflag {
@@ -61,4 +62,31 @@ func extractTar(raw []byte, dest string) error {
 			// skip other types
 		}
 	}
+}
+
+// tarSafePath maps a tar entry to destAbs. It rejects absolute names and ".."
+// so extraction cannot leave destAbs (zip-slip).
+func tarSafePath(destAbs, entry string) (string, error) {
+	n := strings.ReplaceAll(entry, "\\", "/")
+	if strings.HasPrefix(n, "/") {
+		return "", fmt.Errorf("refusing tar path %q", entry)
+	}
+	for _, p := range strings.Split(n, "/") {
+		if p == ".." {
+			return "", fmt.Errorf("refusing tar path %q", entry)
+		}
+	}
+	n = path.Clean("/" + n)
+	n = strings.TrimPrefix(n, "/")
+	if n == "." || n == "" {
+		return destAbs, nil
+	}
+	for _, p := range strings.Split(n, "/") {
+		if p == ".." || p == "" {
+			return "", fmt.Errorf("refusing tar path %q", entry)
+		}
+	}
+	target := filepath.Join(append([]string{destAbs}, strings.Split(n, "/")...)...)
+	target = filepath.Clean(target)
+	return target, nil
 }
