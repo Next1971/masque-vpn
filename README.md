@@ -94,26 +94,6 @@ See [`android/README.md`](android/README.md). In short:
 2. Open the app and **import a profile** (`profile.masque` from the generator). On **Android TV**, use **Paste config from clipboard** (or paste-text).
 3. Grant the VPN permission and connect. While connected, the screen shows **Ping** (smoothed QUIC RTT to the server).
 
-### Stability testing
-
-Android stability tests for the current line are **complete**. Devices used:
-
-- Honor 200 — MagicOS 10, Android 16
-- POCO X4 Pro — Android 13 (TKQ1)
-- Haier Android TV
-
-Results:
-
-- **Android TV:** The MASQUE tunnel remained connected for more than 36 hours without interruption on Haier Android TV.
-- **Android phones:** Six hours with the screen on completed without tunnel drops. Screen-off / sleep: keepalive plus reconnect; after wake the UI stays on Disconnect when the tunnel is still up.
-- **Airplane mode:** after **8 hours** of airplane mode the tunnel came back cleanly (reconnect + sticky `/32`).
-- Cell-tower handoff and mobile data → Wi-Fi completed without issues. Wi-Fi → mobile data: 12 switches in a row without losing traffic (underlying network + UDP `protect` + reconnect; server keeps the same `/32` per client certificate).
-
-### Remaining caveats
-
-- Some OEM battery savers still freeze the process; grant “ignore battery optimization” when the app asks. If the process is killed, the user must Connect again.
-
----
 
 ## 4. Security notes
 
