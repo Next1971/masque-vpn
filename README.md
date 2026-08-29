@@ -19,6 +19,7 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 - v1.4.1: maintenance pre-release with Docker, graceful shutdown,
   and Android IPv6 leak protection
 - v1.4.2: experimental Windows VPS Setup Helper; not a client update
+
   Do not download v1.4.2 expecting a newer Android or Windows VPN client.
 
 ## Is this for me?
