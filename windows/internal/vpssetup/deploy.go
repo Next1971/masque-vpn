@@ -223,19 +223,3 @@ echo '---ENDTOML---'
 	_, block, _ := strings.Cut(out, "---MASQUE---")
 	return parseMasqueProbe(block), nil
 }
-
-// PullClientBundles writes android/ and windows/ client trees from the VPS into destDir.
-// The CA private key stays on the server (/opt/masque/ca).
-func PullClientBundles(c *Client, destDir string, log Logf) error {
-	if log != nil {
-		log("Downloading client bundles (CA key stays on the VPS)…")
-	}
-	raw, err := c.RunBytes(2*time.Minute, "tar -C /opt/masque/generated -cf - android windows", nil)
-	if err != nil {
-		return fmt.Errorf("download bundles: %w", err)
-	}
-	if err := os.MkdirAll(destDir, 0o700); err != nil {
-		return err
-	}
-	return extractTar(raw, destDir)
-}

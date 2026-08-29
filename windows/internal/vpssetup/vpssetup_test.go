@@ -1,7 +1,6 @@
 package vpssetup
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -82,24 +81,6 @@ server_name = "vpn.example.com"
 	ex := parseMasqueProbe("HASCONFIG\nACTIVE\nHASCA\n---TOML---\nbind = \"0.0.0.0:443\"\nserver_name = \"10.0.0.1\"\n---ENDTOML---")
 	if !ex.Present || !ex.Active || !ex.HasCA || ex.UDPPort != 443 || ex.ServerName != "10.0.0.1" {
 		t.Fatalf("%+v", ex)
-	}
-}
-
-func TestTarSafePath(t *testing.T) {
-	dest := t.TempDir()
-	ok, err := tarSafePath(dest, "android/profile.masque")
-	if err != nil || !strings.Contains(ok, "profile.masque") {
-		t.Fatalf("%s %v", ok, err)
-	}
-	rel, err := filepath.Rel(dest, ok)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		t.Fatalf("rel %s %v", rel, err)
-	}
-	if _, err := tarSafePath(dest, "../etc/passwd"); err == nil {
-		t.Fatal("expected reject")
-	}
-	if _, err := tarSafePath(dest, "/etc/passwd"); err == nil {
-		t.Fatal("expected reject abs")
 	}
 }
 
