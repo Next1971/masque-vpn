@@ -13,7 +13,13 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 - **Real clients.** Phone, TV, and Windows installers from [GitHub Releases](../../releases/latest) — not a CLI-only toy.
 - **One bundle per device.** Reconnect (sleep, Wi-Fi → LTE, long airplane mode) keeps a stable tunnel address.
 
-Latest line: **[v1.4.1](../../releases/tag/v1.4.1)** (maintenance pre-release). **[v1.4.2](../../releases/tag/v1.4.2)** is an **experimental pre-release of the Windows VPS installer only** — not a new phone/PC VPN client. Stable downloads stay on [Latest release](../../releases/latest) (v1.4.0). What is next lives in the [roadmap](docs/ROADMAP.md).
+## Release status
+
+- Latest stable client release: v1.4.0
+- v1.4.1: maintenance pre-release with Docker, graceful shutdown,
+  and Android IPv6 leak protection
+- v1.4.2: experimental Windows VPS Setup Helper; not a client update
+  Do not download v1.4.2 expecting a newer Android or Windows VPN client.
 
 ## Is this for me?
 
