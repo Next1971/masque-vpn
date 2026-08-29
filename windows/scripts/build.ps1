@@ -16,10 +16,10 @@ go mod download
 Write-Host "=== Embedding Windows icons ==="
 $ico = Join-Path $PWD "installer\masque.ico"
 if (Test-Path $ico) {
-    foreach ($pkg in @("cmd\vpn-gui", "cmd\vpn-service", "cmd\vpn-client")) {
+    foreach ($pkg in @("cmd\vpn-gui", "cmd\vpn-setup", "cmd\vpn-service", "cmd\vpn-client")) {
         $manifest = if ($pkg -eq "cmd\vpn-gui") { "gui" } else { "cli" }
         Push-Location $pkg
-        go run github.com/tc-hib/go-winres@latest simply --icon $ico --arch amd64 --manifest $manifest --product-name "MASQUE VPN" --file-description "MASQUE VPN" --product-version "1.4.1.0" --file-version "1.4.1.0"
+        go run github.com/tc-hib/go-winres@latest simply --icon $ico --arch amd64 --manifest $manifest --product-name "MASQUE VPN" --file-description "MASQUE VPN" --product-version "1.4.2.0" --file-version "1.4.2.0"
         if ($LASTEXITCODE -ne 0) { Pop-Location; throw "go-winres failed in $pkg" }
         Pop-Location
     }
@@ -61,8 +61,11 @@ Write-Host "First Fyne/CGO compile is silent for several minutes (gcc compiling 
 Write-Host "Subsequent builds are much faster. Progress below:"
 go build -v -trimpath -ldflags "-s -w -H windowsgui" -o dist\masque-gui.exe .\cmd\vpn-gui
 
+Write-Host "=== Building masque-setup.exe (needs CGO) ==="
+go build -v -trimpath -ldflags "-s -w -H windowsgui" -o dist\masque-setup.exe .\cmd\vpn-setup
+
 Write-Host ""
 Write-Host "=== DONE ==="
-Write-Host "Output: dist\masque-svc.exe, dist\masque-gui.exe, dist\vpn-client.exe, dist\wintun.dll"
+Write-Host "Output: dist\masque-svc.exe, dist\masque-gui.exe, dist\masque-setup.exe, dist\vpn-client.exe, dist\wintun.dll"
 Write-Host "Install the service (admin): sc create MasqueVpn binPath= `"$pwd\dist\masque-svc.exe`" start= auto"
 Write-Host "Or build the MSI: powershell -File scripts\build-msi.ps1"

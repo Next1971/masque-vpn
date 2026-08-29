@@ -4,6 +4,21 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
+## [v1.4.2] - 2026-08-29
+
+**Experimental GitHub pre-release.** This tag is a test of the Windows VPS installer (`masque-setup.exe`), not a promotion of the Android/Windows VPN clients. Clients stay on **v1.4.0** (stable) / **v1.4.1** (maintenance pre-release). The setup tool can brick a misconfigured VPS, stores SSH host keys locally, and has **no certificate revocation**. Use only on machines you can wipe.
+
+### Added
+
+- **Windows VPS installer** (`masque-setup.exe`): SSH as root (password or key), refuse OS other than Ubuntu 22.04/24.04 or Debian 12, suggest free UDP ports (443, 2053, 8443, 41234), open ufw if present, install the MASQUE server, then **OK / not OK** only after a QUIC probe to the live listener. The CA key stays on the VPS.
+- Setup app **does not overwrite** an existing `/opt/masque` install: Connect detects the service/config and goes straight to issuing keys.
+- Setup app **issues `profile.masque` from #9** (`masque-client-9` …): numbers **1–8 are reserved test CNs**. Shows app-issued count out of 253 pool slots. Windows GUI imports the same `profile.masque` (no separate toml bundle).
+- `gen-config.sh`: `--index`, `--android-only`, `--client-only` so later clients do not replace `server.crt`.
+
+### Requirements (setup EXE)
+
+Put the matching **Linux server binary next to** `masque-setup.exe` (`vpn-server-linux-amd64` or `vpn-server-linux-arm64` from this release), or choose the file in the UI. The EXE does not embed the server.
+
 ## [v1.4.1] - 2026-08-28
 
 Maintenance / packaging pre-release. Same CONNECT-IP protocol as v1.4.0; existing profiles keep working.
