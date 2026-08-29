@@ -65,10 +65,10 @@ jobs:
         working-directory: windows
         run: |
           $ico = Join-Path (Get-Location) "installer\masque.ico"
-          foreach ($pkg in @("cmd\vpn-gui", "cmd\vpn-service", "cmd\vpn-client")) {
+          foreach ($pkg in @("cmd\vpn-gui", "cmd\vpn-setup", "cmd\vpn-service", "cmd\vpn-client")) {
             $manifest = if ($pkg -eq "cmd\vpn-gui") { "gui" } else { "cli" }
             Push-Location $pkg
-            go run github.com/tc-hib/go-winres@latest simply --icon $ico --arch amd64 --manifest $manifest --product-name "MASQUE VPN" --file-description "MASQUE VPN" --product-version "1.4.1.0" --file-version "1.4.1.0"
+            go run github.com/tc-hib/go-winres@latest simply --icon $ico --arch amd64 --manifest $manifest --product-name "MASQUE VPN" --file-description "MASQUE VPN" --product-version "1.4.2.0" --file-version "1.4.2.0"
             Pop-Location
           }
 
@@ -88,6 +88,7 @@ jobs:
         run: |
           $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
           go build -v -ldflags "-H windowsgui" -o dist/masque-gui.exe ./cmd/vpn-gui
+          go build -v -ldflags "-H windowsgui" -o dist/masque-setup.exe ./cmd/vpn-setup
 
       - name: Vet
         working-directory: windows
@@ -95,6 +96,7 @@ jobs:
           CGO_ENABLED: "1"
         run: |
           $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
+          go test ./internal/vpssetup
           go vet ./...
 
       - name: Install WiX

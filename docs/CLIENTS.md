@@ -62,6 +62,19 @@ still valid because they are signed by the same CA.
 > Reusing the CA is what keeps previously deployed clients unaffected. If you
 > create a *new* CA, every existing client stops trusting the server.
 
+### Windows setup app (from #9)
+
+[`masque-setup.exe`](../windows/README.md#install-the-server-from-windows-masque-setupexe) issues **one** `profile.masque` per click, CN `masque-client-9`, then `10`, … up to 253 app bundles. It does **not** write the old Windows `profile.client.toml` tree; import `profile.masque` on Android and in the Windows GUI.
+
+**#1–8 are test CNs.** They were used in early testing. The app never reissues them and does not rotate the server certificate, so those clients stay valid. They are **not** counted in the app’s `N/253` figure. You do not need to regenerate them for the server to keep working.
+
+CLI equivalent (does not replace `server.crt`):
+
+```bash
+./gen-config.sh --host YOUR_SERVER_HOST --port YOUR_PORT \
+  --reuse-ca /opt/masque/ca --client-only --android-only --index 9 --out /tmp/c9
+```
+
 ## Distribute bundles
 
 - Send each device its own bundle **out-of-band** (not committed to git).

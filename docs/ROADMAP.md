@@ -1,6 +1,6 @@
 # Roadmap
 
-> Status snapshot: last updated 2026-08-28. See [CHANGELOG.md](../CHANGELOG.md) for release history.
+> Status snapshot: last updated 2026-08-29. See [CHANGELOG.md](../CHANGELOG.md) for release history.
 
 ## Current status
 
@@ -10,6 +10,7 @@ MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** ac
 |---|---|---|
 | Server | Stable | QUIC keepalive, sticky `/32` per CN, mTLS, systemd, optional Docker, graceful SIGTERM |
 | Windows client | Stable | Signed EXE + Wintun DLL in release, GUI + tray icon, on-screen ping |
+| Windows VPS installer | **Experimental (v1.4.2)** | `masque-setup.exe` pre-release; not a substitute for the documented SSH install |
 | Android client | Stable | Phone + TV; TUN `/24` + IPv6 sink; version label in UI; reconnect without tearing TUN |
 
 This is experimental software and has not received an independent security audit.

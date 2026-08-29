@@ -24,5 +24,7 @@ set CGO_ENABLED=1
 set CC=gcc
 echo === masque-gui.exe ===
 go build -trimpath -ldflags "-s -w -H windowsgui" -o dist\masque-gui.exe .\cmd\vpn-gui || exit /b 1
-echo DONE: dist\masque-svc.exe dist\masque-gui.exe dist\vpn-client.exe
+echo === masque-setup.exe ===
+go build -trimpath -ldflags "-s -w -H windowsgui" -o dist\masque-setup.exe .\cmd\vpn-setup || exit /b 1
+echo DONE: dist\masque-svc.exe dist\masque-gui.exe dist\masque-setup.exe dist\vpn-client.exe
 endlocal

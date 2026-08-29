@@ -20,6 +20,28 @@ Each device needs its own bundle. See [Issuing client configs](../docs/CLIENTS.m
 
 The imported profile is stored under `%ProgramData%\MASQUE\` (not next to the EXE). The GUI talks to the service over a named pipe; the tray **Show / Connect / Disconnect** items do the same. Closing or hiding the window leaves the tunnel up — use **Disconnect**.
 
+---
+
+## Install the server from Windows (`masque-setup.exe`)
+
+**v1.4.2 experimental pre-release.** This is a test of remote install/issuance, not a finished admin product. It talks to the VPS as **root**, can change firewall and systemd, and has **no certificate revocation**. Prefer the [manual server guide](../server/README.md) if you need a known-good install. Do not run it against a VPS you cannot rebuild.
+
+This is a separate app from the VPN client (not in the MSI). It SSHes to a **root** VPS and runs the same layout as [server/README.md](../server/README.md).
+
+**Put the Linux server binary next to the EXE:** `vpn-server-linux-amd64` or `vpn-server-linux-arm64` from the [v1.4.2 release](../../releases/tag/v1.4.2) (same folder as `masque-setup.exe`), or pick the file in the UI. The installer does not contain the server.
+
+**Supported OS:** Ubuntu **22.04** or **24.04**, or Debian **12**, with systemd, `apt`, and `/dev/net/tun`. Anything else is refused.
+
+1. Download `masque-setup.exe` and the matching `vpn-server-linux-*` from [v1.4.2](../../releases/tag/v1.4.2). Keep them in one folder.
+2. Enter SSH host, root password or key, and **Connect and check OS**. If MASQUE is **already installed**, the app **does not reinstall** (no new CA, no new `server.crt`). Port pick / Install are disabled; use **Issue next bundle**.
+3. Pick a suggested UDP port (443, 2053, 8443, 41234 if not already listening) and **Confirm** — only when installing onto a blank VPS.
+4. **Install**. If `ufw` exists, UDP is allowed there. **Reachability OK** means this PC got a QUIC reply **after** the service was listening. ICMP ping is not used. A timeout usually means the **cloud security group** still blocks UDP.
+5. **Issue next bundle (#9+)** saves `masque-client-N.profile.masque` (import on Android or in the Windows GUI). **Save bootstrap profile.masque** is the unnumbered cert from install (`CN=masque-client`). `ca.key` stays at `/opt/masque/ca`.
+
+**Test certificates #1–8.** Existing bundles whose client CN is `masque-client-1` … `masque-client-8` (the first test pool) are **left alone**. The app never issues those numbers, does not replace `server.crt`, and does not create a new CA — so those devices keep working. They do not consume the app counter. The counter is **app-issued from #9**, shown as `N/253` (the tunnel IP pool size). Numbers 1–8 are reserved whether or not those files still exist on the VPS.
+
+There is **no certificate revocation** in this installer. SSH host keys are stored under `%AppData%\MASQUE\setup_known_hosts` (TOFU).
+
 Verify the exit IP:
 
 ```bat
@@ -46,12 +68,14 @@ windows/
 ├─ cmd/
 │  ├─ vpn-service/          # LocalSystem service → dist\masque-svc.exe
 │  ├─ vpn-gui/              # Fyne GUI → dist\masque-gui.exe
+│  ├─ vpn-setup/            # Fyne VPS installer → dist\masque-setup.exe
 │  └─ vpn-client/           # console + -svc-* CLI → dist\vpn-client.exe
 ├─ internal/
 │  ├─ clientcore/           # QUIC, mTLS, CONNECT-IP, forwarding
 │  ├─ engine/               # service tunnel lifecycle
 │  ├─ ipc/                  # named-pipe protocol (GUI ↔ service)
 │  ├─ store/                # ProgramData profile + certs
+│  ├─ vpssetup/             # SSH install helper used by masque-setup
 │  └─ winnet/               # Wintun, routes, DNS
 ├─ installer/               # WiX per-machine MSI + masque.ico
 ├─ scripts/

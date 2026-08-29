@@ -9,6 +9,7 @@ require (
 	github.com/quic-go/connect-ip-go v0.2.0
 	github.com/quic-go/quic-go v0.61.0
 	github.com/yosida95/uritemplate/v3 v3.0.2
+	golang.org/x/crypto v0.54.0
 	golang.org/x/sys v0.47.0
 	golang.zx2c4.com/wireguard v0.0.0-20260522210424-ecfc5a8d5446
 )
@@ -44,7 +45,6 @@ require (
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/yuin/goldmark v1.8.2 // indirect
-	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/image v0.41.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
