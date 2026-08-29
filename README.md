@@ -28,15 +28,13 @@ Do not use it if you:
 - need anonymous access or a security-audited product;
 - need iOS (maybe later- end of 2026), router or browser-extension support today.
   
+## Choose your installation path
 
-| What you get                   | Current status            |
-| ------------------------------ | ------------------------- |
-| Self-hosted server on your VPS | Available                 |
-| Android phone/tablet client    | Available                 |
-| Android TV client              | Available                 |
-| Windows desktop client         | Available                 |
-| QUIC tunnel latency in app     | New in v1.4               |
-| Client authentication          | mTLS with your private CA |
+| Path | Recommended for | Stability | Documentation |
+|---|---|---|---|
+| Manual SSH install | Users who want to inspect every server-side command | Recommended | [Server guide](server/README.md) |
+| Docker Compose | Users familiar with Docker on a dedicated Linux VPS | Experimental | [Docker guide](server/README.md#docker) |
+| Windows VPS Setup Helper | Testers using a disposable VPS | Test pre-release only | [Installer guide](docs/INSTALLER.md) |
 
 ## Quick start
 
