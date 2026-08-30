@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/netip"
 	"sync"
 
 	"github.com/Next1971/masque-vpn/internal/clientcore"
@@ -37,10 +38,11 @@ type Tunnel struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	cb       Callback
-	lastAddr string
-	lastBits int
-	started  bool
-	stopped  bool
+	lastAddr   string
+	lastBits   int
+	lastAddrV6 string
+	started    bool
+	stopped    bool
 }
 
 // AssignedAddr returns the server-assigned IPv4/IPv6 address (without prefix
@@ -50,21 +52,37 @@ type Tunnel struct {
 func (t *Tunnel) AssignedAddr() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.sess != nil && len(t.sess.AssignedPrefixes) > 0 {
-		return t.sess.AssignedPrefixes[0].Addr().String()
+	if t.sess != nil {
+		if p, ok := firstPrefix(t.sess.AssignedPrefixes, false); ok {
+			return p.Addr().String()
+		}
 	}
 	return t.lastAddr
 }
 
-// AssignedPrefixLen returns the prefix length of the first assigned prefix
+// AssignedPrefixLen returns the prefix length of the first assigned IPv4 prefix
 // (e.g. 32 for a /32 host route). Returns 0 if none.
 func (t *Tunnel) AssignedPrefixLen() int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.sess != nil && len(t.sess.AssignedPrefixes) > 0 {
-		return t.sess.AssignedPrefixes[0].Bits()
+	if t.sess != nil {
+		if p, ok := firstPrefix(t.sess.AssignedPrefixes, false); ok {
+			return p.Bits()
+		}
 	}
 	return t.lastBits
+}
+
+// AssignedAddrV6 is the server-assigned IPv6 address without prefix length.
+func (t *Tunnel) AssignedAddrV6() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.sess != nil {
+		if p, ok := firstPrefix(t.sess.AssignedPrefixes, true); ok {
+			return p.Addr().String()
+		}
+	}
+	return t.lastAddrV6
 }
 
 // UDPFd is the QUIC UDP socket. Android must protect() it and bind it to the
@@ -110,11 +128,26 @@ func profileFromConfig(cfg *Config) *clientcore.Profile {
 }
 
 func rememberAssigned(t *Tunnel, sess *clientcore.Session) {
-	if sess == nil || len(sess.AssignedPrefixes) == 0 {
+	if sess == nil {
 		return
 	}
-	t.lastAddr = sess.AssignedPrefixes[0].Addr().String()
-	t.lastBits = sess.AssignedPrefixes[0].Bits()
+	if p, ok := firstPrefix(sess.AssignedPrefixes, false); ok {
+		t.lastAddr = p.Addr().String()
+		t.lastBits = p.Bits()
+	}
+	if p, ok := firstPrefix(sess.AssignedPrefixes, true); ok {
+		t.lastAddrV6 = p.Addr().String()
+	}
+}
+
+func firstPrefix(prefixes []netip.Prefix, want6 bool) (netip.Prefix, bool) {
+	for _, p := range prefixes {
+		is6 := p.Addr().Is6() && !p.Addr().Is4In6()
+		if is6 == want6 {
+			return p, true
+		}
+	}
+	return netip.Prefix{}, false
 }
 
 // Dial establishes the CONNECT-IP session WITHOUT a TUN device. After it

@@ -77,11 +77,15 @@ StartLimitBurst=5
 Type=simple
 WorkingDirectory=/opt/masque
 ExecStartPre=/sbin/sysctl -w net.ipv4.ip_forward=1
+ExecStartPre=/sbin/sysctl -w net.ipv6.conf.all.forwarding=1
 ExecStartPre=/sbin/sysctl -w net.core.rmem_max=67108864
 ExecStartPre=/sbin/sysctl -w net.core.wmem_max=67108864
 ExecStartPre=/bin/sh -c 'iptables -t nat -C POSTROUTING -s 10.8.0.0/24 -o ${WAN_IF} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o ${WAN_IF} -j MASQUERADE'
+ExecStartPre=/bin/sh -c 'ip6tables -t nat -C POSTROUTING -s fd00:8::/64 -o ${WAN_IF} -j MASQUERADE 2>/dev/null || ip6tables -t nat -A POSTROUTING -s fd00:8::/64 -o ${WAN_IF} -j MASQUERADE || true'
 ExecStartPre=/bin/sh -c 'iptables -C FORWARD -i masque0 -o ${WAN_IF} -j ACCEPT 2>/dev/null || iptables -I FORWARD 1 -i masque0 -o ${WAN_IF} -j ACCEPT'
 ExecStartPre=/bin/sh -c 'iptables -C FORWARD -i ${WAN_IF} -o masque0 -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || iptables -I FORWARD 2 -i ${WAN_IF} -o masque0 -m state --state RELATED,ESTABLISHED -j ACCEPT'
+ExecStartPre=/bin/sh -c 'ip6tables -C FORWARD -i masque0 -o ${WAN_IF} -j ACCEPT 2>/dev/null || ip6tables -I FORWARD 1 -i masque0 -o ${WAN_IF} -j ACCEPT || true'
+ExecStartPre=/bin/sh -c 'ip6tables -C FORWARD -i ${WAN_IF} -o masque0 -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || ip6tables -I FORWARD 2 -i ${WAN_IF} -o masque0 -m state --state RELATED,ESTABLISHED -j ACCEPT || true'
 ExecStart=/opt/masque/vpn-server -config /opt/masque/config.server.toml
 User=root
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW

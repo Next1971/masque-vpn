@@ -4,7 +4,7 @@ A minimal Android VPN client on the same Go core (`clientcore`) as Windows/Linux
 
 The core is an `.aar` from **gomobile**. Kotlin supplies `VpnService`, a small UI, and profile import.
 
-**v1.3** added QUIC keepalives, a battery-exemption prompt, reconnect without tearing the TUN, and Wi-Fi → LTE recovery (sticky `/32` on the server). **v1.3.1** added **Paste config from clipboard** on Android TV. **v1.4** added the app icon and on-screen **Ping**. **v1.4.1** bumps the Android toolchain (AGP 9 / Gradle 9), shows the **version** in the UI, sinks IPv6 so apps cannot bypass the VPN, and uses TUN `/24` on-link.
+**v1.3** added QUIC keepalives, a battery-exemption prompt, reconnect without tearing the TUN, and Wi-Fi → LTE recovery (sticky `/32` on the server). **v1.3.1** added **Paste config from clipboard** on Android TV. **v1.4** added the app icon and on-screen **Ping**. **v1.4.1** bumps the Android toolchain (AGP 9 / Gradle 9), shows the **version** in the UI, sinks IPv6 so apps cannot bypass the VPN, and uses TUN `/24` on-link. **v1.5.0** forwards IPv6 through the tunnel when the server assigns a ULA address.
 
 Use a **release APK** if you only want to connect. The rest of this file is for building from source.
 
@@ -49,19 +49,19 @@ These are the versions in `go.mod`, the Android project files, and GitHub Action
 | **compileSdk** | **36** |
 | **targetSdk** | **34** (set explicitly; AGP 9 would otherwise default to compileSdk) |
 | **minSdk** | **24** (Android 7.0; same as `gomobile bind -androidapi 24`) |
-| **NDK** | **27.0.12077973** (r27 side-by-side), pinned as `ndkVersion` and in CI. Not the obsolete NDK package. |
+| **NDK** | **29.0.13599879** (r29 side-by-side), pinned as `ndkVersion` and in CI. Not the obsolete NDK package. |
 
 In Android Studio, install via SDK Manager:
 
 - Android SDK Platform **36** (compile) and platform tools
-- **NDK (Side by side)** matching **27.0.12077973** (or set `ANDROID_NDK_HOME` to that folder)
+- **NDK (Side by side)** matching **29.0.13599879** (or set `ANDROID_NDK_HOME` to that folder)
 - CMake if Studio offers it with the NDK
 
 ---
 
 ## Use a release APK
 
-1. Download `masque-phone-*-unsigned.apk` or `masque-tv-*-unsigned.apk` from [v1.4.1](../../releases/tag/v1.4.1) (pre-release) or the [latest stable](../../releases/latest).
+1. Download `masque-phone-*-unsigned.apk` or `masque-tv-*-unsigned.apk` from a **v1.5.0** build (or [v1.4.1](../../releases/tag/v1.4.1) if you are still on IPv4-only).
 2. Install the phone or TV APK (allow installation from unknown sources).
 3. Import a real `profile.masque` from the server generator. The APK also ships a non-production `sample-profile.masque` in assets so you can see the expected format — do not use it to connect.
 4. Grant **VPN** permission. On Connect the app may ask to **ignore battery optimizations** — allow it so keepalives can run with the screen off.
@@ -95,7 +95,7 @@ Do not reuse one bundle on the phone and the TV at the same time.
 Set:
 
 - `ANDROID_HOME` — SDK, e.g. `%LOCALAPPDATA%\Android\Sdk`
-- `ANDROID_NDK_HOME` — NDK, e.g. `%LOCALAPPDATA%\Android\Sdk\ndk\27.0.12077973`
+- `ANDROID_NDK_HOME` — NDK, e.g. `%LOCALAPPDATA%\Android\Sdk\ndk\29.0.13599879`
 
 **Windows** (from `android\`):
 
@@ -117,7 +117,7 @@ gomobile bind -target=android -androidapi 24 -o ../../app/libs/masque.aar ./mobi
 
 Success: `app/libs/masque.aar` (native `.so` for arm64 / armeabi-v7a / x86_64).
 
-If `gomobile bind` complains about the NDK, check `ANDROID_NDK_HOME` points at **27.0.12077973**, not “NDK (obsolete)”.
+If `gomobile bind` complains about the NDK, check `ANDROID_NDK_HOME` points at **29.0.13599879**, not “NDK (obsolete)”.
 
 ### 2. APK in Android Studio
 

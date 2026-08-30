@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/netip"
 	"sync"
 	"time"
 
@@ -200,11 +199,7 @@ func (p *Pump) readTUN(ctx context.Context) {
 					vlog("raised low TTL/HopLimit %d→%d on outgoing packet (%d bytes)", orig, fixTTL, len(pkt))
 				}
 			}
-			assigned := netip.Addr{}
-			if len(sess.AssignedPrefixes) > 0 {
-				assigned = sess.AssignedPrefixes[0].Addr()
-			}
-			if drop, _ := prepareOutgoing(pkt, assigned); drop {
+			if drop, _ := prepareOutgoing(pkt, sess.AssignedPrefixes); drop {
 				continue
 			}
 			if _, err := sess.ipconn.WritePacket(pkt); err != nil {

@@ -68,7 +68,7 @@ jobs:
           foreach ($pkg in @("cmd\vpn-gui", "cmd\vpn-setup", "cmd\vpn-service", "cmd\vpn-client")) {
             $manifest = if ($pkg -eq "cmd\vpn-gui") { "gui" } else { "cli" }
             Push-Location $pkg
-            go run github.com/tc-hib/go-winres@latest simply --icon $ico --arch amd64 --manifest $manifest --product-name "MASQUE VPN" --file-description "MASQUE VPN" --product-version "1.4.2.0" --file-version "1.4.2.0"
+            go run github.com/tc-hib/go-winres@latest simply --icon $ico --arch amd64 --manifest $manifest --product-name "MASQUE VPN" --file-description "MASQUE VPN" --product-version "1.5.0.0" --file-version "1.5.0.0"
             Pop-Location
           }
 
@@ -126,7 +126,7 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Install NDK
-        run: sdkmanager --install "ndk;27.0.12077973"
+        run: sdkmanager --install "ndk;29.0.13599879"
 
       - name: Install gomobile
         run: |
@@ -144,7 +144,7 @@ jobs:
       - name: Build AAR
         working-directory: android/go-src/masque-vpn
         env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.13599879
         run: gomobile bind -target=android -androidapi 24 -o ../../app/libs/masque.aar ./mobile
 
       - name: Grant execute permission for gradlew

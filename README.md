@@ -13,7 +13,7 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 - **Real clients.** Phone, TV, and Windows installers from [GitHub Releases](../../releases/latest) — not a CLI-only toy.
 - **One bundle per device.** Reconnect (sleep, Wi-Fi → LTE, long airplane mode) keeps a stable tunnel address.
 
-Latest line: **[v1.4.1](../../releases/tag/v1.4.1)** (maintenance pre-release). **[v1.4.2](../../releases/tag/v1.4.2)** is an **experimental pre-release of the Windows VPS installer only** — not a new phone/PC VPN client. Stable downloads stay on [Latest release](../../releases/latest) (v1.4.0). What is next lives in the [roadmap](docs/ROADMAP.md).
+Latest line: **v1.5.0** (optional IPv6 in the tunnel). **[v1.4.1](../../releases/tag/v1.4.1)** is the previous maintenance pre-release. **[v1.4.2](../../releases/tag/v1.4.2)** is an **experimental pre-release of the Windows VPS installer only**. What is next lives in the [roadmap](docs/ROADMAP.md).
 
 ## Is this for me?
 
@@ -42,6 +42,7 @@ Do not use it if you:
 
 | Goal | Start here |
 |---|---|
+| Download v1.5.0 (this tree) | Build from source until a GitHub Release is published |
 | Download stable (v1.4.0) | [Latest release](../../releases/latest) |
 | Download v1.4.1 pre-release | [v1.4.1](../../releases/tag/v1.4.1) |
 | Experimental VPS installer (v1.4.2) | [v1.4.2](../../releases/tag/v1.4.2) — **test only**, not a client update |
@@ -85,7 +86,7 @@ See [`windows/README.md`](windows/README.md) for full details. In short:
 
 See [`android/README.md`](android/README.md). In short:
 
-1. Install the APK from the release archive (enable "install from unknown sources"), or [build it from source](android/README.md) (**Go 1.25.5+**, **JDK 17**, **compileSdk 36** / **targetSdk 34** / **minSdk 24**, **NDK 27.0.12077973**).
+1. Install the APK from the release archive (enable "install from unknown sources"), or [build it from source](android/README.md) (**Go 1.25.5+**, **JDK 17**, **compileSdk 36** / **targetSdk 34** / **minSdk 24**, **NDK 29.0.13599879**).
 2. Open the app and **import a profile** (`profile.masque` from the generator). On **Android TV**, use **Paste config from clipboard** (or paste-text).
 3. Grant the VPN permission and connect. While connected, the screen shows **Ping** (smoothed QUIC RTT to the server).
 

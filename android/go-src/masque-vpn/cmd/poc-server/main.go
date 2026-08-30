@@ -58,6 +58,9 @@ func main() {
 		tunAddr    = flag.String("tun-addr", "10.8.0.1/24", "CIDR address to assign on the TUN interface")
 		mtu        = flag.Int("mtu", 1400, "MTU of the TUN interface")
 		poolCIDR   = flag.String("pool", "", "CIDR pool for client addresses (empty = single -assign address)")
+		tunAddrV6  = flag.String("tun-addr-v6", "", "optional IPv6 CIDR on the TUN (empty = IPv4-only)")
+		poolCIDRV6 = flag.String("pool-v6", "", "optional IPv6 CIDR pool for clients")
+		routeV6Str = flag.String("route-v6", "::/0", "IPv6 route advertised when a v6 pool is set")
 		configPath = flag.String("config", "", "path to config.toml (overrides individual flags)")
 	)
 	flag.Parse()
@@ -77,8 +80,16 @@ func main() {
 		cfg = serverConfig{
 			bind: c.Server.Bind, certFile: c.TLS.Cert, keyFile: c.TLS.Key,
 			serverName: c.Server.ServerName, clientCA: c.TLS.ClientCA,
-			tunName: c.TUN.Name, tunAddr: c.Network.TunAddr, mtu: c.TUN.MTU,
-			poolCIDR: c.Network.PoolCIDR, route: routePrefix,
+			tunName: c.TUN.Name, tunAddr: c.Network.TunAddr, tunAddrV6: c.Network.TunAddrV6,
+			mtu: c.TUN.MTU, poolCIDR: c.Network.PoolCIDR, poolCIDRV6: c.Network.PoolCIDRV6,
+			route: routePrefix,
+		}
+		if c.Network.RouteV6 != "" {
+			rp6, err := netip.ParsePrefix(c.Network.RouteV6)
+			if err != nil {
+				log.Fatalf("bad network.route_v6 %q: %v", c.Network.RouteV6, err)
+			}
+			cfg.routeV6 = rp6
 		}
 		log.Printf("loaded config from %s", *configPath)
 	} else {
@@ -90,8 +101,16 @@ func main() {
 		cfg = serverConfig{
 			bind: *bind, certFile: *certFile, keyFile: *keyFile,
 			serverName: *serverName, clientCA: *clientCA,
-			tunName: *tunName, tunAddr: *tunAddr, mtu: *mtu,
-			poolCIDR: *poolCIDR, route: routePrefix,
+			tunName: *tunName, tunAddr: *tunAddr, tunAddrV6: *tunAddrV6,
+			mtu: *mtu, poolCIDR: *poolCIDR, poolCIDRV6: *poolCIDRV6,
+			route: routePrefix,
+		}
+		if *poolCIDRV6 != "" {
+			rp6, err := netip.ParsePrefix(*routeV6Str)
+			if err != nil {
+				log.Fatalf("bad -route-v6 %q: %v", *routeV6Str, err)
+			}
+			cfg.routeV6 = rp6
 		}
 		// If no pool is set, use the single address from -assign (legacy behavior).
 		if *poolCIDR == "" {
@@ -110,10 +129,10 @@ func main() {
 
 type serverConfig struct {
 	bind, certFile, keyFile, serverName, clientCA string
-	tunName, tunAddr                              string
+	tunName, tunAddr, tunAddrV6                   string
 	mtu                                           int
-	poolCIDR                                      string
-	assign, route                                 netip.Prefix // assign is the fallback when no pool is set
+	poolCIDR, poolCIDRV6                          string
+	assign, route, routeV6                        netip.Prefix // assign is the fallback when no v4 pool is set
 }
 
 // Router demultiplexes packets read from the single shared TUN device to the
@@ -239,11 +258,11 @@ func run(cfg serverConfig) error {
 		}
 		tunDev = dev
 		name, _ := dev.Name()
-		if err := bringUpTUN(name, cfg.tunAddr); err != nil {
+		if err := bringUpTUN(name, cfg.tunAddr, cfg.tunAddrV6); err != nil {
 			dev.Close()
 			return fmt.Errorf("bring up TUN: %w", err)
 		}
-		log.Printf("TUN %s up with %s (mtu %d)", name, cfg.tunAddr, cfg.mtu)
+		log.Printf("TUN %s up with %s %s (mtu %d)", name, cfg.tunAddr, cfg.tunAddrV6, cfg.mtu)
 		defer dev.Close()
 	} else {
 		log.Printf("no -tun set: running in log-only mode (packets not forwarded)")
@@ -269,6 +288,18 @@ func run(cfg serverConfig) error {
 			return fmt.Errorf("build IP pool: %w", err)
 		}
 		log.Printf("IP pool %s ready (%d addresses available, server %s reserved)", cfg.poolCIDR, pool.Available(), serverTunAddr.Addr())
+	}
+	var poolV6 *IPPool
+	if cfg.poolCIDRV6 != "" {
+		serverTun6, err := netip.ParsePrefix(cfg.tunAddrV6)
+		if err != nil {
+			return fmt.Errorf("parse tun-addr-v6 %q: %w", cfg.tunAddrV6, err)
+		}
+		poolV6, err = NewIPPool(cfg.poolCIDRV6, serverTun6.Addr())
+		if err != nil {
+			return fmt.Errorf("build IPv6 pool: %w", err)
+		}
+		log.Printf("IPv6 pool %s ready (server %s reserved)", cfg.poolCIDRV6, serverTun6.Addr())
 	}
 	live := &sessionIndex{byCN: make(map[string]*connectip.Conn)}
 
@@ -370,8 +401,23 @@ func run(cfg serverConfig) error {
 				log.Printf("released %s back to pool (%d available)", alloc, pool.Available())
 			}()
 		}
+		var clientAddrV6 netip.Prefix
+		if poolV6 != nil {
+			alloc6, lease6, err := poolV6.AllocateFor(cn)
+			if err != nil {
+				log.Printf("cannot allocate IPv6 address: %v", err)
+				conn.Close()
+				return
+			}
+			clientAddrV6 = alloc6
+			log.Printf("allocated %s for CN=%q from IPv6 pool", clientAddrV6, cn)
+			defer func() {
+				poolV6.Release(cn, lease6, alloc6)
+				log.Printf("released %s back to IPv6 pool", alloc6)
+			}()
+		}
 
-		if err := handleConn(conn, tunDev, router, cfg.mtu, clientAddr, route); err != nil {
+		if err := handleConn(conn, tunDev, router, cfg.mtu, clientAddr, clientAddrV6, route, cfg.routeV6); err != nil {
 			log.Printf("session ended: %v", err)
 		}
 	})
@@ -385,6 +431,9 @@ func run(cfg serverConfig) error {
 		log.Printf("assigning client addresses from pool %s; advertising route %s", cfg.poolCIDR, route)
 	} else {
 		log.Printf("assigning fixed address %s; advertising route %s", assign, route)
+	}
+	if poolV6 != nil {
+		log.Printf("assigning IPv6 from pool %s; advertising route %s", cfg.poolCIDRV6, cfg.routeV6)
 	}
 	go srv.ServeListener(ln)
 
@@ -401,25 +450,32 @@ func run(cfg serverConfig) error {
 //   - if TUN is present, registers the client in the router and forwards its
 //     conn→TUN direction (router handles TUN→conn for all clients);
 //   - if TUN is absent (nil), uses the previous log-only mode.
-func handleConn(conn *connectip.Conn, tunDev tun.Device, router *Router, mtu int, assign, route netip.Prefix) error {
+func handleConn(conn *connectip.Conn, tunDev tun.Device, router *Router, mtu int, assign, assignV6, route, routeV6 netip.Prefix) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := conn.AssignAddresses(ctx, []netip.Prefix{assign}); err != nil {
+	assigned := []netip.Prefix{assign}
+	if assignV6.IsValid() {
+		assigned = append(assigned, assignV6)
+	}
+	if err := conn.AssignAddresses(ctx, assigned); err != nil {
 		return fmt.Errorf("assign addresses: %w", err)
 	}
-	log.Printf("assigned %s to client", assign)
+	log.Printf("assigned %v to client", assigned)
 
+	var routes []connectip.IPRoute
 	lastIP := lastIPOfPrefix(route)
-	if err := conn.AdvertiseRoute(ctx, []connectip.IPRoute{
-		{StartIP: route.Addr(), EndIP: lastIP, IPProtocol: 0},
-	}); err != nil {
+	routes = append(routes, connectip.IPRoute{StartIP: route.Addr(), EndIP: lastIP, IPProtocol: 0})
+	if routeV6.IsValid() {
+		last6 := lastIPOfPrefix(routeV6)
+		routes = append(routes, connectip.IPRoute{StartIP: routeV6.Addr(), EndIP: last6, IPProtocol: 0})
+	}
+	if err := conn.AdvertiseRoute(ctx, routes); err != nil {
 		return fmt.Errorf("advertise route: %w", err)
 	}
-	log.Printf("advertised route %s - %s to client", route.Addr(), lastIP)
+	log.Printf("advertised %d route(s) to client", len(routes))
 
 	if tunDev == nil {
-		// Log-only mode (without TUN): read packets into the log.
 		buf := make([]byte, 1500)
 		for {
 			n, err := conn.ReadPacket(buf)
@@ -430,10 +486,14 @@ func handleConn(conn *connectip.Conn, tunDev tun.Device, router *Router, mtu int
 		}
 	}
 
-	// Register this client's address so the router delivers its return packets.
 	clientIP := assign.Addr()
 	router.Add(clientIP, conn)
 	defer router.Remove(clientIP, conn)
+	if assignV6.IsValid() {
+		ip6 := assignV6.Addr()
+		router.Add(ip6, conn)
+		defer router.Remove(ip6, conn)
+	}
 
 	return forward(conn, tunDev, mtu)
 }

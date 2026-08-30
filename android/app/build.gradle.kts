@@ -22,14 +22,14 @@ android {
     compileSdk = 36
     // Pin NDK for reproducible packaging; gomobile AAR builds use the same
     // side-by-side NDK via ANDROID_NDK_HOME (CI + local README).
-    ndkVersion = "27.0.12077973"
+    ndkVersion = "29.0.13599879"
 
     defaultConfig {
         applicationId = "com.next1971.masque"
         minSdk = 24          // Android 7.0 — CreateUnmonitoredTUNFromFD and VpnService are available
         targetSdk = 34
-        versionCode = 16
-        versionName = "1.4.1"
+        versionCode = 17
+        versionName = "1.5.0"
     }
 
     // Two form factors from one codebase:

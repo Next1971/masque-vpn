@@ -204,6 +204,9 @@ func (p *Pump) readTUN(ctx context.Context) {
 					vlog("raised low TTL/HopLimit %d→%d on outgoing packet (%d bytes)", orig, fixTTL, len(pkt))
 				}
 			}
+			if drop, _ := prepareOutgoing(pkt, sess.AssignedPrefixes); drop {
+				continue
+			}
 			if _, err := sess.ipconn.WritePacket(pkt); err != nil {
 				break
 			}

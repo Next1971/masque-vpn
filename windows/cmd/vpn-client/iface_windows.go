@@ -31,6 +31,32 @@ func tunnelGateway(client netip.Addr) netip.Addr {
 	return netip.AddrFrom4(b)
 }
 
+func tunnelGateway6(client netip.Addr) netip.Addr {
+	p := netip.PrefixFrom(client, 64).Masked()
+	return p.Addr().Next()
+}
+
+func ifUpIPv6(iface string, addr netip.Prefix) error {
+	cidr := netip.PrefixFrom(addr.Addr(), 64).String()
+	if err := runCmd("netsh", "interface", "ipv6", "add", "address", iface, cidr); err != nil {
+		return err
+	}
+	_ = runCmd("netsh", "interface", "ipv6", "set", "subinterface", iface, "mtu=1400", "store=active")
+	return nil
+}
+
+func setupIPv6Default(iface string, client netip.Addr) (func(), error) {
+	gw := tunnelGateway6(client)
+	if err := runCmd("netsh", "interface", "ipv6", "add", "route", "::/0", iface, gw.String()); err != nil {
+		return nil, err
+	}
+	return func() {
+		if err := runCmd("netsh", "interface", "ipv6", "delete", "route", "::/0", iface, gw.String()); err != nil {
+			log.Printf("cleanup: del IPv6 default: %v", err)
+		}
+	}, nil
+}
+
 // runCmd runs a command and returns an error with output on failure.
 func runCmd(name string, args ...string) error {
 	out, err := exec.Command(name, args...).CombinedOutput()
@@ -73,6 +99,18 @@ func ifUp(iface string, addr netip.Prefix) error {
 // Windows creates packets with a normal TTL (not single-hop), and connect-ip-go
 // proxies them instead of dropping them as “Hop Limit too small: 1”.
 func setupTestRoute(iface string, dst netip.Addr, src netip.Addr) (func(), error) {
+	if dst.Is6() {
+		gw := tunnelGateway6(src)
+		pfx := dst.String() + "/128"
+		if err := runCmd("netsh", "interface", "ipv6", "add", "route", pfx, iface, gw.String()); err != nil {
+			return nil, err
+		}
+		return func() {
+			if err := runCmd("netsh", "interface", "ipv6", "delete", "route", pfx, iface, gw.String()); err != nil {
+				log.Printf("cleanup: del IPv6 host route %s: %v", pfx, err)
+			}
+		}, nil
+	}
 	idx, err := ifIndex(iface)
 	if err != nil {
 		return nil, err
@@ -208,17 +246,20 @@ func setupFullRoute(iface, server string, client netip.Addr, dns []string) (func
 // into TUN with the required src, so packets travel through the tunnel.
 func runPingTest(ctx context.Context, dst, iface string, count int) error {
 	log.Printf("sending %d ICMP echo(s) to %s via tunnel...", count, dst)
-	// ping -n <count> -w 5000 <dst>
-	out, err := exec.CommandContext(ctx, "ping", "-n", strconv.Itoa(count), "-w", "5000", dst).CombinedOutput()
+	args := []string{"-n", strconv.Itoa(count), "-w", "5000", dst}
+	if strings.Contains(dst, ":") {
+		args = append([]string{"-6"}, args...)
+	}
+	out, err := exec.CommandContext(ctx, "ping", args...).CombinedOutput()
 	// Windows ping outputs in OEM encoding; print it as-is.
 	log.Printf("ping output:\n%s", strings.TrimSpace(string(out)))
 	if err != nil {
 		return fmt.Errorf("ping failed: %w", err)
 	}
-	// On some Windows versions, ping returns 0 even with partial loss, so
-	// additionally check for “TTL=” (an indication of a successful reply).
-	if !strings.Contains(string(out), "TTL=") && !strings.Contains(string(out), "ttl=") {
-		return fmt.Errorf("no reply (no TTL in output)")
+	ok := strings.Contains(string(out), "TTL=") || strings.Contains(string(out), "ttl=") ||
+		strings.Contains(string(out), "time=") || strings.Contains(string(out), "Reply from")
+	if !ok {
+		return fmt.Errorf("no reply (no TTL/time in output)")
 	}
 	log.Printf("ping through tunnel SUCCEEDED — client core data-plane WORKS")
 	return nil

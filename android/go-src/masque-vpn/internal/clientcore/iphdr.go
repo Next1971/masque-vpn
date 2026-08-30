@@ -121,28 +121,41 @@ func describePkt(pkt []byte) string {
 }
 
 // prepareOutgoing drops packets the CONNECT-IP server would reject, and rewrites
-// a wrong IPv4 source to the assigned tunnel address (some Android OEMs source
+// a wrong source to the assigned tunnel address (some Android OEMs source
 // from Wi-Fi when the TUN is configured as /32).
 //
-// Returns drop=true to skip WritePacket; rewritten=true if the IPv4 header changed.
-func prepareOutgoing(pkt []byte, assigned netip.Addr) (drop, rewritten bool) {
-	if len(pkt) < 1 || !assigned.IsValid() {
+// IPv6 is forwarded when the session has an assigned IPv6 address; otherwise
+// it is dropped so dual-stack apps cannot leak via the sink address.
+//
+// Returns drop=true to skip WritePacket; rewritten=true if the header changed.
+func prepareOutgoing(pkt []byte, prefixes []netip.Prefix) (drop, rewritten bool) {
+	if len(pkt) < 1 {
 		return true, false
 	}
+	v4, v6 := splitAssigned(prefixes)
 	switch pkt[0] >> 4 {
 	case 6:
-		// Tunnel is IPv4-only today; sink IPv6 on the Android TUN and drop here
-		// so CONNECT-IP never sees :: / fe80 sources.
-		return true, false
+		if len(pkt) < 40 || !v6.IsValid() {
+			return true, false
+		}
+		var src16 [16]byte
+		copy(src16[:], pkt[8:24])
+		src := netip.AddrFrom16(src16)
+		if src == v6 {
+			return false, false
+		}
+		b := v6.As16()
+		copy(pkt[8:24], b[:])
+		return false, true
 	case 4:
-		if len(pkt) < 20 || !assigned.Is4() {
+		if len(pkt) < 20 || !v4.IsValid() {
 			return true, false
 		}
 		src := netip.AddrFrom4([4]byte{pkt[12], pkt[13], pkt[14], pkt[15]})
-		if src == assigned {
+		if src == v4 {
 			return false, false
 		}
-		b := assigned.As4()
+		b := v4.As4()
 		pkt[12], pkt[13], pkt[14], pkt[15] = b[0], b[1], b[2], b[3]
 		ihl := int(pkt[0]&0x0f) * 4
 		if ihl < 20 || ihl > len(pkt) {
@@ -157,4 +170,17 @@ func prepareOutgoing(pkt []byte, assigned netip.Addr) (drop, rewritten bool) {
 	default:
 		return true, false
 	}
+}
+
+func splitAssigned(prefixes []netip.Prefix) (v4, v6 netip.Addr) {
+	for _, p := range prefixes {
+		a := p.Addr()
+		if a.Is4() && !v4.IsValid() {
+			v4 = a
+		}
+		if a.Is6() && !a.Is4In6() && !v6.IsValid() {
+			v6 = a
+		}
+	}
+	return v4, v6
 }

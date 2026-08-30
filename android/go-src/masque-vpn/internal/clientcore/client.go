@@ -285,11 +285,7 @@ func (s *Session) Run(ctx context.Context) error {
 						vlog("raised low TTL/HopLimit %d→%d on outgoing packet (%d bytes)", orig, fixTTL, len(pkt))
 					}
 				}
-				assigned := netip.Addr{}
-				if len(s.AssignedPrefixes) > 0 {
-					assigned = s.AssignedPrefixes[0].Addr()
-				}
-				if drop, _ := prepareOutgoing(pkt, assigned); drop {
+				if drop, _ := prepareOutgoing(pkt, s.AssignedPrefixes); drop {
 					continue
 				}
 				if _, err := s.ipconn.WritePacket(pkt); err != nil {

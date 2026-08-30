@@ -51,6 +51,7 @@ class MasqueVpnService : VpnService() {
         // or some OEMs source packets from Wi-Fi (192.168.x.x); the server
         // drops them and DNS never reaches 1.1.1.1.
         const val TUN_PREFIX = 24
+        const val TUN_PREFIX_V6 = 64
         const val TUN_MTU = 1400
     }
 
@@ -166,12 +167,17 @@ class MasqueVpnService : VpnService() {
                 .setSession("MASQUE")
                 .setMtu(TUN_MTU)
                 .addAddress(addr, TUN_PREFIX)
-                // Sink IPv6 into the TUN (core drops it). Without ::/0, Telegram and
-                // others use IPv6 on the underlying network and bypass the VPN.
-                .addAddress("fd00::1", 128)
                 .addRoute("0.0.0.0", 0)
                 .addRoute("::", 0)
                 .addDnsServer(prof.dns)
+            val v6 = t.assignedAddrV6()
+            if (!v6.isNullOrEmpty()) {
+                builder.addAddress(v6, TUN_PREFIX_V6)
+                Log.i(TAG, "TUN IPv6 $v6/$TUN_PREFIX_V6")
+            } else {
+                // No IPv6 in the tunnel: sink so apps cannot bypass on dual-stack networks.
+                builder.addAddress("fd00::1", 128)
+            }
             if (prof.dns != "8.8.8.8") {
                 builder.addDnsServer("8.8.8.8")
             }
