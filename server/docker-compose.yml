@@ -11,7 +11,7 @@ services:
     build:
       context: ..
       dockerfile: server/Dockerfile
-    image: masque-vpn-server:1.4.1
+    image: masque-vpn-server:1.5.0
     container_name: masque
     restart: unless-stopped
     network_mode: host
@@ -27,5 +27,7 @@ services:
       # Optional overrides (entrypoint auto-detects WAN if unset):
       # MASQUE_WAN_IF: eth0
       # MASQUE_POOL: 10.8.0.0/24
+      # MASQUE_POOL_V6: fd00:8::/64
     sysctls:
       net.ipv4.ip_forward: "1"
+      net.ipv6.conf.all.forwarding: "1"

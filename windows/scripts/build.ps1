@@ -19,7 +19,7 @@ if (Test-Path $ico) {
     foreach ($pkg in @("cmd\vpn-gui", "cmd\vpn-setup", "cmd\vpn-service", "cmd\vpn-client")) {
         $manifest = if ($pkg -eq "cmd\vpn-gui") { "gui" } else { "cli" }
         Push-Location $pkg
-        go run github.com/tc-hib/go-winres@latest simply --icon $ico --arch amd64 --manifest $manifest --product-name "MASQUE VPN" --file-description "MASQUE VPN" --product-version "1.4.2.0" --file-version "1.4.2.0"
+        go run github.com/tc-hib/go-winres@latest simply --icon $ico --arch amd64 --manifest $manifest --product-name "MASQUE VPN" --file-description "MASQUE VPN" --product-version "1.5.0.0" --file-version "1.5.0.0"
         if ($LASTEXITCODE -ne 0) { Pop-Location; throw "go-winres failed in $pkg" }
         Pop-Location
     }

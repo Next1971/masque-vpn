@@ -72,6 +72,9 @@ OUT="./out"
 POOL="10.8.0.0/24"
 TUN_ADDR="10.8.0.1/24"
 ROUTE="0.0.0.0/0"
+POOL_V6="fd00:8::/64"
+TUN_ADDR_V6="fd00:8::1/64"
+ROUTE_V6="::/0"
 DNS="1.1.1.1"
 REUSE_CA=""
 INDEX=""
@@ -92,6 +95,9 @@ while [ $# -gt 0 ]; do
     --pool)     POOL="$2"; shift 2 ;;
     --tun-addr) TUN_ADDR="$2"; shift 2 ;;
     --route)    ROUTE="$2"; shift 2 ;;
+    --pool-v6)      POOL_V6="$2"; shift 2 ;;
+    --tun-addr-v6)  TUN_ADDR_V6="$2"; shift 2 ;;
+    --route-v6)     ROUTE_V6="$2"; shift 2 ;;
     --dns)      DNS="$2"; shift 2 ;;
     --reuse-ca)     REUSE_CA="$2"; shift 2 ;;
     --index)        INDEX="$2"; shift 2 ;;
@@ -206,9 +212,12 @@ name = "masque0"
 mtu  = 1400
 
 [network]
-tun_addr  = "$TUN_ADDR"
-pool_cidr = "$POOL"
-route     = "$ROUTE"
+tun_addr     = "$TUN_ADDR"
+pool_cidr    = "$POOL"
+route        = "$ROUTE"
+tun_addr_v6  = "$TUN_ADDR_V6"
+pool_cidr_v6 = "$POOL_V6"
+route_v6     = "$ROUTE_V6"
 TOML
 fi
 

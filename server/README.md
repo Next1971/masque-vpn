@@ -9,7 +9,7 @@ The server tunnels IP traffic over QUIC + HTTP/3 CONNECT-IP and authenticates cl
 - sends QUIC keepalives (`KeepAlivePeriod` 15s, `MaxIdleTimeout` 3 minutes);
 - pins each client certificate CN to a stable tunnel `/32` so Android can reconnect without rebuilding the TUN.
 
-**v1.4** / **v1.4.1** clients talk to the same v1.3+ server protocol (sticky `/32` after reconnect). **v1.4.1** adds optional **Docker** packaging (`server/docker-compose.yml`) and **graceful shutdown** on `SIGTERM`/`SIGINT`.
+**v1.4** / **v1.4.1** clients talk to the same v1.3+ server protocol (sticky `/32` after reconnect). **v1.4.1** adds optional **Docker** packaging (`server/docker-compose.yml`) and **graceful shutdown** on `SIGTERM`/`SIGINT`. **v1.5** optionally assigns ULA IPv6 (`fd00:8::/64`) inside the tunnel (sticky `/128`) and NAT66s it to the VPS WAN IPv6. IPv4-only configs without the v6 keys keep working. Old Android APKs sink IPv6 instead of forwarding it.
 
 > Keep the CA private key, server private key, and client private keys out of Git and distribute client bundles only through a secure channel.
 
@@ -112,8 +112,8 @@ Deliver the `windows/` bundle to Windows users and the `android/profile.masque` 
 ## 5. Install the systemd service
 
 ```bash
-# Edit server/systemd/masque.service if your public interface is not "eth0".
-# Find it with: ip route get 1.1.1.1  → the "dev XXX" name.
+# Edit server/systemd/masque.service if your public interface is not "eth0"
+# (iptables and ip6tables -o). Find it with: ip route get 1.1.1.1  → the "dev XXX" name.
 cp server/systemd/masque.service /etc/systemd/system/masque.service
 systemctl daemon-reload
 systemctl enable --now masque.service
@@ -175,7 +175,13 @@ mtu  = 1400
 tun_addr  = "10.8.0.1/24"    # server address on the tunnel
 pool_cidr = "10.8.0.0/24"    # client address pool
 route     = "0.0.0.0/0"      # route advertised to clients (0.0.0.0/0 = full tunnel)
+# Optional dual-stack (v1.5). Omit all three to stay IPv4-only.
+# tun_addr_v6  = "fd00:8::1/64"
+# pool_cidr_v6 = "fd00:8::/64"
+# route_v6     = "::/0"
 ```
+
+IPv6 in the tunnel needs WAN IPv6 on the VPS, `net.ipv6.conf.all.forwarding=1`, and ip6tables MASQUERADE for `fd00:8::/64` on the public interface (see `masque.service`). Clients still connect over IPv4 QUIC; do not publish an AAAA for the VPN hostname until a host-route bypass exists for that address.
 
 ## Troubleshooting
 

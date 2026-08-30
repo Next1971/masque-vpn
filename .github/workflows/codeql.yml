@@ -107,7 +107,7 @@ jobs:
 
     - name: Install Android NDK
       if: matrix.language == 'java-kotlin'
-      run: sdkmanager --install "ndk;27.0.12077973"
+      run: sdkmanager --install "ndk;29.0.13599879"
 
     - name: Install Go Mobile tools
       if: matrix.language == 'java-kotlin'
@@ -121,7 +121,7 @@ jobs:
       if: matrix.language == 'java-kotlin'
       working-directory: android/go-src/masque-vpn
       env:
-        ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+        ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.13599879
       run: |
         mkdir -p ../../app/libs
         gomobile bind -target=android -androidapi 24 -o ../../app/libs/masque.aar ./mobile

@@ -25,6 +25,33 @@ func tunnelGateway(client netip.Addr) netip.Addr {
 	return netip.AddrFrom4(b)
 }
 
+func tunnelGateway6(client netip.Addr) netip.Addr {
+	p := netip.PrefixFrom(client, 64).Masked()
+	return p.Addr().Next()
+}
+
+func IfUpIPv6(iface string, addr netip.Prefix) error {
+	cidr := netip.PrefixFrom(addr.Addr(), 64).String()
+	if err := runCmd("netsh", "interface", "ipv6", "add", "address", iface, cidr); err != nil {
+		return err
+	}
+	_ = runCmd("netsh", "interface", "ipv6", "set", "subinterface", iface, "mtu=1400", "store=active")
+	return nil
+}
+
+// SetupIPv6Default sends IPv6 internet traffic through TUN via the ULA gateway (::1 in /64).
+func SetupIPv6Default(iface string, client netip.Addr) (func(), error) {
+	gw := tunnelGateway6(client)
+	if err := runCmd("netsh", "interface", "ipv6", "add", "route", "::/0", iface, gw.String()); err != nil {
+		return nil, err
+	}
+	return func() {
+		if err := runCmd("netsh", "interface", "ipv6", "delete", "route", "::/0", iface, gw.String()); err != nil {
+			log.Printf("cleanup: del IPv6 default: %v", err)
+		}
+	}, nil
+}
+
 func runCmd(name string, args ...string) error {
 	out, err := exec.Command(name, args...).CombinedOutput()
 	if err != nil {

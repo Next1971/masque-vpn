@@ -10,14 +10,16 @@ import (
 	"os/exec"
 )
 
-// bringUpTUN assigns an address to the TUN interface and brings it up.
-// addr is in CIDR format, e.g. "10.8.0.1/24".
-func bringUpTUN(name, addr string) error {
-	// ip addr add <addr> dev <name>
-	if out, err := exec.Command("ip", "addr", "add", addr, "dev", name).CombinedOutput(); err != nil {
-		return fmt.Errorf("ip addr add: %w: %s", err, out)
+// bringUpTUN assigns one or more CIDR addresses to the TUN and brings it up.
+func bringUpTUN(name string, addrs ...string) error {
+	for _, addr := range addrs {
+		if addr == "" {
+			continue
+		}
+		if out, err := exec.Command("ip", "addr", "add", addr, "dev", name).CombinedOutput(); err != nil {
+			return fmt.Errorf("ip addr add %s: %w: %s", addr, err, out)
+		}
 	}
-	// ip link set <name> up
 	if out, err := exec.Command("ip", "link", "set", name, "up").CombinedOutput(); err != nil {
 		return fmt.Errorf("ip link set up: %w: %s", err, out)
 	}

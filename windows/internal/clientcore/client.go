@@ -265,6 +265,9 @@ func (s *Session) Run(ctx context.Context) error {
 						vlog("raised low TTL/HopLimit %d→%d on outgoing packet (%d bytes)", orig, fixTTL, len(pkt))
 					}
 				}
+				if drop, _ := prepareOutgoing(pkt, s.AssignedPrefixes); drop {
+					continue
+				}
 				if _, err := s.ipconn.WritePacket(pkt); err != nil {
 					errCh <- fmt.Errorf("conn write: %w", err)
 					return

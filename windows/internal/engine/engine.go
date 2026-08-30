@@ -181,11 +181,24 @@ func (e *Engine) loop(ctx context.Context) {
 		e.set(ipc.StateError, "server assigned no address", "")
 		return
 	}
-	clientAddr := sess.AssignedPrefixes[0]
+	v4, v6 := clientcore.SplitAssigned(sess.AssignedPrefixes)
+	if !v4.IsValid() {
+		sess.Close()
+		e.set(ipc.StateError, "server assigned no IPv4 address", "")
+		return
+	}
+	clientAddr := v4
 	if err := winnet.IfUp(name, clientAddr); err != nil {
 		sess.Close()
 		e.set(ipc.StateError, fmt.Sprintf("interface up: %v", err), "")
 		return
+	}
+	if v6.IsValid() {
+		if err := winnet.IfUpIPv6(name, v6); err != nil {
+			sess.Close()
+			e.set(ipc.StateError, fmt.Sprintf("IPv6 interface up: %v", err), "")
+			return
+		}
 	}
 	cleanup, err := winnet.SetupFullRoute(name, prof.Server, clientAddr.Addr(), prof.DNS)
 	if err != nil {
@@ -194,6 +207,15 @@ func (e *Engine) loop(ctx context.Context) {
 		return
 	}
 	defer cleanup()
+	if v6.IsValid() {
+		c6, err := winnet.SetupIPv6Default(name, v6.Addr())
+		if err != nil {
+			sess.Close()
+			e.set(ipc.StateError, fmt.Sprintf("IPv6 routes: %v", err), "")
+			return
+		}
+		defer c6()
+	}
 
 	e.set(ipc.StateConnected, "connected", clientAddr.Addr().String())
 

@@ -1,17 +1,17 @@
 # Roadmap
 
-> Status snapshot: last updated 2026-08-29. See [CHANGELOG.md](../CHANGELOG.md) for release history.
+> Status snapshot: last updated 2026-08-30. See [CHANGELOG.md](../CHANGELOG.md) for release history.
 
 ## Current status
 
-MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** across all three components (server, Windows client, Android client). **v1.0** was publicly released on **August 14, 2026**. **v1.3** is the Android reconnect release. **v1.4** added client polish (icon + on-screen ping). **v1.4.1** (pre-release) is a maintenance line: AGP 9 / Gradle 9, Docker packaging, graceful server shutdown, and Android IPv6-bypass hardening.
+MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** across all three components (server, Windows client, Android client). **v1.0** was publicly released on **August 14, 2026**. **v1.3** is the Android reconnect release. **v1.4** added client polish (icon + on-screen ping). **v1.4.1** (pre-release) is a maintenance line: AGP 9 / Gradle 9, Docker packaging, graceful server shutdown, and Android IPv6-bypass hardening. **v1.5.0** adds optional dual-stack inside the tunnel (ULA + NAT66).
 
 | Component | Status | Notes |
 |---|---|---|
-| Server | Stable | QUIC keepalive, sticky `/32` per CN, mTLS, systemd, optional Docker, graceful SIGTERM |
-| Windows client | Stable | Signed EXE + Wintun DLL in release, GUI + tray icon, on-screen ping |
+| Server | Stable | QUIC keepalive, sticky `/32` and optional sticky `/128`, mTLS, systemd, optional Docker, graceful SIGTERM |
+| Windows client | Stable | Signed EXE + Wintun DLL in release, GUI + tray icon, on-screen ping, IPv6 default via TUN when the server assigns v6 |
 | Windows VPS installer | **Experimental (v1.4.2)** | `masque-setup.exe` pre-release; not a substitute for the documented SSH install |
-| Android client | Stable | Phone + TV; TUN `/24` + IPv6 sink; version label in UI; reconnect without tearing TUN |
+| Android client | Stable | Phone + TV; dual-stack TUN when the server has a v6 pool; version label in UI; reconnect without tearing TUN |
 
 This is experimental software and has not received an independent security audit.
 
@@ -52,26 +52,30 @@ This is experimental software and has not received an independent security audit
 - Android toolchain: AGP 9.x + Gradle 9.x + built-in Kotlin (see `android/README.md` for current versions).
 - Docker image / Compose for the server (host network, TUN, NAT).
 - Server graceful shutdown on SIGTERM/SIGINT.
-- Android IPv6 sink + TUN `/24` (block dual-stack bypass; not full dual-stack VPN).
+- Android IPv6 sink + TUN `/24` (block dual-stack bypass on IPv4-only servers).
 - Version label in Android UI; high-contrast launcher icon.
+
+## Completed (v1.5.0)
+
+- [x] Full IPv6 in the tunnel (optional pool, NAT66/forwarding, client assigned v6).
+- Android forwards assigned IPv6 instead of sinking it when the server has a v6 pool.
+- Windows GUI/console and Linux console install IPv6 on TUN and `::/0`.
 
 ## Known limitations (all platforms)
 
-- Tunnel data-plane is still **IPv4-only** (IPv6 is sunk/dropped on Android so apps cannot bypass the VPN; full IPv6-in-tunnel is not shipped).
+- Connecting to the VPN server is still **IPv4 QUIC** (no AAAA / UDP 443 on IPv6 for the control plane in this release).
 - In-tunnel DNS is plaintext UDP:53 — hidden from the local ISP but visible to the server operator. DoH/DoT is planned.
 - Single server/profile per client — no profile list or automatic failover.
 - No independent security audit yet.
 - Some OEM battery savers ignore the exemption dialog; a killed process still needs a manual Connect.
+- NAT64/DNS64 is not included: AAAA destinations need WAN IPv6 on the VPS.
 
 ## In progress / next (v1.x remainder)
 
 - [ ] DNS over HTTPS/TLS (DoH/DoT) inside the tunnel.
 - [ ] MTU experiments for different networks.
 - [ ] Dependency review process for quic-go / connect-ip-go version pinning (see notes below).
-
-## v1.5 (planned)
-
-- [ ] Full IPv6 in the tunnel (pool, NAT66/forwarding, client assigned v6).
+- [ ] QUIC to the server over IPv6 (AAAA + host-route bypass).
 
 ## Dependency notes
 

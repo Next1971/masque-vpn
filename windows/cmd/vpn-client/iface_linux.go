@@ -32,18 +32,45 @@ func ifUp(iface string, addr netip.Prefix) error {
 	return nil
 }
 
+func ifUpIPv6(iface string, addr netip.Prefix) error {
+	cidr := netip.PrefixFrom(addr.Addr(), 64).String()
+	return runCmd("ip", "addr", "add", cidr, "dev", iface)
+}
+
+func setupIPv6Default(iface string, client netip.Addr) (func(), error) {
+	args := []string{"-6", "route", "add", "::/0", "dev", iface}
+	if client.Is6() {
+		args = append(args, "src", client.String())
+	}
+	if err := runCmd("ip", args...); err != nil {
+		return nil, err
+	}
+	return func() {
+		if err := runCmd("ip", "-6", "route", "del", "::/0", "dev", iface); err != nil {
+			log.Printf("cleanup: del ::/0: %v", err)
+		}
+	}, nil
+}
+
 // setupTestRoute adds a route ONLY to dst through TUN without changing the default route.
 // Set src to the client tunnel address so outgoing packets have the
 // correct source (otherwise the kernel NATs a foreign source and the reply does not return).
 // Safe on a VPS: SSH and server traffic continue using the previous path.
 // Returns cleanup, which removes the route.
 func setupTestRoute(iface string, dst netip.Addr, src netip.Addr) (func(), error) {
+	fam := []string{}
 	route := dst.String() + "/32"
-	if err := runCmd("ip", "route", "add", route, "dev", iface, "src", src.String()); err != nil {
+	if dst.Is6() {
+		fam = []string{"-6"}
+		route = dst.String() + "/128"
+	}
+	args := append(append([]string{}, fam...), "route", "add", route, "dev", iface, "src", src.String())
+	if err := runCmd("ip", args...); err != nil {
 		return nil, err
 	}
 	return func() {
-		if err := runCmd("ip", "route", "del", route, "dev", iface); err != nil {
+		del := append(append([]string{}, fam...), "route", "del", route, "dev", iface)
+		if err := runCmd("ip", del...); err != nil {
 			log.Printf("cleanup: del route %s: %v", route, err)
 		}
 	}, nil
@@ -135,7 +162,11 @@ func defaultGateway() (netip.Addr, string, error) {
 // Packets travel TUN → kernel → server → Internet → back. It tests the data plane.
 func runPingTest(ctx context.Context, dst, iface string, count int) error {
 	log.Printf("sending %d ICMP echo(s) to %s via tunnel (bind %s)...", count, dst, iface)
-	out, err := exec.CommandContext(ctx, "ping", "-c", fmt.Sprint(count), "-W", "5", "-I", iface, dst).CombinedOutput()
+	args := []string{"-c", fmt.Sprint(count), "-W", "5", "-I", iface, dst}
+	if strings.Contains(dst, ":") {
+		args = append([]string{"-6"}, args...)
+	}
+	out, err := exec.CommandContext(ctx, "ping", args...).CombinedOutput()
 	log.Printf("ping output:\n%s", strings.TrimSpace(string(out)))
 	if err != nil {
 		return fmt.Errorf("ping failed: %w", err)

@@ -4,6 +4,23 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
+## [v1.5.0] - 2026-08-30
+
+Optional **IPv6 inside the tunnel**. Existing IPv4-only server configs (no `tun_addr_v6` / `pool_cidr_v6`) behave as before. Client profiles do not change. QUIC to the server stays on IPv4; do not add an AAAA for the VPN hostname in this release.
+
+### Added
+
+- Server: optional ULA pool `fd00:8::/64`, sticky `/128` per client CN, `route_v6` (`::/0` by default).
+- NAT66 (ip6tables MASQUERADE) in systemd, Docker entrypoint, and `gen-config.sh`.
+- Android 1.5.0 (`versionCode` 17): assigned IPv6 on TUN, forward instead of sink when the server hands out v6.
+- Windows GUI and console clients: IPv6 address on Wintun plus `::/0` through the tunnel.
+- Linux console `vpn-client`: IPv6 address and default (or test) route through TUN.
+
+### Changed
+
+- Android NDK pin **29.0.13599879** (AGP 9; local and CI).
+- Windows product version **1.5.0** (winres / MSI).
+
 ## [v1.4.2] - 2026-08-29
 
 **Experimental GitHub pre-release.** This tag is a test of the Windows VPS installer (`masque-setup.exe`), not a promotion of the Android/Windows VPN clients. Clients stay on **v1.4.0** (stable) / **v1.4.1** (maintenance pre-release). The setup tool can brick a misconfigured VPS, stores SSH host keys locally, and has **no certificate revocation**. Use only on machines you can wipe.

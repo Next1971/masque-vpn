@@ -33,9 +33,12 @@ type TUNSection struct {
 }
 
 type NetworkSection struct {
-	TunAddr  string `toml:"tun_addr"`  // server tunnel address, e.g. 10.8.0.1/24
-	PoolCIDR string `toml:"pool_cidr"` // client assignment pool, e.g. 10.8.0.0/24
-	Route    string `toml:"route"`     // route advertised to the client, e.g. 0.0.0.0/0
+	TunAddr    string `toml:"tun_addr"`     // server tunnel address, e.g. 10.8.0.1/24
+	PoolCIDR   string `toml:"pool_cidr"`    // client assignment pool, e.g. 10.8.0.0/24
+	Route      string `toml:"route"`        // route advertised to the client, e.g. 0.0.0.0/0
+	TunAddrV6  string `toml:"tun_addr_v6"`  // optional IPv6 TUN address, e.g. fd00:8::1/64
+	PoolCIDRV6 string `toml:"pool_cidr_v6"` // optional IPv6 client pool, e.g. fd00:8::/64
+	RouteV6    string `toml:"route_v6"`     // optional IPv6 route, default ::/0 when pool is set
 }
 
 // LoadConfig reads and validates config.toml.
@@ -78,6 +81,14 @@ func (c *Config) validate() error {
 	}
 	if c.Network.Route == "" {
 		c.Network.Route = "0.0.0.0/0"
+	}
+	v6Pool := c.Network.PoolCIDRV6 != ""
+	v6Tun := c.Network.TunAddrV6 != ""
+	if v6Pool != v6Tun {
+		return fmt.Errorf("network.tun_addr_v6 and network.pool_cidr_v6 must be set together")
+	}
+	if v6Pool && c.Network.RouteV6 == "" {
+		c.Network.RouteV6 = "::/0"
 	}
 	return nil
 }

@@ -15,12 +15,13 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 
 ## Release status
 
+- **v1.5.0** (this branch): optional IPv6 inside the tunnel; build clients from source until a GitHub Release is published
 - Latest stable client release: v1.4.0
 - v1.4.1: maintenance pre-release with Docker, graceful shutdown,
   and Android IPv6 leak protection
 - v1.4.2: experimental Windows VPS Setup Helper; not a client update
 
-  Do not download v1.4.2 expecting a newer Android or Windows VPN client.
+  Do not download v1.4.2 expecting a newer Android or Windows VPN client. What is next lives in the [roadmap](docs/ROADMAP.md).
 
 ## Is this for me?
 
@@ -41,12 +42,13 @@ Do not use it if you:
 |---|---|---|---|
 | Manual SSH install | Users who want to inspect every server-side command | Recommended | [Server guide](server/README.md) |
 | Docker Compose | Users familiar with Docker on a dedicated Linux VPS | Experimental | [Docker guide](server/README.md#docker) |
-| Windows VPS Setup Helper | Testers using a disposable VPS | Test pre-release only | [Installer guide](docs/INSTALLER.md) |
+| Windows VPS Setup Helper | Testers using a disposable VPS | Test pre-release only | [masque-setup.exe](windows/README.md#install-the-server-from-windows-masque-setupexe) |
 
 ## Quick start
 
 | Goal | Start here |
 |---|---|
+| Download v1.5.0 (this tree) | Build from source until a GitHub Release is published |
 | Download stable (v1.4.0) | [Latest release](../../releases/latest) |
 | Download v1.4.1 pre-release | [v1.4.1](../../releases/tag/v1.4.1) |
 | Experimental VPS installer (v1.4.2) | [v1.4.2](../../releases/tag/v1.4.2) — **test only**, not a client update |
@@ -90,7 +92,7 @@ See [`windows/README.md`](windows/README.md) for full details. In short:
 
 See [`android/README.md`](android/README.md). In short:
 
-1. Install the APK from the release archive (enable "install from unknown sources"), or [build it from source](android/README.md) (**Go 1.25.5+**, **JDK 17**, **compileSdk 36** / **targetSdk 34** / **minSdk 24**, **NDK 27.0.12077973**).
+1. Install the APK from the release archive (enable "install from unknown sources"), or [build it from source](android/README.md) (**Go 1.25.5+**, **JDK 17**, **compileSdk 36** / **targetSdk 34** / **minSdk 24**, **NDK 29.0.13599879**).
 2. Open the app and **import a profile** (`profile.masque` from the generator). On **Android TV**, use **Paste config from clipboard** (or paste-text).
 3. Grant the VPN permission and connect. While connected, the screen shows **Ping** (smoothed QUIC RTT to the server).
 

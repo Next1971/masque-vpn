@@ -119,3 +119,60 @@ func describePkt(pkt []byte) string {
 		return fmt.Sprintf("unknown-version %d", pkt[0]>>4)
 	}
 }
+
+func prepareOutgoing(pkt []byte, prefixes []netip.Prefix) (drop, rewritten bool) {
+	if len(pkt) < 1 {
+		return true, false
+	}
+	v4, v6 := splitAssigned(prefixes)
+	switch pkt[0] >> 4 {
+	case 6:
+		if len(pkt) < 40 || !v6.IsValid() {
+			return true, false
+		}
+		var src16 [16]byte
+		copy(src16[:], pkt[8:24])
+		src := netip.AddrFrom16(src16)
+		if src == v6 {
+			return false, false
+		}
+		b := v6.As16()
+		copy(pkt[8:24], b[:])
+		return false, true
+	case 4:
+		if len(pkt) < 20 || !v4.IsValid() {
+			return true, false
+		}
+		src := netip.AddrFrom4([4]byte{pkt[12], pkt[13], pkt[14], pkt[15]})
+		if src == v4 {
+			return false, false
+		}
+		b := v4.As4()
+		pkt[12], pkt[13], pkt[14], pkt[15] = b[0], b[1], b[2], b[3]
+		ihl := int(pkt[0]&0x0f) * 4
+		if ihl < 20 || ihl > len(pkt) {
+			ihl = 20
+		}
+		pkt[10] = 0
+		pkt[11] = 0
+		csum := ipv4Checksum(pkt[:ihl])
+		pkt[10] = byte(csum >> 8)
+		pkt[11] = byte(csum & 0xff)
+		return false, true
+	default:
+		return true, false
+	}
+}
+
+func splitAssigned(prefixes []netip.Prefix) (v4, v6 netip.Addr) {
+	for _, p := range prefixes {
+		a := p.Addr()
+		if a.Is4() && !v4.IsValid() {
+			v4 = a
+		}
+		if a.Is6() && !a.Is4In6() && !v6.IsValid() {
+			v6 = a
+		}
+	}
+	return v4, v6
+}
