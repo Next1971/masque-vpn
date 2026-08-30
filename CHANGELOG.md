@@ -6,7 +6,7 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [v1.5.0] - 2026-08-30
 
-Optional **IPv6 inside the tunnel**. Existing IPv4-only server configs (no `tun_addr_v6` / `pool_cidr_v6`) behave as before. Client profiles do not change. QUIC to the server stays on IPv4; do not add an AAAA for the VPN hostname in this release.
+**GitHub Latest release.** Optional **IPv6 inside the tunnel**. Existing IPv4-only server configs (no `tun_addr_v6` / `pool_cidr_v6`) behave as before. Client profiles do not change. QUIC to the server stays on IPv4; do not add an AAAA for the VPN hostname in this release.
 
 ### Added
 

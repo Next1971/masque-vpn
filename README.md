@@ -15,10 +15,8 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 
 ## Release status
 
-- **v1.5.0** (this branch): optional IPv6 inside the tunnel; build clients from source until a GitHub Release is published
-- Latest stable client release: v1.4.0
-- v1.4.1: maintenance pre-release with Docker, graceful shutdown,
-  and Android IPv6 leak protection
+- **Latest:** [v1.5.0](../../releases/tag/v1.5.0) — optional IPv6 inside the tunnel (MSI, unsigned APKs, Linux server binaries)
+- v1.4.1: maintenance pre-release (Docker, graceful shutdown, Android IPv6 leak protection)
 - v1.4.2: experimental Windows VPS Setup Helper; not a client update
 
   Do not download v1.4.2 expecting a newer Android or Windows VPN client. What is next lives in the [roadmap](docs/ROADMAP.md).
@@ -48,8 +46,7 @@ Do not use it if you:
 
 | Goal | Start here |
 |---|---|
-| Download v1.5.0 (this tree) | Build from source until a GitHub Release is published |
-| Download stable (v1.4.0) | [Latest release](../../releases/latest) |
+| Download Latest (v1.5.0) | [GitHub Release](../../releases/latest) |
 | Download v1.4.1 pre-release | [v1.4.1](../../releases/tag/v1.4.1) |
 | Experimental VPS installer (v1.4.2) | [v1.4.2](../../releases/tag/v1.4.2) — **test only**, not a client update |
 | Deploy a Linux server | [Detailed server guide](server/README.md) |
