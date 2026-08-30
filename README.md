@@ -13,7 +13,15 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 - **Real clients.** Phone, TV, and Windows installers from [GitHub Releases](../../releases/latest) — not a CLI-only toy.
 - **One bundle per device.** Reconnect (sleep, Wi-Fi → LTE, long airplane mode) keeps a stable tunnel address.
 
-Latest line: **v1.5.0** (optional IPv6 in the tunnel). **[v1.4.1](../../releases/tag/v1.4.1)** is the previous maintenance pre-release. **[v1.4.2](../../releases/tag/v1.4.2)** is an **experimental pre-release of the Windows VPS installer only**. What is next lives in the [roadmap](docs/ROADMAP.md).
+## Release status
+
+- **v1.5.0** (this branch): optional IPv6 inside the tunnel; build clients from source until a GitHub Release is published
+- Latest stable client release: v1.4.0
+- v1.4.1: maintenance pre-release with Docker, graceful shutdown,
+  and Android IPv6 leak protection
+- v1.4.2: experimental Windows VPS Setup Helper; not a client update
+
+  Do not download v1.4.2 expecting a newer Android or Windows VPN client. What is next lives in the [roadmap](docs/ROADMAP.md).
 
 ## Is this for me?
 
@@ -28,15 +36,13 @@ Do not use it if you:
 - need anonymous access or a security-audited product;
 - need iOS (maybe later- end of 2026), router or browser-extension support today.
   
+## Choose your installation path
 
-| What you get                   | Current status            |
-| ------------------------------ | ------------------------- |
-| Self-hosted server on your VPS | Available                 |
-| Android phone/tablet client    | Available                 |
-| Android TV client              | Available                 |
-| Windows desktop client         | Available                 |
-| QUIC tunnel latency in app     | New in v1.4               |
-| Client authentication          | mTLS with your private CA |
+| Path | Recommended for | Stability | Documentation |
+|---|---|---|---|
+| Manual SSH install | Users who want to inspect every server-side command | Recommended | [Server guide](server/README.md) |
+| Docker Compose | Users familiar with Docker on a dedicated Linux VPS | Experimental | [Docker guide](server/README.md#docker) |
+| Windows VPS Setup Helper | Testers using a disposable VPS | Test pre-release only | [masque-setup.exe](windows/README.md#install-the-server-from-windows-masque-setupexe) |
 
 ## Quick start
 
@@ -90,26 +96,6 @@ See [`android/README.md`](android/README.md). In short:
 2. Open the app and **import a profile** (`profile.masque` from the generator). On **Android TV**, use **Paste config from clipboard** (or paste-text).
 3. Grant the VPN permission and connect. While connected, the screen shows **Ping** (smoothed QUIC RTT to the server).
 
-### Stability testing
-
-Android stability tests for the current line are **complete**. Devices used:
-
-- Honor 200 — MagicOS 10, Android 16
-- POCO X4 Pro — Android 13 (TKQ1)
-- Haier Android TV
-
-Results:
-
-- **Android TV:** The MASQUE tunnel remained connected for more than 36 hours without interruption on Haier Android TV.
-- **Android phones:** Six hours with the screen on completed without tunnel drops. Screen-off / sleep: keepalive plus reconnect; after wake the UI stays on Disconnect when the tunnel is still up.
-- **Airplane mode:** after **8 hours** of airplane mode the tunnel came back cleanly (reconnect + sticky `/32`).
-- Cell-tower handoff and mobile data → Wi-Fi completed without issues. Wi-Fi → mobile data: 12 switches in a row without losing traffic (underlying network + UDP `protect` + reconnect; server keeps the same `/32` per client certificate).
-
-### Remaining caveats
-
-- Some OEM battery savers still freeze the process; grant “ignore battery optimization” when the app asks. If the process is killed, the user must Connect again.
-
----
 
 ## 4. Security notes
 
