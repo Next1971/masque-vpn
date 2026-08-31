@@ -47,8 +47,6 @@ Do not use it if you:
 | Goal | Start here |
 |---|---|
 | Download Latest (v1.5.0) | [GitHub Release](../../releases/latest) |
-| Download v1.4.1 pre-release | [v1.4.1](../../releases/tag/v1.4.1) |
-| Experimental VPS installer (v1.4.2) | [v1.4.2](../../releases/tag/v1.4.2) — **test only**, not a client update |
 | Deploy a Linux server | [Detailed server guide](server/README.md) |
 | Connect from Android | [Android guide](android/README.md) |
 | Connect from Windows | [Windows guide](windows/README.md) |
