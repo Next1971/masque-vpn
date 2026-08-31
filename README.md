@@ -15,7 +15,7 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 
 ## Release status
 
-- **Latest:** [v1.5.0](../../releases/tag/v1.5.0) — optional IPv6 inside the tunnel (MSI, unsigned APKs, Linux server binaries)
+- **Latest:** [v1.5.0](../../releases/tag/v1.5.0) — optional IPv6 inside the tunnel (MSI, signed APKs, Linux server binaries)
 - v1.4.1: maintenance pre-release (Docker, graceful shutdown, Android IPv6 leak protection)
 - v1.4.2: experimental Windows VPS Setup Helper; not a client update
 
