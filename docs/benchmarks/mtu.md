@@ -10,14 +10,28 @@ This document tracks MTU validation for MASQUE CONNECT-IP connections across cli
 - **HTTP/Curl**: HTTP download completes successfully.
 - A successful HTTP download does not override a failed DF probe. DF failure is recorded as a possible PMTU/fragmentation risk.
 
+## Preliminary implementation recommendation
+
+Use **MTU 1369** as the preliminary default for future MASQUE client releases.
+
+Rationale:
+
+- Linux and Android Wi-Fi tests pass with MTU 1400.
+- Android mobile testing on Beeline also passes with MTU 1400.
+- The lowest successful tested path is Android mobile data on MTS: MTU 1370 passes, while MTU 1380 has 100% DF-probe loss.
+- Selecting 1369 keeps a 1-byte margin below that observed lower boundary.
+
+This is a conservative interim recommendation, not a universal PMTU guarantee. Revisit it after Windows tests, additional carriers and networks, and any MTU/PMTU handling changes.
+
 ## Summary
 
-| Status | Date | Client platform | Device / OS | Network | IP stack | Server | MTU range | Largest DF-safe MTU | Candidate MTU | Result | Notes |
-|---|---|---|---|---|---|---|---|---:|---:|---|---|
-| Done | 2026-08-31 | Linux | Linux client | Current test network | Not recorded | MASQUE server | 1280-1500 | **1400** | 1400 | Preliminary pass | DF loss begins at MTU 1420 |
-| Done | 2026-08-31 | Android | Android device | Wi-Fi | Not recorded | MASQUE server | 1280-1500 | **1400** | 1400 | Preliminary pass | DF probe passes through 1400; 100% loss at 1420 and above |
-| Done | 2026-08-31 | Android | Android device | Mobile data | Not recorded | MASQUE server | 1280-1500 | **1370** | 1370 | Preliminary pass | DF probe passes through 1370; 100% loss at 1400 and above |
-| Planned | - | Windows | Windows client | Wi-Fi or Ethernet | - | MASQUE server | 1280-1500 | - | - | Pending | Add Windows version and adapter type |
+| Status | Date | Client platform | Device / OS | Network | Carrier / ISP | IP stack | Server | MTU range | Largest DF-safe MTU | Candidate MTU | Result | Notes |
+|---|---|---|---|---|---|---|---|---|---:|---:|---|---|
+| Done | 2026-08-31 | Linux | Linux client | Current test network | Not recorded | Not recorded | MASQUE server | 1280-1500 | **1400** | 1400 | Preliminary pass | DF loss begins at MTU 1420 |
+| Done | 2026-08-31 | Android | Android device | Wi-Fi | Not recorded | Not recorded | MASQUE server | 1280-1500 | **1400** | 1400 | Preliminary pass | DF probe passes through 1400; 100% loss at 1420 and above |
+| Done | 2026-08-31 | Android | Android device | Mobile data | MTS | Not recorded | MASQUE server | 1280-1500 | **1370** | 1369 | Lower-bound path | MTU 1370 passes; 1380 and above have 100% DF-probe loss |
+| Done | 2026-08-31 | Android | Android device | Mobile data | Beeline | Not recorded | MASQUE server | At least 1400 | **1400** | 1400 | Pass | MTU 1400 tested successfully; detailed measurements not recorded here |
+| Planned | - | Windows | Windows client | Wi-Fi or Ethernet | - | - | MASQUE server | 1280-1500 | - | - | Pending | Add Windows version and adapter type |
 
 ## Linux client to MASQUE server
 
@@ -50,21 +64,32 @@ This document tracks MTU validation for MASQUE CONNECT-IP connections across cli
 
 **Preliminary result:** MTU **1400** is the largest tested value for which the Android Wi-Fi DF probe succeeds.
 
-### Android over mobile data — 2026-08-31
+### Android over mobile data — MTS — 2026-08-31
+
+This is the lowest-successful mobile path observed so far and is used as the conservative baseline for the interim default recommendation.
 
 | MTU | Baseline ping loss | Baseline RTT avg, ms | DF probe loss | DF probe RTT avg, ms | Result | Notes |
 |---:|---:|---:|---|---:|---|---|
 | 1280 | 0% | 131.0 | 0% | 140.7 | Pass | |
 | 1300 | 0% | 128.6 | 0% | 118.3 | Pass | |
 | 1350 | 0% | 118.0 | 0% | 148.5 | Pass | Source screenshot labels this row `1350 m0b`; treated as MTU 1350 |
-| 1370 | 0% | 127.1 | 0% | 118.2 | **Pass** | Largest DF-safe tested MTU |
+| 1370 | 0% | 127.1 | 0% | 118.2 | **Pass** | Largest successful tested MTU |
+| 1380 | Not recorded | Not recorded | 100% | - | Fail | Tested separately; DF probe has 100% loss |
 | 1400 | 0% | 99.7 | 100% | - | Fail | DF probe lost |
 | 1420 | 0% | 129.8 | 100% | - | Fail | DF probe lost |
 | 1450 | 0% | 128.1 | 100% | - | Fail | DF probe lost |
 | 1472 | 0% | 119.5 | 100% | - | Fail | DF probe lost |
 | 1500 | 0% | 121.0 | 100% | - | Fail | DF probe lost |
 
-**Preliminary result:** MTU **1370** is the largest tested value for which the Android mobile-data DF probe succeeds. The next tested value, MTU 1400, fails; an additional narrow sweep between 1370 and 1400 is recommended before choosing a mobile-specific maximum.
+**Preliminary result:** MTU **1370** is the largest successful tested value for Android mobile data on MTS. MTU **1380** has 100% DF-probe loss. Use MTU **1369** as the preliminary release default to preserve a small margin below this observed boundary.
+
+### Android over mobile data — Beeline — 2026-08-31
+
+| MTU | DF probe result | Notes |
+|---:|---|---|
+| 1400 | Pass | Tested successfully; detailed measurements were not recorded in this document |
+
+**Preliminary result:** MTU **1400** was tested successfully on Beeline mobile data. MTS is retained as the conservative baseline because it has the lower observed maximum.
 
 ## Planned test records
 
@@ -78,6 +103,7 @@ Copy this block for each completed run.
 | Server version / commit | `<value>` |
 | Device and OS | `<value>` |
 | Network | `<Wi-Fi / Ethernet / LTE / 5G>` |
+| Carrier / ISP | `<value>` |
 | IP stack | `<IPv4 / IPv6 / dual-stack>` |
 | MTU range and step | `<for example: 1280-1500, step 20>` |
 | Largest DF-safe MTU | `<value>` |
@@ -96,4 +122,6 @@ Copy this block for each completed run.
 |---|---|---|---|
 | 2026-08-31 | Use 1400 as the Linux baseline candidate | Largest tested MTU without DF probe loss | Linux client to tested MASQUE-server path |
 | 2026-08-31 | Record Android Wi-Fi candidate MTU as 1400 | Largest tested MTU without DF probe loss; 1420 fails | Android client over tested Wi-Fi path |
-| 2026-08-31 | Record Android mobile-data candidate MTU as 1370 | Largest tested MTU without DF probe loss; 1400 fails | Android client over tested mobile-data path |
+| 2026-08-31 | Record Android mobile MTS candidate maximum as 1370 | MTU 1370 passes; MTU 1380 has 100% DF-probe loss | Android client over tested MTS mobile-data path |
+| 2026-08-31 | Record Android mobile Beeline MTU 1400 as passing | MTU 1400 tested successfully | Android client over tested Beeline mobile-data path |
+| 2026-08-31 | Recommend MTU 1369 as interim release default | One-byte margin below the lowest successful observed mobile-path boundary | Future MASQUE client releases pending further validation |
