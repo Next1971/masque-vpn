@@ -23,6 +23,10 @@ gomobile init
 mkdir -p "$(dirname "$OUT")"
 rm -rf "$OUT"
 
+# Packet Tunnel is an app extension; Xcode 16 requires extension-safe objects.
+export CGO_CFLAGS="${CGO_CFLAGS:-} -fapplication-extension"
+export CGO_LDFLAGS="${CGO_LDFLAGS:-} -fapplication-extension"
+
 pushd "$GOSRC" >/dev/null
 gomobile bind -target=ios,iossimulator -iosversion=16.0 -o "$OUT" ./mobile
 popd >/dev/null
