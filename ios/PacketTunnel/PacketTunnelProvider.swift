@@ -5,11 +5,19 @@ import Mobile
 
 final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var tunnel: MobileTunnel?
+    private var goCallback: GoCallback?
     private var pingTimer: DispatchSourceTimer?
     private let writeQueue = DispatchQueue(label: "com.next1971.masque.tun-write")
+    private let workQueue = DispatchQueue(label: "com.next1971.masque.provider")
     private var readingFromGo = false
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
+        workQueue.async { [weak self] in
+            self?.startTunnelLocked(completionHandler: completionHandler)
+        }
+    }
+
+    private func startTunnelLocked(completionHandler: @escaping (Error?) -> Void) {
         guard let profile = ProfileStore.load() else {
             completionHandler(NSError(domain: "masque", code: 1, userInfo: [NSLocalizedDescriptionKey: "profile not configured"]))
             return
@@ -24,8 +32,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         cfg.mtu = profile.mtu
 
         let cb = GoCallback(owner: self)
+        goCallback = cb
         var dialErr: NSError?
         guard let t = MobileDial(cfg, cb, &dialErr) else {
+            goCallback = nil
             completionHandler(dialErr)
             return
         }
@@ -38,49 +48,65 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler(err)
                 return
             }
-            if let err {
-                t.stop()
-                self.tunnel = nil
-                completionHandler(err)
-                return
+            self.workQueue.async {
+                if let err {
+                    t.stop()
+                    self.tunnel = nil
+                    self.goCallback = nil
+                    completionHandler(err)
+                    return
+                }
+                do {
+                    try t.startPacketBridge()
+                } catch {
+                    t.stop()
+                    self.tunnel = nil
+                    self.goCallback = nil
+                    completionHandler(error)
+                    return
+                }
+                self.pumpFromDevice()
+                self.pumpToDevice()
+                self.startPingTimer()
+                self.publishStatus("VPN active")
+                completionHandler(nil)
             }
-            do {
-                try t.startPacketBridge()
-            } catch {
-                t.stop()
-                self.tunnel = nil
-                completionHandler(error)
-                return
-            }
-            self.pumpFromDevice()
-            self.pumpToDevice()
-            self.startPingTimer()
-            self.publishStatus("VPN active")
-            completionHandler(nil)
         }
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
-        pingTimer?.cancel()
-        pingTimer = nil
-        tunnel?.stop()
-        tunnel = nil
-        readingFromGo = false
-        AppGroup.defaults.set(0, forKey: AppGroup.defaultsPing)
-        AppGroup.defaults.set("Disconnected", forKey: AppGroup.defaultsStatus)
-        completionHandler()
+        workQueue.async { [weak self] in
+            guard let self else {
+                completionHandler()
+                return
+            }
+            self.pingTimer?.cancel()
+            self.pingTimer = nil
+            self.tunnel?.stop()
+            self.tunnel = nil
+            self.goCallback = nil
+            self.readingFromGo = false
+            AppGroup.defaults.set(0, forKey: AppGroup.defaultsPing)
+            AppGroup.defaults.set("Disconnected", forKey: AppGroup.defaultsStatus)
+            completionHandler()
+        }
     }
 
     fileprivate func handleGoStatus(_ msg: String) {
-        if msg == "assigned-ip-changed" {
-            cancelTunnelWithError(NSError(domain: "masque", code: 2, userInfo: [NSLocalizedDescriptionKey: "assigned IP changed"]))
-            return
+        workQueue.async { [weak self] in
+            guard let self else { return }
+            if msg == "assigned-ip-changed" {
+                self.cancelTunnelWithError(NSError(domain: "masque", code: 2, userInfo: [NSLocalizedDescriptionKey: "assigned IP changed"]))
+                return
+            }
+            self.publishStatus(msg)
         }
-        publishStatus(msg)
     }
 
     fileprivate func handleGoError(_ msg: String) {
-        cancelTunnelWithError(NSError(domain: "masque", code: 3, userInfo: [NSLocalizedDescriptionKey: msg]))
+        workQueue.async { [weak self] in
+            self?.cancelTunnelWithError(NSError(domain: "masque", code: 3, userInfo: [NSLocalizedDescriptionKey: msg]))
+        }
     }
 
     private func publishStatus(_ msg: String) {
