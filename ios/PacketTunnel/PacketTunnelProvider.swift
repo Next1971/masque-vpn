@@ -9,7 +9,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var pingTimer: DispatchSourceTimer?
     private let writeQueue = DispatchQueue(label: "com.next1971.masque.tun-write")
     private let workQueue = DispatchQueue(label: "com.next1971.masque.provider")
-    private var readingFromGo = false
+    private var startCompleted = false
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         workQueue.async { [weak self] in
@@ -17,9 +17,22 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
+    private func finishStart(_ completionHandler: @escaping (Error?) -> Void, _ error: Error?) {
+        // Must run on workQueue.
+        guard !startCompleted else { return }
+        startCompleted = true
+        completionHandler(error)
+    }
+
     private func startTunnelLocked(completionHandler: @escaping (Error?) -> Void) {
+        startCompleted = false
+
         guard let profile = ProfileStore.load() else {
-            completionHandler(NSError(domain: "masque", code: 1, userInfo: [NSLocalizedDescriptionKey: "profile not configured"]))
+            finishStart(completionHandler, NSError(
+                domain: "masque",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "profile not configured"]
+            ))
             return
         }
 
@@ -36,7 +49,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         var dialErr: NSError?
         guard let t = MobileDial(cfg, cb, &dialErr) else {
             goCallback = nil
-            completionHandler(dialErr)
+            finishStart(completionHandler, dialErr)
             return
         }
         tunnel = t
@@ -53,7 +66,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     t.stop()
                     self.tunnel = nil
                     self.goCallback = nil
-                    completionHandler(err)
+                    self.finishStart(completionHandler, err)
                     return
                 }
                 do {
@@ -62,14 +75,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     t.stop()
                     self.tunnel = nil
                     self.goCallback = nil
-                    completionHandler(error)
+                    self.finishStart(completionHandler, error)
                     return
                 }
                 self.pumpFromDevice()
                 self.pumpToDevice()
                 self.startPingTimer()
                 self.publishStatus("VPN active")
-                completionHandler(nil)
+                self.finishStart(completionHandler, nil)
             }
         }
     }
@@ -85,7 +98,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self.tunnel?.stop()
             self.tunnel = nil
             self.goCallback = nil
-            self.readingFromGo = false
             AppGroup.defaults.set(0, forKey: AppGroup.defaultsPing)
             AppGroup.defaults.set("Disconnected", forKey: AppGroup.defaultsStatus)
             completionHandler()
@@ -96,7 +108,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         workQueue.async { [weak self] in
             guard let self else { return }
             if msg == "assigned-ip-changed" {
-                self.cancelTunnelWithError(NSError(domain: "masque", code: 2, userInfo: [NSLocalizedDescriptionKey: "assigned IP changed"]))
+                self.cancelTunnelWithError(NSError(
+                    domain: "masque",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "assigned IP changed"]
+                ))
                 return
             }
             self.publishStatus(msg)
@@ -105,7 +121,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     fileprivate func handleGoError(_ msg: String) {
         workQueue.async { [weak self] in
-            self?.cancelTunnelWithError(NSError(domain: "masque", code: 3, userInfo: [NSLocalizedDescriptionKey: msg]))
+            self?.cancelTunnelWithError(NSError(
+                domain: "masque",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: msg]
+            ))
         }
     }
 
@@ -172,16 +192,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     private func pumpToDevice() {
-        guard !readingFromGo else { return }
-        readingFromGo = true
         writeQueue.async { [weak self] in
             guard let self else { return }
-            while let tunnel = self.tunnel {
-                guard let pkt = tunnel.readPacket(), !pkt.isEmpty else { break }
+            while true {
+                guard let tunnel = self.tunnel else { return }
+                guard let pkt = tunnel.readPacket(), !pkt.isEmpty else { return }
                 let proto = Self.ipProtocol(pkt)
                 self.packetFlow.writePackets([pkt], withProtocols: [proto])
             }
-            self.readingFromGo = false
         }
     }
 
