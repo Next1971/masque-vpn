@@ -44,13 +44,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler(err)
                 return
             }
-            var bridgeErr: NSError?
-            if !t.startPacketBridge(&bridgeErr) {
-                t.stop()
-                self.tunnel = nil
-                completionHandler(bridgeErr)
-                return
-            }
+            t.startPacketBridge()
             self.pumpFromDevice()
             self.pumpToDevice()
             self.startPingTimer()
@@ -138,7 +132,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         packetFlow.readPackets { [weak self] packets, _ in
             guard let self, let tunnel = self.tunnel else { return }
             for pkt in packets {
-                _ = tunnel.writePacket(pkt, nil)
+                _ = try? tunnel.writePacket(pkt)
             }
             self.pumpFromDevice()
         }
