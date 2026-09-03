@@ -24,24 +24,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         cfg.mtu = profile.mtu
 
         let cb = GoCallback(owner: self)
-        let t: MobileTunnel
-        do {
-            t = try MobileDial(cfg, cb)
-        } catch {
-            completionHandler(error)
+        var dialErr: NSError?
+        guard let t = MobileDial(cfg, cb, &dialErr) else {
+            completionHandler(dialErr)
             return
         }
         tunnel = t
 
-        let settings: NEPacketTunnelNetworkSettings
-        do {
-            settings = try self.networkSettings(for: t, profile: profile)
-        } catch {
-            t.stop()
-            tunnel = nil
-            completionHandler(error)
-            return
-        }
+        let settings = self.networkSettings(for: t, profile: profile)
 
         setTunnelNetworkSettings(settings) { [weak self] err in
             guard let self else {
@@ -54,12 +44,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler(err)
                 return
             }
-            do {
-                try t.startPacketBridge()
-            } catch {
+            var bridgeErr: NSError?
+            if !t.startPacketBridge(&bridgeErr) {
                 t.stop()
                 self.tunnel = nil
-                completionHandler(error)
+                completionHandler(bridgeErr)
                 return
             }
             self.pumpFromDevice()
@@ -114,10 +103,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         pingTimer = timer
     }
 
-    private func networkSettings(for tunnel: MobileTunnel, profile: MasqueProfile) throws -> NEPacketTunnelNetworkSettings {
+    private func networkSettings(for tunnel: MobileTunnel, profile: MasqueProfile) -> NEPacketTunnelNetworkSettings {
         var v4 = tunnel.assignedAddr() ?? ""
         if v4.isEmpty { v4 = "10.8.0.254" }
-        let remote = tunnel.serverIPv4().flatMap { $0.isEmpty ? nil : $0 } ?? "127.0.0.1"
+        let remoteRaw = tunnel.serverIPv4()
+        let remote = remoteRaw.isEmpty ? "127.0.0.1" : remoteRaw
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remote)
         settings.mtu = NSNumber(value: profile.mtu)
 
@@ -148,7 +138,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         packetFlow.readPackets { [weak self] packets, _ in
             guard let self, let tunnel = self.tunnel else { return }
             for pkt in packets {
-                _ = try? tunnel.writePacket(pkt)
+                _ = tunnel.writePacket(pkt, nil)
             }
             self.pumpFromDevice()
         }
