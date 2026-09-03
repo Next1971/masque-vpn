@@ -1,3 +1,5 @@
+import Foundation
+
 enum AppGroup {
     static let id = "group.com.next1971.masque"
     static let profileRelative = "certs"

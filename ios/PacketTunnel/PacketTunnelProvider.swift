@@ -177,9 +177,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 }
 
-private final class GoCallback: NSObject, MobileCallback {
+private final class GoCallback: MobileCallback {
     weak var owner: PacketTunnelProvider?
-    init(owner: PacketTunnelProvider) { self.owner = owner }
+    init(owner: PacketTunnelProvider) { super.init(); self.owner = owner }
 
     func onStatus(_ msg: String?) {
         guard let msg else { return }
