@@ -19,6 +19,7 @@
 		A11A00000000000000000012 /* ProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10F00000000000000000011 /* ProfileStore.swift */; };
 		A11A00000000000000000013 /* Mobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10F00000000000000000030 /* Mobile.xcframework */; };
 		A11A00000000000000000014 /* Mobile.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A10F00000000000000000030 /* Mobile.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A11A00000000000000000016 /* Mobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10F00000000000000000030 /* Mobile.xcframework */; };
 		A11A00000000000000000015 /* PacketTunnel.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A10F00000000000000000041 /* PacketTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -80,6 +81,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A11A00000000000000000016 /* Mobile.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -165,6 +167,7 @@
 				A19A00000000000000000001 /* Sources */,
 				A15F00000000000000000001 /* Frameworks */,
 				A19B00000000000000000001 /* Resources */,
+				A14E00000000000000000002 /* Embed Frameworks */,
 				A14E00000000000000000001 /* Embed App Extensions */,
 			);
 			buildRules = (
@@ -184,7 +187,6 @@
 				A19A00000000000000000002 /* Sources */,
 				A15F00000000000000000002 /* Frameworks */,
 				A19B00000000000000000002 /* Resources */,
-				A14E00000000000000000002 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -335,6 +337,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Frameworks",
+				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Masque/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = MASQUE;
@@ -362,6 +368,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Frameworks",
+				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Masque/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = MASQUE;
