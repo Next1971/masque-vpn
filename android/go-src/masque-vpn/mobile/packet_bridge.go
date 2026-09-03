@@ -68,6 +68,9 @@ func (t *bridgeTUN) Write(bufs [][]byte, offset int) (int, error) {
 			return n, os.ErrClosed
 		case t.toOS <- pkt:
 			n++
+		default:
+			// Drop when the Swift reader is behind; never block the pump.
+			n++
 		}
 	}
 	return n, nil
@@ -122,6 +125,9 @@ func (t *Tunnel) WritePacket(pkt []byte) error {
 	case <-br.closed:
 		return fmt.Errorf("tunnel stopped")
 	case br.fromOS <- cp:
+		return nil
+	default:
+		// Drop rather than block the Network Extension read callback.
 		return nil
 	}
 }

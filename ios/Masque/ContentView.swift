@@ -36,10 +36,11 @@ struct ContentView: View {
                     .buttonStyle(.bordered)
                     .disabled(vpn.connected)
 
-                Button(vpn.connected ? "Disconnect" : "Connect") {
+                Button(vpn.connectTitle) {
                     vpn.toggle()
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(vpn.busy)
 
                 Spacer()
             }
