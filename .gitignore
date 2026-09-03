@@ -53,3 +53,11 @@ ios/Frameworks/*.framework
 **/xcuserdata/
 *.xcuserstate
 DerivedData/
+*.p12
+*.p8
+*.cer
+*.csr
+*.mobileprovision
+ios/signing-local/
+ios/build-signing/
+ios/build/

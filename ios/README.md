@@ -59,14 +59,89 @@ xcodebuild -project Masque.xcodeproj -scheme Masque \
 
 If Swift cannot see `MobileDial` / `MobileConfig`, gomobile used un-prefixed names (`Dial`, `Config`) in the `Mobile` module — rename the calls in `PacketTunnelProvider.swift`.
 
-## TestFlight
+## TestFlight via GitHub (no Mac)
 
-GitHub Actions on this branch compiles the xcframework and the app **unsigned**. Upload still needs secrets (not wired yet):
+The workflow [.github/workflows/ios-testflight.yml](../.github/workflows/ios-testflight.yml) runs on GitHub’s Mac, signs an App Store IPA, and uploads it to **internal TestFlight**. You still need a physical iPhone to install it. Do **not** click Submit for Review in App Store Connect.
 
-- App Store Connect API key (`.p8`, Key ID, Issuer ID)
-- Signing certificates / profiles (or Fastlane Match)
+Do this once. Keep `dist.key` / `.p12` / `.p8` off git (they are gitignored).
 
-Internal TestFlight: add testers in App Store Connect, then install TestFlight on a **physical iPhone**. Packet Tunnel does not run in the simulator.
+### 1. API key (browser)
+
+1. [App Store Connect](https://appstoreconnect.apple.com) → **Users and Access** → **Integrations** → **App Store Connect API**.
+2. **Generate API Key**. Name `github-testflight`. Access **Admin** or **App Manager**.
+3. Download the `.p8` (once). Copy **Key ID** and **Issuer ID**.
+
+### 2. Team ID (browser)
+
+[developer.apple.com/account](https://developer.apple.com/account) → Membership details → **Team ID** (10 characters).
+
+### 3. Distribution certificate (Windows is fine)
+
+Git for Windows includes `openssl` (Git Bash).
+
+```bash
+mkdir -p ios/signing-local
+cd ios/signing-local
+openssl genrsa -out dist.key 2048
+openssl req -new -key dist.key -out dist.csr -subj "/CN=MASQUE Apple Distribution/C=US"
+```
+
+Or run `ios/scripts/make-distribution-csr.sh`.
+
+1. [Certificates](https://developer.apple.com/account/resources/certificates/list) → **+** → **Apple Distribution** → upload `dist.csr` → download the `.cer`.
+2. Put the `.cer` in `ios/signing-local` as `distribution.cer`, then:
+
+```bash
+cd ios/signing-local
+openssl x509 -in distribution.cer -inform DER -out dist.pem
+openssl pkcs12 -export -out dist.p12 -inkey dist.key -in dist.pem
+```
+
+If OpenSSL 3 errors on export, add `-legacy`. Choose a password; you will store it as `P12_PASSWORD`.
+
+### 4. Two App Store profiles (browser)
+
+[Profiles](https://developer.apple.com/account/resources/profiles/list) → **+** → **App Store Connect** (distribution), for each App ID, select the certificate from step 3:
+
+| Download and rename to | App ID |
+|---|---|
+| `app.mobileprovision` | `com.next1971.masque` |
+| `tunnel.mobileprovision` | `com.next1971.masque.packet-tunnel` |
+
+Put both files in `ios/signing-local`.
+
+### 5. GitHub Secrets
+
+Repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
+
+From the `.p8` file, paste the **entire** PEM (including `BEGIN` / `END` lines) into `APP_STORE_CONNECT_API_KEY`.
+
+Encode the three binaries (PowerShell, from the repo root):
+
+```powershell
+powershell -File ios/scripts/encode-secrets.ps1
+```
+
+That writes one-line `.txt` files in `ios/signing-local`. Paste each line into the matching secret:
+
+| Secret | Value |
+|---|---|
+| `APP_STORE_CONNECT_KEY_ID` | Key ID from step 1 |
+| `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID from step 1 |
+| `APP_STORE_CONNECT_API_KEY` | Full `.p8` text |
+| `APPLE_TEAM_ID` | Team ID from step 2 |
+| `P12_PASSWORD` | Password from the `pkcs12 -export` step |
+| `BUILD_CERTIFICATE_BASE64` | contents of `BUILD_CERTIFICATE_BASE64.txt` |
+| `BUILD_PROVISION_PROFILE_APP_BASE64` | `BUILD_PROVISION_PROFILE_APP_BASE64.txt` |
+| `BUILD_PROVISION_PROFILE_EXT_BASE64` | `BUILD_PROVISION_PROFILE_EXT_BASE64.txt` |
+
+### 6. Run the workflow
+
+GitHub → **Actions** → **TestFlight** → **Run workflow** → branch `feature/ios-client`.
+
+The first run often takes 20–40 minutes (gomobile). If it fails, open the log: missing secret, wrong profile type (must be App Store, not Development), or OpenSSL/p12 password.
+
+When it succeeds: App Store Connect → **TestFlight** (not the store listing). After Apple processes the build (sometimes 10+ minutes), add yourself under Internal Testing and install **TestFlight** on an iPhone.
 
 ## Use
 
