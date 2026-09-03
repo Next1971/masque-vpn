@@ -40,8 +40,8 @@ out/
 
 Each `client-N/` contains:
 
-- `profile.masque` — **Android** profile (self-contained: inline PEM certs). Import this single file in the app.
-- `profile.client.toml` + `certs/` — **Windows/Linux** profile and its certificate files (keep them together).
+- `profile.masque` — **Android / iOS / Windows GUI** profile (self-contained: inline PEM certs). Import this single file in the app.
+- `profile.client.toml` + `certs/` — **Windows/Linux** console profile and its certificate files (keep them together).
 
 ## Add more devices later (reuse the SAME CA)
 
@@ -64,7 +64,7 @@ still valid because they are signed by the same CA.
 
 ### Windows setup app (from #9)
 
-[`masque-setup.exe`](../windows/README.md#install-the-server-from-windows-masque-setupexe) issues **one** `profile.masque` per click, CN `masque-client-9`, then `10`, … up to 253 app bundles. It does **not** write the old Windows `profile.client.toml` tree; import `profile.masque` on Android and in the Windows GUI.
+[`masque-setup.exe`](../windows/README.md#install-the-server-from-windows-masque-setupexe) issues **one** `profile.masque` per click, CN `masque-client-9`, then `10`, … up to 253 app bundles. It does **not** write the old Windows `profile.client.toml` tree; import `profile.masque` on Android, iOS, and in the Windows GUI.
 
 **#1–8 are test CNs.** They were used in early testing. The app never reissues them and does not rotate the server certificate, so those clients stay valid. They are **not** counted in the app’s `N/253` figure. You do not need to regenerate them for the server to keep working.
 
@@ -78,7 +78,7 @@ CLI equivalent (does not replace `server.crt`):
 ## Distribute bundles
 
 - Send each device its own bundle **out-of-band** (not committed to git).
-- **Android:** import `profile.masque` (single file). On phones you can open the
+- **Android / iOS:** import `profile.masque` (single file). On phones you can open the
   file directly; on Android TV use the **paste-text** import (see below).
 - **Windows/Linux:** copy `profile.client.toml` together with its `certs/`
   folder.

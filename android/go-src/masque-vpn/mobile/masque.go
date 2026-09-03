@@ -1,4 +1,5 @@
-// Package mobile is a gomobile bridge between the shared clientcore and Android.
+// Package mobile is a gomobile bridge between the shared clientcore and
+// Android / iOS wrappers.
 package mobile
 
 import (
@@ -6,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/netip"
 	"sync"
 
@@ -13,7 +15,7 @@ import (
 	"golang.zx2c4.com/wireguard/tun"
 )
 
-// Config holds connection parameters passed from Java.
+// Config holds connection parameters passed from Java/Swift.
 type Config struct {
 	Server     string
 	ServerName string
@@ -43,6 +45,7 @@ type Tunnel struct {
 	lastAddrV6 string
 	started    bool
 	stopped    bool
+	bridge     *bridgeTUN
 }
 
 // AssignedAddr returns the server-assigned IPv4/IPv6 address (without prefix
@@ -111,6 +114,37 @@ func (t *Tunnel) RTTMillis() int64 {
 	return d.Milliseconds()
 }
 
+// ServerIPv4 is the VPN server's IPv4, used on iOS to exclude the QUIC
+// path from the tunnel (there is no VpnService.protect).
+func (t *Tunnel) ServerIPv4() string {
+	t.mu.Lock()
+	prof := t.prof
+	t.mu.Unlock()
+	if prof == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(prof.Server)
+	if err != nil {
+		host = prof.Server
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if v4 := ip.To4(); v4 != nil {
+			return v4.String()
+		}
+		return ""
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return ""
+	}
+	for _, ip := range ips {
+		if v4 := ip.To4(); v4 != nil {
+			return v4.String()
+		}
+	}
+	return ""
+}
+
 func profileFromConfig(cfg *Config) *clientcore.Profile {
 	mtu := cfg.MTU
 	if mtu == 0 {
@@ -151,10 +185,9 @@ func firstPrefix(prefixes []netip.Prefix, want6 bool) (netip.Prefix, bool) {
 }
 
 // Dial establishes the CONNECT-IP session WITHOUT a TUN device. After it
-// returns, read AssignedAddr()/AssignedPrefixLen(), build the platform TUN
-// with that address, then call StartWithFD(fd) to attach the interface and
-// begin forwarding. This is the correct flow on Android, where the TUN
-// address must be known before VpnService.Builder.establish().
+// returns, read AssignedAddr()/AssignedPrefixLen(), configure the platform
+// interface, then attach it with StartWithFD (Android) or StartPacketBridge
+// (iOS) and begin forwarding.
 func Dial(cfg *Config, cb Callback) (*Tunnel, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("nil config")
@@ -177,18 +210,16 @@ func Dial(cfg *Config, cb Callback) (*Tunnel, error) {
 	return t, nil
 }
 
-// StartWithFD attaches a TUN interface (from VpnService fd) to a tunnel
-// previously created by Dial, then starts forwarding in the background.
-// The fd is consumed once. If the QUIC session dies, the same TUN is kept
-// and a new session is dialed; OnError is only used if the TUN itself fails.
-func (t *Tunnel) StartWithFD(fd int) error {
+func (t *Tunnel) startWithDevice(dev tun.Device, readyMsg string) error {
 	t.mu.Lock()
 	if t.stopped {
 		t.mu.Unlock()
+		_ = dev.Close()
 		return fmt.Errorf("tunnel already stopped")
 	}
 	if t.started {
 		t.mu.Unlock()
+		_ = dev.Close()
 		return fmt.Errorf("tunnel already started")
 	}
 	sess := t.sess
@@ -197,12 +228,12 @@ func (t *Tunnel) StartWithFD(fd int) error {
 	ctx := t.ctx
 	t.mu.Unlock()
 
-	dev, name, err := tun.CreateUnmonitoredTUNFromFD(fd)
-	if err != nil {
-		return fmt.Errorf("create TUN from fd %d: %w", fd, err)
+	if ctx == nil || sess == nil || prof == nil {
+		_ = dev.Close()
+		return fmt.Errorf("tunnel not dialed")
 	}
-	if cb != nil {
-		cb.OnStatus("TUN from fd ready: " + name)
+	if cb != nil && readyMsg != "" {
+		cb.OnStatus(readyMsg)
 	}
 	sess.AttachTUN(dev)
 
@@ -210,9 +241,6 @@ func (t *Tunnel) StartWithFD(fd int) error {
 	t.started = true
 	t.mu.Unlock()
 
-	if ctx == nil || sess == nil || prof == nil {
-		return fmt.Errorf("tunnel not dialed")
-	}
 	pump := clientcore.NewPump(sess, dev)
 	go t.runPump(ctx, pump, prof, cb)
 	if cb != nil {
@@ -283,8 +311,9 @@ func (t *Tunnel) FirstAddress() string {
 	return t.AssignedAddr()
 }
 
-// Stop gracefully closes the tunnel. Idempotent. Does not close the TUN fd;
-// the Java wrapper owns that ParcelFileDescriptor.
+// Stop gracefully closes the tunnel. Idempotent. Does not close an Android
+// TUN fd; the Java wrapper owns that ParcelFileDescriptor. On iOS it closes
+// the packet bridge so ReadPacket unblocks.
 func (t *Tunnel) Stop() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -298,43 +327,10 @@ func (t *Tunnel) Stop() {
 	if t.sess != nil {
 		t.sess.Close()
 	}
+	if t.bridge != nil {
+		_ = t.bridge.Close()
+	}
 }
 
 // SetVerbose enables verbose diagnostic logging from the core.
 func SetVerbose(on bool) { clientcore.Verbose = on }
-
-// Connect establishes a connection using the fd from VpnService and returns a Tunnel.
-func Connect(cfg *Config, fd int, cb Callback) (*Tunnel, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("nil config")
-	}
-	prof := profileFromConfig(cfg)
-
-	dev, name, err := tun.CreateUnmonitoredTUNFromFD(fd)
-	if err != nil {
-		return nil, fmt.Errorf("create TUN from fd %d: %w", fd, err)
-	}
-	if cb != nil {
-		cb.OnStatus("TUN from fd ready: " + name)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	sess, err := clientcore.Connect(ctx, prof, dev)
-	if err != nil {
-		cancel()
-		dev.Close()
-		return nil, fmt.Errorf("connect: %w", err)
-	}
-	if cb != nil {
-		cb.OnStatus("CONNECT-IP session established")
-		if len(sess.AssignedPrefixes) > 0 {
-			cb.OnStatus("assigned " + sess.AssignedPrefixes[0].String())
-		}
-	}
-
-	t := &Tunnel{sess: sess, prof: prof, ctx: ctx, cancel: cancel, cb: cb, started: true}
-	rememberAssigned(t, sess)
-	pump := clientcore.NewPump(sess, dev)
-	go t.runPump(ctx, pump, prof, cb)
-	return t, nil
-}

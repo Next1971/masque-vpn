@@ -1,6 +1,6 @@
 # Roadmap
 
-> Status snapshot: last updated 2026-08-30. See [CHANGELOG.md](../CHANGELOG.md) for release history.
+> Status snapshot: last updated 2026-09-03. See [CHANGELOG.md](../CHANGELOG.md) for release history.
 
 ## Current status
 
@@ -12,6 +12,7 @@ MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** ac
 | Windows client | Stable | Signed EXE + Wintun DLL in release, GUI + tray icon, on-screen ping, IPv6 default via TUN when the server assigns v6 |
 | Windows VPS installer | **Experimental (v1.4.2)** | `masque-setup.exe` pre-release; not a substitute for the documented SSH install |
 | Android client | Stable | Phone + TV; dual-stack TUN when the server has a v6 pool; version label in UI; reconnect without tearing TUN |
+| iOS client | **In progress** | Packet Tunnel + gomobile; not in a GitHub Release; needs a Mac to compile and a device for TestFlight |
 
 This is experimental software and has not received an independent security audit.
 
@@ -83,7 +84,7 @@ This is experimental software and has not received an independent security audit
 
 ## Planned for future releases (no committed dates)
 
-- [ ] iOS client.
+- [ ] iOS client (source tree in `ios/`; TestFlight upload and device soak still open).
 - [ ] Expanded troubleshooting and platform-specific FAQ.
 
 ## Explicitly out of scope for now

@@ -2,7 +2,7 @@
 
 **Self-hosted VPN:** you run the server on your VPS and issue configs only to your own devices. The tunnel rides inside **HTTP/3** (IETF [MASQUE](https://datatracker.ietf.org/doc/html/rfc9484) CONNECT-IP), so it looks like ordinary web traffic rather than a classic VPN handshake. Clients authenticate with **mutual TLS** — the server accepts only certificates you signed.
 
-Clients today: **Android**, **Android TV**, and **Windows** (tray app, no UAC for daily use).
+Clients today: **Android**, **Android TV**, and **Windows** (tray app, no UAC for daily use). An **iOS** client is in progress (`ios/`) and is not in a release yet.
 
 This is not a commercial VPN brand and not an audited enterprise client. It is a working personal or family server with open source. Treat it as **experimental**: GitHub Actions compile and test the tree; that is not a third-party penetration test.
 
@@ -32,7 +32,7 @@ Use MASQUE VPN if you:
 Do not use it if you:
 - need a commercial VPN service or public shared endpoints;
 - need anonymous access or a security-audited product;
-- need iOS (maybe later- end of 2026), router or browser-extension support today.
+- need a shipping iOS client today (code is in `ios/`, not in a GitHub Release yet), router or browser-extension support;
   
 ## Choose your installation path
 
@@ -49,6 +49,7 @@ Do not use it if you:
 | Download Latest (v1.5.0) | [GitHub Release](../../releases/latest) |
 | Deploy a Linux server | [Detailed server guide](server/README.md) |
 | Connect from Android | [Android guide](android/README.md) |
+| Connect from iOS (source / TestFlight) | [iOS guide](ios/README.md) |
 | Connect from Windows | [Windows guide](windows/README.md) |
 | Install the server from Windows | [masque-setup.exe](windows/README.md#install-the-server-from-windows-masque-setupexe) |
 | See what's done and what's next | [Roadmap](docs/ROADMAP.md) |
@@ -62,6 +63,7 @@ Do not use it if you:
 | `server/` | Server build instructions, systemd unit, Docker, and config generator |
 | `windows/` | Windows client (service + GUI + MSI; console remains for debug) |
 | `android/` | Android client (Kotlin app + Go core via gomobile) |
+| `ios/` | iOS client (Swift app + Packet Tunnel + Go core via gomobile) |
 
 The Go source for the server and the shared client core lives under `android/go-src/masque-vpn/` (module `github.com/Next1971/masque-vpn`).
 

@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -40,6 +41,10 @@ jobs:
       - name: Vet
         working-directory: android/go-src/masque-vpn
         run: go vet ./...
+
+      - name: Test core and mobile bridge
+        working-directory: android/go-src/masque-vpn
+        run: go test ./internal/clientcore ./mobile
 
   windows-build:
     name: Windows client
@@ -154,3 +159,31 @@ jobs:
       - name: Build debug APK
         working-directory: android
         run: ./gradlew :app:assembleDebug --no-daemon
+
+  ios-build:
+    name: iOS client
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.1"
+
+      - name: Go tests (mobile bridge)
+        working-directory: android/go-src/masque-vpn
+        run: go test ./mobile ./internal/clientcore
+
+      - name: Build Mobile.xcframework
+        run: bash ios/scripts/build-xcframework.sh
+
+      - name: Compile iOS app (unsigned)
+        working-directory: ios
+        run: |
+          xcodebuild -project Masque.xcodeproj -scheme Masque \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY= \
+            build

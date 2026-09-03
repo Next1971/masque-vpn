@@ -46,3 +46,10 @@ dist/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# iOS / Xcode
+ios/Frameworks/*.xcframework
+ios/Frameworks/*.framework
+**/xcuserdata/
+*.xcuserstate
+DerivedData/
