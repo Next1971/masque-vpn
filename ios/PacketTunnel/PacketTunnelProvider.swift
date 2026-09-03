@@ -44,7 +44,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler(err)
                 return
             }
-            t.startPacketBridge()
+            do {
+                try t.startPacketBridge()
+            } catch {
+                t.stop()
+                self.tunnel = nil
+                completionHandler(error)
+                return
+            }
             self.pumpFromDevice()
             self.pumpToDevice()
             self.startPingTimer()
