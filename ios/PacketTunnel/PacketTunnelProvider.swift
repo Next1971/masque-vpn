@@ -181,12 +181,12 @@ private final class GoCallback: MobileCallback {
     weak var owner: PacketTunnelProvider?
     init(owner: PacketTunnelProvider) { super.init(); self.owner = owner }
 
-    func onStatus(_ msg: String?) {
+    override func onStatus(_ msg: String?) {
         guard let msg else { return }
         owner?.handleGoStatus(msg)
     }
 
-    func onError(_ msg: String?) {
+    override func onError(_ msg: String?) {
         guard let msg else { return }
         owner?.handleGoError(msg)
     }
