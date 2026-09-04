@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import Network
 import NetworkExtension
 import Mobile
 
@@ -79,15 +78,37 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
+    /// NetworkExtension's NWPath has no availableInterfaces on the iOS SDK we build with.
+    /// Pick the physical IPv4 interface (en0 / pdp_ip*) so QUIC is not bound to utun.
     private func physicalInterfaceName() -> String {
-        guard let path = defaultPath else { return "" }
-        let preferred: [NWInterface.InterfaceType] = [.wifi, .cellular, .wiredEthernet]
-        for kind in preferred where path.usesInterfaceType(kind) {
-            if let name = path.availableInterfaces.first(where: { $0.type == kind })?.name {
-                return name
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return "" }
+        defer { freeifaddrs(ifaddr) }
+
+        var wifi = ""
+        var cell = ""
+        var other = ""
+        var ptr: UnsafeMutablePointer<ifaddrs>? = first
+        while let ifa = ptr {
+            defer { ptr = ifa.pointee.ifa_next }
+            let name = String(cString: ifa.pointee.ifa_name)
+            let flags = Int32(ifa.pointee.ifa_flags)
+            if (flags & IFF_UP) == 0 || (flags & IFF_LOOPBACK) != 0 { continue }
+            if name.hasPrefix("utun") || name.hasPrefix("lo") { continue }
+            guard let addr = ifa.pointee.ifa_addr, addr.pointee.sa_family == sa_family_t(AF_INET) else { continue }
+            if name == "en0" {
+                wifi = name
+            } else if name.hasPrefix("en"), wifi.isEmpty {
+                wifi = name
+            } else if name.hasPrefix("pdp_ip"), cell.isEmpty {
+                cell = name
+            } else if other.isEmpty {
+                other = name
             }
         }
-        return ""
+        if !wifi.isEmpty { return wifi }
+        if !cell.isEmpty { return cell }
+        return other
     }
 
     private func dialAndUpgrade(profile: MasqueProfile, dialServer: String, remote: String, bindInterface: String) {
