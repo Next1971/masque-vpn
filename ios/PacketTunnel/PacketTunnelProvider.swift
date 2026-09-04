@@ -259,7 +259,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private func teardownUDP() {
         udpStateObs?.invalidate()
         udpStateObs = nil
-        datagramPipe?.close()
+        try? datagramPipe?.close()
         datagramPipe = nil
         udpWriter = nil
         udpSession?.cancel()
