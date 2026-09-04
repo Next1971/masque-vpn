@@ -444,8 +444,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 }
 
-/// gomobile DatagramWriter. writeDatagram must not block the Go thread.
-private final class GoUDPWriter: NSObject, MobileDatagramWriter {
+/// gomobile DatagramWriter is a class (not a protocol). writeDatagram must not block the Go thread.
+private final class GoUDPWriter: MobileDatagramWriter {
     private weak var session: NWUDPSession?
     private let queue: DispatchQueue
 
@@ -455,7 +455,7 @@ private final class GoUDPWriter: NSObject, MobileDatagramWriter {
         super.init()
     }
 
-    func writeDatagram(_ p: Data?) throws {
+    override func writeDatagram(_ p: Data?) throws {
         guard let data = p, !data.isEmpty else { return }
         let payload = data
         queue.async { [weak self] in
