@@ -40,10 +40,12 @@ func vlog(format string, args ...any) {
 // Session is an active VPN connection. It owns QUIC/UDP resources and TUN
 // and can close gracefully. It is created by Connect.
 type Session struct {
-	udpConn *net.UDPConn
-	qconn   *quic.Conn
-	ipconn  *connectip.Conn
-	dev     tun.Device
+	udpConn    *net.UDPConn
+	packetConn net.PacketConn
+	ownUDP     bool
+	qconn      *quic.Conn
+	ipconn     *connectip.Conn
+	dev        tun.Device
 
 	// AssignedPrefixes are addresses assigned to the client by the server (for
 	// TUN and route configuration by the platform wrapper).
@@ -107,6 +109,23 @@ func buildTLSConfig(p *Profile) (*tls.Config, error) {
 // dev=nil, read s.AssignedPrefixes, build the platform TUN with that address,
 // then s.AttachTUN(dev) before s.Run(ctx).
 func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) {
+	return ConnectWithPacketConn(ctx, p, dev, nil)
+}
+
+// ConnectWithPacketConn is Connect with an optional PacketConn. iOS passes a
+// Network Extension UDP session wrapper; a nil pc uses a BSD socket (Android).
+func ConnectWithPacketConn(ctx context.Context, p *Profile, dev tun.Device, pc net.PacketConn) (sess *Session, err error) {
+	var udpConn *net.UDPConn
+	ownUDP := false
+	defer func() {
+		if r := recover(); r != nil {
+			if ownUDP && udpConn != nil {
+				udpConn.Close()
+			}
+			err = fmt.Errorf("connect panic: %v", r)
+			sess = nil
+		}
+	}()
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
@@ -115,25 +134,38 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 	if err != nil {
 		return nil, fmt.Errorf("resolve server %q: %w", p.Server, err)
 	}
-	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero})
-	if err != nil {
-		return nil, fmt.Errorf("listen UDP: %w", err)
+
+	packetConn := pc
+	if packetConn == nil {
+		udpConn, err = net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero})
+		if err != nil {
+			return nil, fmt.Errorf("listen UDP: %w", err)
+		}
+		ownUDP = true
+		packetConn = udpConn
+		// Never abort Dial on bind failure: IP_BOUND_IF from a Packet Tunnel
+		// can error or panic, and a fatal bind was crashing the iOS extension
+		// about a second after startTunnel completed.
+		if err := bindUDPToInterface(udpConn, p.BindInterface); err != nil {
+			log.Printf("bind UDP to %q failed (continuing): %v", p.BindInterface, err)
+		}
 	}
-	if err := bindUDPToInterface(udpConn, p.BindInterface); err != nil {
-		udpConn.Close()
-		return nil, fmt.Errorf("bind UDP to %q: %w", p.BindInterface, err)
+
+	fail := func(e error) (*Session, error) {
+		if ownUDP && udpConn != nil {
+			udpConn.Close()
+		}
+		return nil, e
 	}
 
 	tlsConf, err := buildTLSConfig(p)
 	if err != nil {
-		udpConn.Close()
-		return nil, err
+		return fail(err)
 	}
 
-	qconn, err := quic.Dial(ctx, udpConn, udpAddr, tlsConf, newQUICConfig())
+	qconn, err := quic.Dial(ctx, packetConn, udpAddr, tlsConf, newQUICConfig())
 	if err != nil {
-		udpConn.Close()
-		return nil, fmt.Errorf("QUIC dial: %w", err)
+		return fail(fmt.Errorf("QUIC dial: %w", err))
 	}
 	log.Printf("QUIC connection established to %s", p.Server)
 
@@ -144,14 +176,12 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 	ipconn, rsp, err := connectip.Dial(ctx, hconn, template)
 	if err != nil {
 		qconn.CloseWithError(0, "")
-		udpConn.Close()
-		return nil, fmt.Errorf("connect-ip dial: %w", err)
+		return fail(fmt.Errorf("connect-ip dial: %w", err))
 	}
 	if rsp.StatusCode != http.StatusOK {
 		ipconn.Close()
 		qconn.CloseWithError(0, "")
-		udpConn.Close()
-		return nil, fmt.Errorf("unexpected CONNECT-IP status: %d", rsp.StatusCode)
+		return fail(fmt.Errorf("unexpected CONNECT-IP status: %d", rsp.StatusCode))
 	}
 	log.Printf("CONNECT-IP session established (HTTP %d)", rsp.StatusCode)
 
@@ -159,14 +189,12 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 	if err != nil {
 		ipconn.Close()
 		qconn.CloseWithError(0, "")
-		udpConn.Close()
-		return nil, fmt.Errorf("get local prefixes: %w", err)
+		return fail(fmt.Errorf("get local prefixes: %w", err))
 	}
 	if len(prefixes) == 0 {
 		ipconn.Close()
 		qconn.CloseWithError(0, "")
-		udpConn.Close()
-		return nil, fmt.Errorf("server assigned no prefixes")
+		return fail(fmt.Errorf("server assigned no prefixes"))
 	}
 	log.Printf("server assigned prefixes: %v", prefixes)
 
@@ -174,8 +202,7 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 	if err != nil {
 		ipconn.Close()
 		qconn.CloseWithError(0, "")
-		udpConn.Close()
-		return nil, fmt.Errorf("get routes: %w", err)
+		return fail(fmt.Errorf("get routes: %w", err))
 	}
 	for _, r := range routes {
 		log.Printf("server advertised route: %s - %s (proto %d)", r.StartIP, r.EndIP, r.IPProtocol)
@@ -183,6 +210,8 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 
 	return &Session{
 		udpConn:          udpConn,
+		packetConn:       packetConn,
+		ownUDP:           ownUDP,
 		qconn:            qconn,
 		ipconn:           ipconn,
 		dev:              dev,
@@ -326,7 +355,9 @@ func (s *Session) Close() error {
 		if s.qconn != nil {
 			s.qconn.CloseWithError(0, "client shutdown")
 		}
-		if s.udpConn != nil {
+		// Shared PacketConn (iOS NE UDP session) outlives a single QUIC
+		// session so reconnect can reuse it. Only close sockets we opened.
+		if s.ownUDP && s.udpConn != nil {
 			s.udpConn.Close()
 		}
 		log.Printf("session closed gracefully")

@@ -10,7 +10,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private let writeQueue = DispatchQueue(label: "com.next1971.masque.tun-write")
     private let workQueue = DispatchQueue(label: "com.next1971.masque.provider")
     private let dialQueue = DispatchQueue(label: "com.next1971.masque.dial")
+    private let udpQueue = DispatchQueue(label: "com.next1971.masque.udp")
     private var startCompleted = false
+
+    private var udpSession: NWUDPSession?
+    private var udpStateObs: NSKeyValueObservation?
+    private var udpWriter: GoUDPWriter?
+    private var datagramPipe: MobileDatagramPipe?
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         workQueue.async { [weak self] in
@@ -24,10 +30,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler(error)
     }
 
-    /// iOS kills the provider if startTunnel does not complete in a few seconds.
-    /// Dial QUIC first (current code) hits that watchdog: UI shows connecting ~4s
-    /// then drops, and the handshake often never leaves the phone.
-    /// Bring up a placeholder tunnel with no default route, complete start, then Dial.
+    /// Dial over NEPacketTunnelProvider.createUDPSession *before* any tunnel
+    /// routes, then apply full settings and complete startTunnel.
+    ///
+    /// Build 7 completed a placeholder tunnel first, then called BSD
+    /// ListenUDP + IP_BOUND_IF. That crashed the Packet Tunnel (~1s
+    /// Connected flash; 16/20 TestFlight crashes). BSD UDP from the NE
+    /// also never reached the VPS, with or without bind.
     private func startTunnelLocked(completionHandler: @escaping (Error?) -> Void) {
         startCompleted = false
         AppGroup.defaults.removeObject(forKey: AppGroup.defaultsLastError)
@@ -45,73 +54,146 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let port = Self.port(of: profile.server)
         let ip = Self.resolveIPv4(host)
         let remote = ip ?? "127.0.0.1"
-        // Numeric IP so Go does not DNS-resolve after the placeholder utun is up.
         let dialServer = ip.map { "\($0):\(port)" } ?? profile.server
-        let bootstrap = bootstrapSettings(remote: remote, profile: profile)
-        publishStatus("connecting to server")
+        guard let serverIP = ip else {
+            let msg = "could not resolve \(host) to IPv4"
+            recordError(msg)
+            finishStart(completionHandler, NSError(
+                domain: "masque",
+                code: 7,
+                userInfo: [NSLocalizedDescriptionKey: msg]
+            ))
+            return
+        }
 
-        setTunnelNetworkSettings(bootstrap) { [weak self] err in
-            guard let self else {
-                completionHandler(err)
-                return
-            }
+        publishStatus("opening UDP to \(serverIP):\(port)")
+        openPhysicalUDP(host: serverIP, port: port) { [weak self] err in
+            guard let self else { return }
             self.workQueue.async {
                 if let err {
                     self.recordError(err.localizedDescription)
+                    self.teardownUDP()
                     self.finishStart(completionHandler, err)
                     return
                 }
-                self.finishStart(completionHandler, nil)
-                self.workQueue.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                    guard let self else { return }
-                    let bindIf = self.physicalInterfaceName()
-                    self.dialQueue.async {
-                        self.dialAndUpgrade(
-                            profile: profile,
-                            dialServer: dialServer,
-                            remote: remote,
-                            bindInterface: bindIf
-                        )
+                guard let session = self.udpSession else {
+                    let msg = "UDP session missing after ready"
+                    self.recordError(msg)
+                    self.finishStart(completionHandler, NSError(
+                        domain: "masque",
+                        code: 8,
+                        userInfo: [NSLocalizedDescriptionKey: msg]
+                    ))
+                    return
+                }
+                guard let portNum = Int(port), portNum > 0 else {
+                    let msg = "invalid server port \(port)"
+                    self.recordError(msg)
+                    self.teardownUDP()
+                    self.finishStart(completionHandler, NSError(
+                        domain: "masque",
+                        code: 8,
+                        userInfo: [NSLocalizedDescriptionKey: msg]
+                    ))
+                    return
+                }
+
+                let writer = GoUDPWriter(session: session, queue: self.udpQueue)
+                self.udpWriter = writer
+                var pipeErr: NSError?
+                guard let pipe = MobileNewDatagramPipe(writer, serverIP, portNum, &pipeErr) else {
+                    let msg = pipeErr?.localizedDescription ?? "UDP pipe failed"
+                    self.recordError(msg)
+                    self.teardownUDP()
+                    self.finishStart(completionHandler, pipeErr ?? NSError(
+                        domain: "masque",
+                        code: 8,
+                        userInfo: [NSLocalizedDescriptionKey: msg]
+                    ))
+                    return
+                }
+                self.datagramPipe = pipe
+                session.setReadHandler({ [weak self] datagrams, readErr in
+                    if let readErr {
+                        self?.workQueue.async {
+                            self?.recordError("UDP read: \(readErr.localizedDescription)")
+                        }
                     }
+                    guard let pipe = self?.datagramPipe else { return }
+                    for d in datagrams ?? [] {
+                        pipe.deliver(d)
+                    }
+                }, maxDatagrams: 32)
+
+                self.publishStatus("dialing QUIC")
+                self.dialQueue.async {
+                    self.dialThenApplySettings(
+                        profile: profile,
+                        dialServer: dialServer,
+                        remote: remote,
+                        pipe: pipe,
+                        completionHandler: completionHandler
+                    )
                 }
             }
         }
     }
 
-    /// NetworkExtension's NWPath has no availableInterfaces on the iOS SDK we build with.
-    /// Pick the physical IPv4 interface (en0 / pdp_ip*) so QUIC is not bound to utun.
-    private func physicalInterfaceName() -> String {
-        var ifaddr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return "" }
-        defer { freeifaddrs(ifaddr) }
+    private func openPhysicalUDP(host: String, port: String, completion: @escaping (Error?) -> Void) {
+        teardownUDP()
+        let endpoint = NWHostEndpoint(hostname: host, port: port)
+        let session = createUDPSession(to: endpoint, from: nil)
+        udpSession = session
 
-        var wifi = ""
-        var cell = ""
-        var other = ""
-        var ptr: UnsafeMutablePointer<ifaddrs>? = first
-        while let ifa = ptr {
-            defer { ptr = ifa.pointee.ifa_next }
-            let name = String(cString: ifa.pointee.ifa_name)
-            let flags = Int32(ifa.pointee.ifa_flags)
-            if (flags & IFF_UP) == 0 || (flags & IFF_LOOPBACK) != 0 { continue }
-            if name.hasPrefix("utun") || name.hasPrefix("lo") { continue }
-            guard let addr = ifa.pointee.ifa_addr, addr.pointee.sa_family == sa_family_t(AF_INET) else { continue }
-            if name == "en0" {
-                wifi = name
-            } else if name.hasPrefix("en"), wifi.isEmpty {
-                wifi = name
-            } else if name.hasPrefix("pdp_ip"), cell.isEmpty {
-                cell = name
-            } else if other.isEmpty {
-                other = name
+        var finished = false
+        let finish: (Error?) -> Void = { [weak self] err in
+            self?.workQueue.async {
+                guard !finished else { return }
+                finished = true
+                completion(err)
             }
         }
-        if !wifi.isEmpty { return wifi }
-        if !cell.isEmpty { return cell }
-        return other
+
+        udpStateObs = session.observe(\.state, options: [.initial, .new]) { sess, _ in
+            switch sess.state {
+            case .ready:
+                finish(nil)
+            case .failed:
+                finish(NSError(
+                    domain: "masque",
+                    code: 9,
+                    userInfo: [NSLocalizedDescriptionKey: "UDP session failed"]
+                ))
+            case .cancelled, .invalid:
+                finish(NSError(
+                    domain: "masque",
+                    code: 9,
+                    userInfo: [NSLocalizedDescriptionKey: "UDP session \(sess.state)"]
+                ))
+            default:
+                break
+            }
+        }
+
+        workQueue.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self, let session = self.udpSession else { return }
+            if session.state != .ready {
+                finish(NSError(
+                    domain: "masque",
+                    code: 9,
+                    userInfo: [NSLocalizedDescriptionKey: "UDP session not ready (state \(session.state.rawValue))"]
+                ))
+            }
+        }
     }
 
-    private func dialAndUpgrade(profile: MasqueProfile, dialServer: String, remote: String, bindInterface: String) {
+    private func dialThenApplySettings(
+        profile: MasqueProfile,
+        dialServer: String,
+        remote: String,
+        pipe: MobileDatagramPipe,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
         let cfg = MobileConfig()
         cfg.server = dialServer
         cfg.serverName = profile.serverName
@@ -119,20 +201,24 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         cfg.certPath = profile.certPath
         cfg.keyPath = profile.keyPath
         cfg.mtu = profile.mtu
-        cfg.bindInterface = bindInterface
+        cfg.bindInterface = ""
 
         let cb = GoCallback(owner: self)
         goCallback = cb
         var dialErr: NSError?
-        guard let t = MobileDial(cfg, cb, &dialErr) else {
+        guard let t = MobileDialWithPipe(cfg, cb, pipe, &dialErr) else {
             goCallback = nil
             let msg = dialErr?.localizedDescription ?? "QUIC dial failed"
-            recordError(msg)
-            cancelTunnelWithError(dialErr ?? NSError(
-                domain: "masque",
-                code: 6,
-                userInfo: [NSLocalizedDescriptionKey: msg]
-            ))
+            workQueue.async { [weak self] in
+                guard let self else { return }
+                self.recordError(msg)
+                self.teardownUDP()
+                self.finishStart(completionHandler, dialErr ?? NSError(
+                    domain: "masque",
+                    code: 6,
+                    userInfo: [NSLocalizedDescriptionKey: msg]
+                ))
+            }
             return
         }
         tunnel = t
@@ -140,14 +226,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let settings = networkSettings(for: t, profile: profile, fallbackRemote: remote)
         setTunnelNetworkSettings(settings) { [weak self] err in
             guard let self else { return }
-            self.workQueue.async { [weak self] in
-                guard let self else { return }
+            self.workQueue.async {
                 if let err {
                     t.stop()
                     self.tunnel = nil
                     self.goCallback = nil
+                    self.teardownUDP()
                     self.recordError(err.localizedDescription)
-                    self.cancelTunnelWithError(err)
+                    self.finishStart(completionHandler, err)
                     return
                 }
                 do {
@@ -156,16 +242,28 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     t.stop()
                     self.tunnel = nil
                     self.goCallback = nil
+                    self.teardownUDP()
                     self.recordError(error.localizedDescription)
-                    self.cancelTunnelWithError(error)
+                    self.finishStart(completionHandler, error)
                     return
                 }
                 self.pumpFromDevice()
                 self.pumpToDevice()
                 self.startPingTimer()
                 self.publishStatus("VPN active")
+                self.finishStart(completionHandler, nil)
             }
         }
+    }
+
+    private func teardownUDP() {
+        udpStateObs?.invalidate()
+        udpStateObs = nil
+        try? datagramPipe?.close()
+        datagramPipe = nil
+        udpWriter = nil
+        udpSession?.cancel()
+        udpSession = nil
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
@@ -179,6 +277,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self.tunnel?.stop()
             self.tunnel = nil
             self.goCallback = nil
+            self.teardownUDP()
             AppGroup.defaults.set(0, forKey: AppGroup.defaultsPing)
             AppGroup.defaults.set("Disconnected", forKey: AppGroup.defaultsStatus)
             completionHandler()
@@ -189,6 +288,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         workQueue.async { [weak self] in
             guard let self else { return }
             if msg == "assigned-ip-changed" {
+                self.recordError("assigned IP changed")
                 self.cancelTunnelWithError(NSError(
                     domain: "masque",
                     code: 2,
@@ -214,6 +314,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private func recordError(_ msg: String) {
         AppGroup.defaults.set(msg, forKey: AppGroup.defaultsLastError)
         AppGroup.defaults.set(msg, forKey: AppGroup.defaultsStatus)
+        AppGroup.defaults.synchronize()
     }
 
     private func publishStatus(_ msg: String) {
@@ -235,20 +336,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
         timer.resume()
         pingTimer = timer
-    }
-
-    /// Placeholder interface with no default route so QUIC uses Wi‑Fi/LTE.
-    private func bootstrapSettings(remote: String, profile: MasqueProfile) -> NEPacketTunnelNetworkSettings {
-        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remote)
-        settings.mtu = NSNumber(value: profile.mtu)
-        let ipv4 = NEIPv4Settings(addresses: ["10.8.0.254"], subnetMasks: ["255.255.255.255"])
-        // Dummy on-link route so iOS does not tear down an "empty" VPN ~1s after start.
-        ipv4.includedRoutes = [NEIPv4Route(destinationAddress: "198.18.0.1", subnetMask: "255.255.255.255")]
-        if remote != "127.0.0.1" {
-            ipv4.excludedRoutes = [NEIPv4Route(destinationAddress: remote, subnetMask: "255.255.255.255")]
-        }
-        settings.ipv4Settings = ipv4
-        return settings
     }
 
     private func networkSettings(for tunnel: MobileTunnel, profile: MasqueProfile, fallbackRemote: String) -> NEPacketTunnelNetworkSettings {
@@ -354,6 +441,26 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return NSNumber(value: AF_INET6)
         }
         return NSNumber(value: AF_INET)
+    }
+}
+
+/// gomobile DatagramWriter is a class (not a protocol). writeDatagram must not block the Go thread.
+private final class GoUDPWriter: MobileDatagramWriter {
+    private weak var session: NWUDPSession?
+    private let queue: DispatchQueue
+
+    init(session: NWUDPSession, queue: DispatchQueue) {
+        self.session = session
+        self.queue = queue
+        super.init()
+    }
+
+    override func writeDatagram(_ p: Data?) throws {
+        guard let data = p, !data.isEmpty else { return }
+        let payload = data
+        queue.async { [weak self] in
+            self?.session?.writeDatagram(payload) { _ in }
+        }
     }
 }
 

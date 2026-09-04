@@ -36,18 +36,19 @@ type Callback interface {
 // Tunnel represents an active session plus a long-lived TUN.
 // QUIC/CONNECT-IP may be replaced on failure; the TUN fd is not.
 type Tunnel struct {
-	mu       sync.Mutex
-	sess     *clientcore.Session
-	prof     *clientcore.Profile
-	ctx      context.Context
-	cancel   context.CancelFunc
-	cb       Callback
+	mu         sync.Mutex
+	sess       *clientcore.Session
+	prof       *clientcore.Profile
+	ctx        context.Context
+	cancel     context.CancelFunc
+	cb         Callback
 	lastAddr   string
 	lastBits   int
 	lastAddrV6 string
 	started    bool
 	stopped    bool
 	bridge     *bridgeTUN
+	pipe       *DatagramPipe
 }
 
 // AssignedAddr returns the server-assigned IPv4/IPv6 address (without prefix
@@ -191,13 +192,39 @@ func firstPrefix(prefixes []netip.Prefix, want6 bool) (netip.Prefix, bool) {
 // returns, read AssignedAddr()/AssignedPrefixLen(), configure the platform
 // interface, then attach it with StartWithFD (Android) or StartPacketBridge
 // (iOS) and begin forwarding.
-func Dial(cfg *Config, cb Callback) (*Tunnel, error) {
+func Dial(cfg *Config, cb Callback) (t *Tunnel, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("dial panic: %v", r)
+			t = nil
+		}
+	}()
+	return dial(cfg, cb, nil)
+}
+
+// DialWithPipe is Dial using a Swift UDP session as the QUIC PacketConn.
+// iOS must open NEPacketTunnelProvider.createUDPSession (or NWConnection)
+// before calling this, and must not complete startTunnel until it returns.
+func DialWithPipe(cfg *Config, cb Callback, pipe *DatagramPipe) (t *Tunnel, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("dial panic: %v", r)
+			t = nil
+		}
+	}()
+	if pipe == nil || pipe.conn == nil {
+		return nil, fmt.Errorf("nil datagram pipe")
+	}
+	return dial(cfg, cb, pipe)
+}
+
+func dial(cfg *Config, cb Callback, pipe *DatagramPipe) (*Tunnel, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("nil config")
 	}
 	prof := profileFromConfig(cfg)
 	ctx, cancel := context.WithCancel(context.Background())
-	sess, err := clientcore.Connect(ctx, prof, nil)
+	sess, err := connectSession(ctx, prof, pipe)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("dial: %w", err)
@@ -208,9 +235,16 @@ func Dial(cfg *Config, cb Callback) (*Tunnel, error) {
 			cb.OnStatus("assigned " + sess.AssignedPrefixes[0].String())
 		}
 	}
-	t := &Tunnel{sess: sess, prof: prof, ctx: ctx, cancel: cancel, cb: cb}
+	t := &Tunnel{sess: sess, prof: prof, ctx: ctx, cancel: cancel, cb: cb, pipe: pipe}
 	rememberAssigned(t, sess)
 	return t, nil
+}
+
+func connectSession(ctx context.Context, prof *clientcore.Profile, pipe *DatagramPipe) (*clientcore.Session, error) {
+	if pipe != nil && pipe.conn != nil {
+		return clientcore.ConnectWithPacketConn(ctx, prof, nil, pipe.conn)
+	}
+	return clientcore.Connect(ctx, prof, nil)
 }
 
 func (t *Tunnel) startWithDevice(dev tun.Device, readyMsg string) error {
@@ -257,7 +291,7 @@ func (t *Tunnel) runPump(ctx context.Context, pump *clientcore.Pump, prof *clien
 		if cb != nil {
 			cb.OnStatus("reconnecting")
 		}
-		s, err := clientcore.Connect(ctx, prof, nil)
+		s, err := connectSession(ctx, prof, t.pipe)
 		if err != nil {
 			return nil, err
 		}
@@ -329,6 +363,9 @@ func (t *Tunnel) Stop() {
 	}
 	if t.sess != nil {
 		t.sess.Close()
+	}
+	if t.pipe != nil {
+		_ = t.pipe.Close()
 	}
 	if t.bridge != nil {
 		_ = t.bridge.Close()
