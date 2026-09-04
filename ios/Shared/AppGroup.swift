@@ -6,6 +6,7 @@ enum AppGroup {
     static let defaultsMTU = "mtu"
     static let defaultsStatus = "status"
     static let defaultsPing = "pingMs"
+    static let defaultsLastError = "lastError"
 
     static var containerURL: URL? {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: id)
