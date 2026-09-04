@@ -18,14 +18,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     private func finishStart(_ completionHandler: @escaping (Error?) -> Void, _ error: Error?) {
-        // Must run on workQueue.
         guard !startCompleted else { return }
         startCompleted = true
         completionHandler(error)
     }
 
+    /// iOS kills the provider if startTunnel does not complete in a few seconds.
+    /// Dial QUIC first (current code) hits that watchdog: UI shows connecting ~4s
+    /// then drops, and the handshake often never leaves the phone.
+    /// Bring up a placeholder tunnel with no default route, complete start, then Dial.
     private func startTunnelLocked(completionHandler: @escaping (Error?) -> Void) {
         startCompleted = false
+        AppGroup.defaults.removeObject(forKey: AppGroup.defaultsLastError)
 
         guard let profile = ProfileStore.load() else {
             finishStart(completionHandler, NSError(
@@ -36,6 +40,28 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
+        let remote = Self.resolveIPv4(Self.host(of: profile.server)) ?? "127.0.0.1"
+        let bootstrap = bootstrapSettings(remote: remote, profile: profile)
+        publishStatus("connecting to server")
+
+        setTunnelNetworkSettings(bootstrap) { [weak self] err in
+            guard let self else {
+                completionHandler(err)
+                return
+            }
+            self.workQueue.async {
+                if let err {
+                    self.recordError(err.localizedDescription)
+                    self.finishStart(completionHandler, err)
+                    return
+                }
+                self.finishStart(completionHandler, nil)
+                self.dialAndUpgrade(profile: profile, remote: remote)
+            }
+        }
+    }
+
+    private func dialAndUpgrade(profile: MasqueProfile, remote: String) {
         let cfg = MobileConfig()
         cfg.server = profile.server
         cfg.serverName = profile.serverName
@@ -49,24 +75,27 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         var dialErr: NSError?
         guard let t = MobileDial(cfg, cb, &dialErr) else {
             goCallback = nil
-            finishStart(completionHandler, dialErr)
+            let msg = dialErr?.localizedDescription ?? "QUIC dial failed"
+            recordError(msg)
+            cancelTunnelWithError(dialErr ?? NSError(
+                domain: "masque",
+                code: 6,
+                userInfo: [NSLocalizedDescriptionKey: msg]
+            ))
             return
         }
         tunnel = t
 
-        let settings = self.networkSettings(for: t, profile: profile)
-
+        let settings = networkSettings(for: t, profile: profile, fallbackRemote: remote)
         setTunnelNetworkSettings(settings) { [weak self] err in
-            guard let self else {
-                completionHandler(err)
-                return
-            }
+            guard let self else { return }
             self.workQueue.async {
                 if let err {
                     t.stop()
                     self.tunnel = nil
                     self.goCallback = nil
-                    self.finishStart(completionHandler, err)
+                    self.recordError(err.localizedDescription)
+                    self.cancelTunnelWithError(err)
                     return
                 }
                 do {
@@ -75,14 +104,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     t.stop()
                     self.tunnel = nil
                     self.goCallback = nil
-                    self.finishStart(completionHandler, error)
+                    self.recordError(error.localizedDescription)
+                    self.cancelTunnelWithError(error)
                     return
                 }
                 self.pumpFromDevice()
                 self.pumpToDevice()
                 self.startPingTimer()
                 self.publishStatus("VPN active")
-                self.finishStart(completionHandler, nil)
             }
         }
     }
@@ -121,12 +150,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     fileprivate func handleGoError(_ msg: String) {
         workQueue.async { [weak self] in
+            self?.recordError(msg)
             self?.cancelTunnelWithError(NSError(
                 domain: "masque",
                 code: 3,
                 userInfo: [NSLocalizedDescriptionKey: msg]
             ))
         }
+    }
+
+    private func recordError(_ msg: String) {
+        AppGroup.defaults.set(msg, forKey: AppGroup.defaultsLastError)
+        AppGroup.defaults.set(msg, forKey: AppGroup.defaultsStatus)
     }
 
     private func publishStatus(_ msg: String) {
@@ -150,11 +185,24 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         pingTimer = timer
     }
 
-    private func networkSettings(for tunnel: MobileTunnel, profile: MasqueProfile) -> NEPacketTunnelNetworkSettings {
+    /// Placeholder interface with no default route so QUIC uses Wi‑Fi/LTE.
+    private func bootstrapSettings(remote: String, profile: MasqueProfile) -> NEPacketTunnelNetworkSettings {
+        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remote)
+        settings.mtu = NSNumber(value: profile.mtu)
+        let ipv4 = NEIPv4Settings(addresses: ["10.8.0.254"], subnetMasks: ["255.255.255.255"])
+        ipv4.includedRoutes = []
+        if remote != "127.0.0.1" {
+            ipv4.excludedRoutes = [NEIPv4Route(destinationAddress: remote, subnetMask: "255.255.255.255")]
+        }
+        settings.ipv4Settings = ipv4
+        return settings
+    }
+
+    private func networkSettings(for tunnel: MobileTunnel, profile: MasqueProfile, fallbackRemote: String) -> NEPacketTunnelNetworkSettings {
         var v4 = tunnel.assignedAddr() ?? ""
         if v4.isEmpty { v4 = "10.8.0.254" }
         let remoteRaw = tunnel.serverIPv4()
-        let remote = remoteRaw.isEmpty ? "127.0.0.1" : remoteRaw
+        let remote = remoteRaw.isEmpty ? fallbackRemote : remoteRaw
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remote)
         settings.mtu = NSNumber(value: profile.mtu)
 
@@ -201,6 +249,37 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 self.packetFlow.writePackets([pkt], withProtocols: [proto])
             }
         }
+    }
+
+    private static func host(of server: String) -> String {
+        if server.hasPrefix("["), let end = server.firstIndex(of: "]") {
+            return String(server[server.index(after: server.startIndex)..<end])
+        }
+        if let colon = server.lastIndex(of: ":") {
+            return String(server[..<colon])
+        }
+        return server
+    }
+
+    private static func resolveIPv4(_ host: String) -> String? {
+        var hints = addrinfo()
+        hints.ai_family = AF_INET
+        hints.ai_socktype = SOCK_DGRAM
+        var info: UnsafeMutablePointer<addrinfo>?
+        let rc = getaddrinfo(host, nil, &hints, &info)
+        guard rc == 0, let first = info else { return nil }
+        defer { freeaddrinfo(info) }
+        var buf = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+        guard getnameinfo(
+            first.pointee.ai_addr,
+            socklen_t(first.pointee.ai_addrlen),
+            &buf,
+            socklen_t(buf.count),
+            nil,
+            0,
+            NI_NUMERICHOST
+        ) == 0 else { return nil }
+        return String(cString: buf)
     }
 
     private static func ipProtocol(_ pkt: Data) -> NSNumber {

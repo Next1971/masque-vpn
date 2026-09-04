@@ -299,17 +299,27 @@ final class VPNManager: ObservableObject {
             connected = false
             busy = false
             pingText = "Ping: —"
+            let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
+            if !tunnelErr.isEmpty {
+                lastError = tunnelErr
+            }
             refreshProfileStatus()
         }
     }
 
     private func refreshPing() {
-        guard connected else { return }
-        let ms = AppGroup.defaults.integer(forKey: AppGroup.defaultsPing)
+        guard connected else {
+            let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
+            if !tunnelErr.isEmpty, lastError != tunnelErr {
+                lastError = tunnelErr
+            }
+            return
+        }
         let msg = AppGroup.defaults.string(forKey: AppGroup.defaultsStatus) ?? ""
+        if !msg.isEmpty { statusText = "Status: \(msg)" }
+        let ms = AppGroup.defaults.integer(forKey: AppGroup.defaultsPing)
         if ms > 0 {
             pingText = "Ping: \(ms) ms"
-            if !msg.isEmpty { statusText = "Status: \(msg)" }
         }
     }
 }

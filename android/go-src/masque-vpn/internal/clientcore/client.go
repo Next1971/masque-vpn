@@ -341,9 +341,10 @@ const (
 
 func newQUICConfig() *quic.Config {
 	return &quic.Config{
-		EnableDatagrams:   true,
-		InitialPacketSize: 1350,
-		KeepAlivePeriod:   quicKeepAlivePeriod,
-		MaxIdleTimeout:    quicMaxIdleTimeout,
+		EnableDatagrams:      true,
+		InitialPacketSize:    1350,
+		KeepAlivePeriod:      quicKeepAlivePeriod,
+		MaxIdleTimeout:       quicMaxIdleTimeout,
+		HandshakeIdleTimeout: 15 * time.Second,
 	}
 }
