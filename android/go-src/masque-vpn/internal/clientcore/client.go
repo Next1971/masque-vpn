@@ -119,6 +119,10 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 	if err != nil {
 		return nil, fmt.Errorf("listen UDP: %w", err)
 	}
+	if err := bindUDPToInterface(udpConn, p.BindInterface); err != nil {
+		udpConn.Close()
+		return nil, fmt.Errorf("bind UDP to %q: %w", p.BindInterface, err)
+	}
 
 	tlsConf, err := buildTLSConfig(p)
 	if err != nil {

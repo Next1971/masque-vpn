@@ -38,6 +38,10 @@ type Profile struct {
 	TUNName string   `toml:"tun_name"` // interface name (Linux/Windows), e.g. "masque0"
 	MTU     int      `toml:"mtu"`      // tunnel MTU, e.g. 1400
 	DNS     []string `toml:"dns"`      // tunnel DNS servers (full-route), default ["1.1.1.1"]
+
+	// BindInterface, if set, binds the QUIC UDP socket to that network
+	// interface (iOS Packet Tunnel: Wi‑Fi/LTE so handshake is not swallowed by utun).
+	BindInterface string `toml:"-"`
 }
 
 // tomlProfile is an intermediate structure for TOML sections.

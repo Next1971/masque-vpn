@@ -9,6 +9,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var pingTimer: DispatchSourceTimer?
     private let writeQueue = DispatchQueue(label: "com.next1971.masque.tun-write")
     private let workQueue = DispatchQueue(label: "com.next1971.masque.provider")
+    private let dialQueue = DispatchQueue(label: "com.next1971.masque.dial")
     private var startCompleted = false
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
@@ -40,7 +41,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
-        let remote = Self.resolveIPv4(Self.host(of: profile.server)) ?? "127.0.0.1"
+        let host = Self.host(of: profile.server)
+        let port = Self.port(of: profile.server)
+        let ip = Self.resolveIPv4(host)
+        let remote = ip ?? "127.0.0.1"
+        // Numeric IP so Go does not DNS-resolve after the placeholder utun is up.
+        let dialServer = ip.map { "\($0):\(port)" } ?? profile.server
         let bootstrap = bootstrapSettings(remote: remote, profile: profile)
         publishStatus("connecting to server")
 
@@ -56,19 +62,64 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     return
                 }
                 self.finishStart(completionHandler, nil)
-                self.dialAndUpgrade(profile: profile, remote: remote)
+                self.workQueue.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                    guard let self else { return }
+                    let bindIf = self.physicalInterfaceName()
+                    self.dialQueue.async {
+                        self.dialAndUpgrade(
+                            profile: profile,
+                            dialServer: dialServer,
+                            remote: remote,
+                            bindInterface: bindIf
+                        )
+                    }
+                }
             }
         }
     }
 
-    private func dialAndUpgrade(profile: MasqueProfile, remote: String) {
+    /// NetworkExtension's NWPath has no availableInterfaces on the iOS SDK we build with.
+    /// Pick the physical IPv4 interface (en0 / pdp_ip*) so QUIC is not bound to utun.
+    private func physicalInterfaceName() -> String {
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return "" }
+        defer { freeifaddrs(ifaddr) }
+
+        var wifi = ""
+        var cell = ""
+        var other = ""
+        var ptr: UnsafeMutablePointer<ifaddrs>? = first
+        while let ifa = ptr {
+            defer { ptr = ifa.pointee.ifa_next }
+            let name = String(cString: ifa.pointee.ifa_name)
+            let flags = Int32(ifa.pointee.ifa_flags)
+            if (flags & IFF_UP) == 0 || (flags & IFF_LOOPBACK) != 0 { continue }
+            if name.hasPrefix("utun") || name.hasPrefix("lo") { continue }
+            guard let addr = ifa.pointee.ifa_addr, addr.pointee.sa_family == sa_family_t(AF_INET) else { continue }
+            if name == "en0" {
+                wifi = name
+            } else if name.hasPrefix("en"), wifi.isEmpty {
+                wifi = name
+            } else if name.hasPrefix("pdp_ip"), cell.isEmpty {
+                cell = name
+            } else if other.isEmpty {
+                other = name
+            }
+        }
+        if !wifi.isEmpty { return wifi }
+        if !cell.isEmpty { return cell }
+        return other
+    }
+
+    private func dialAndUpgrade(profile: MasqueProfile, dialServer: String, remote: String, bindInterface: String) {
         let cfg = MobileConfig()
-        cfg.server = profile.server
+        cfg.server = dialServer
         cfg.serverName = profile.serverName
         cfg.caPath = profile.caPath
         cfg.certPath = profile.certPath
         cfg.keyPath = profile.keyPath
         cfg.mtu = profile.mtu
+        cfg.bindInterface = bindInterface
 
         let cb = GoCallback(owner: self)
         goCallback = cb
@@ -89,7 +140,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let settings = networkSettings(for: t, profile: profile, fallbackRemote: remote)
         setTunnelNetworkSettings(settings) { [weak self] err in
             guard let self else { return }
-            self.workQueue.async {
+            self.workQueue.async { [weak self] in
+                guard let self else { return }
                 if let err {
                     t.stop()
                     self.tunnel = nil
@@ -190,7 +242,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remote)
         settings.mtu = NSNumber(value: profile.mtu)
         let ipv4 = NEIPv4Settings(addresses: ["10.8.0.254"], subnetMasks: ["255.255.255.255"])
-        ipv4.includedRoutes = []
+        // Dummy on-link route so iOS does not tear down an "empty" VPN ~1s after start.
+        ipv4.includedRoutes = [NEIPv4Route(destinationAddress: "198.18.0.1", subnetMask: "255.255.255.255")]
         if remote != "127.0.0.1" {
             ipv4.excludedRoutes = [NEIPv4Route(destinationAddress: remote, subnetMask: "255.255.255.255")]
         }
@@ -259,6 +312,19 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return String(server[..<colon])
         }
         return server
+    }
+
+    private static func port(of server: String) -> String {
+        if server.hasPrefix("["), let end = server.firstIndex(of: "]") {
+            let rest = server[server.index(after: end)...]
+            if rest.first == ":" { return String(rest.dropFirst()) }
+            return "443"
+        }
+        if let colon = server.lastIndex(of: ":") {
+            let p = String(server[server.index(after: colon)...])
+            if !p.isEmpty { return p }
+        }
+        return "443"
     }
 
     private static func resolveIPv4(_ host: String) -> String? {

@@ -23,6 +23,8 @@ type Config struct {
 	CertPath   string
 	KeyPath    string
 	MTU        int
+	// BindInterface is the OS interface name for the QUIC UDP socket (iOS).
+	BindInterface string
 }
 
 // Callback provides status/error notifications to Java.
@@ -151,13 +153,14 @@ func profileFromConfig(cfg *Config) *clientcore.Profile {
 		mtu = 1400
 	}
 	return &clientcore.Profile{
-		Server:     cfg.Server,
-		ServerName: cfg.ServerName,
-		CA:         cfg.CAPath,
-		Cert:       cfg.CertPath,
-		Key:        cfg.KeyPath,
-		TUNName:    "",
-		MTU:        mtu,
+		Server:        cfg.Server,
+		ServerName:    cfg.ServerName,
+		CA:            cfg.CAPath,
+		Cert:          cfg.CertPath,
+		Key:           cfg.KeyPath,
+		TUNName:       "",
+		MTU:           mtu,
+		BindInterface: cfg.BindInterface,
 	}
 }
 
