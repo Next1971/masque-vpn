@@ -84,21 +84,26 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     return
                 }
                 self.finishStart(nil)
-                self.publishStatus("opening UDP to \(serverIP):\(port)")
-                self.openPhysicalUDP(host: serverIP, port: port) { [weak self] udpErr in
+                // Let the exclude-route path settle. Binding from: physicalIP:0
+                // (build 11) made NWUDPSession jump to .failed immediately.
+                self.workQueue.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                     guard let self else { return }
-                    self.workQueue.async {
-                        if let udpErr {
-                            self.failAfterStart(udpErr.localizedDescription, code: 9)
-                            return
+                    self.publishStatus("opening UDP to \(serverIP):\(port)")
+                    self.openPhysicalUDP(host: serverIP, port: port) { [weak self] udpErr in
+                        guard let self else { return }
+                        self.workQueue.async {
+                            if let udpErr {
+                                self.failAfterStart(udpErr.localizedDescription, code: 9)
+                                return
+                            }
+                            self.attachPipeAndDial(
+                                profile: profile,
+                                dialServer: dialServer,
+                                remote: remote,
+                                serverIP: serverIP,
+                                portNum: portNum
+                            )
                         }
-                        self.attachPipeAndDial(
-                            profile: profile,
-                            dialServer: dialServer,
-                            remote: remote,
-                            serverIP: serverIP,
-                            portNum: portNum
-                        )
                     }
                 }
             }
@@ -183,13 +188,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private func openPhysicalUDP(host: String, port: String, completion: @escaping (Error?) -> Void) {
         teardownUDP()
+        // from: nil — the Packet Tunnel API picks the physical path using
+        // excludedRoutes. from: "<wifi>:0" is rejected and the session fails.
         let endpoint = NWHostEndpoint(hostname: host, port: port)
-        let localIP = Self.physicalIPv4()
-        let from: NWHostEndpoint? = localIP.map { NWHostEndpoint(hostname: $0, port: "0") }
-        if let localIP {
-            publishStatus("opening UDP to \(host):\(port) from \(localIP)")
-        }
-        let session = createUDPSession(to: endpoint, from: from)
+        let session = createUDPSession(to: endpoint, from: nil)
         udpSession = session
 
         var finished = false
@@ -201,9 +203,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             }
         }
 
-        // .invalid is the *initial* state of NWUDPSession. Observing .initial
-        // and treating it as fatal cancelled the tunnel ~1s after Connect
-        // (build 9: "VPN active" then "opening UDP" then Disconnected).
         udpStateObs = session.observe(\.state, options: [.new]) { [weak self] sess, _ in
             self?.publishStatus("UDP state \(sess.state.rawValue)")
             switch sess.state {
@@ -213,7 +212,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 finish(NSError(
                     domain: "masque",
                     code: 9,
-                    userInfo: [NSLocalizedDescriptionKey: "UDP session failed"]
+                    userInfo: [NSLocalizedDescriptionKey: Self.udpErrorText(sess)]
                 ))
             case .cancelled:
                 finish(NSError(
@@ -233,7 +232,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             finish(NSError(
                 domain: "masque",
                 code: 9,
-                userInfo: [NSLocalizedDescriptionKey: "UDP session failed"]
+                userInfo: [NSLocalizedDescriptionKey: Self.udpErrorText(session)]
             ))
         default:
             break
@@ -249,6 +248,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 ))
             }
         }
+    }
+
+    /// NWUDPSession exposes no error, so report the path status and whether the
+    /// endpoint resolved — enough to tell "no route" from "DNS/endpoint bad".
+    private static func udpErrorText(_ session: NWUDPSession) -> String {
+        let pathStatus = session.currentPath.map { "\($0.status.rawValue)" } ?? "none"
+        let target = (session.resolvedEndpoint as? NWHostEndpoint)
+            .map { "\($0.hostname):\($0.port)" } ?? "unresolved"
+        return "UDP session failed (path \(pathStatus), \(target))"
     }
 
     private func dialThenApplySettings(
@@ -463,41 +471,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             if !p.isEmpty { return p }
         }
         return "443"
-    }
-
-    /// Wi-Fi / cellular IPv4, never utun or the bootstrap tunnel address.
-    private static func physicalIPv4() -> String? {
-        var ifaddr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return nil }
-        defer { freeifaddrs(ifaddr) }
-        var wifi: String?
-        var cell: String?
-        var other: String?
-        var ptr: UnsafeMutablePointer<ifaddrs>? = first
-        while let cur = ptr {
-            let name = String(cString: cur.pointee.ifa_name)
-            let flags = Int32(cur.pointee.ifa_flags)
-            if (flags & IFF_UP) != 0,
-               (flags & IFF_LOOPBACK) == 0,
-               let addr = cur.pointee.ifa_addr,
-               addr.pointee.sa_family == sa_family_t(AF_INET),
-               !name.hasPrefix("utun"),
-               !name.hasPrefix("lo")
-            {
-                var buf = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                let len = socklen_t(addr.pointee.sa_len != 0 ? Int(addr.pointee.sa_len) : MemoryLayout<sockaddr_in>.size)
-                if getnameinfo(addr, len, &buf, socklen_t(buf.count), nil, 0, NI_NUMERICHOST) == 0 {
-                    let ip = String(cString: buf)
-                    if ip != "10.8.0.254" {
-                        if name == "en0" { wifi = ip }
-                        else if name.hasPrefix("pdp_ip") { cell = ip }
-                        else if name.hasPrefix("en") { other = other ?? ip }
-                    }
-                }
-            }
-            ptr = cur.pointee.ifa_next
-        }
-        return wifi ?? cell ?? other
     }
 
     private static func resolveIPv4(_ host: String) -> String? {
