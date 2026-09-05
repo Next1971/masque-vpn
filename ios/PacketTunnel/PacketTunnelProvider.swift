@@ -31,6 +31,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var routesApplied = false
     private var tearingDownUDP = false
     private var reconnectAttempt = 0
+    private var pathObs: NSKeyValueObservation?
+    private var lastPathKey = ""
+    private var lastPhysicalIP = ""
+    private var ignorePathChangesUntil = Date.distantPast
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         // A Packet Tunnel is jetsam-killed around 15 MB. Cap the Go heap before
@@ -98,6 +102,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         lastServerIP = serverIP
         lastPort = port
         lastPortNum = portNum
+        lastPathKey = pathKey(defaultPath)
+        ignorePathChangesUntil = Date().addingTimeInterval(4)
+        observeDefaultPath()
 
         publishStatus("starting")
         let bootstrap = bootstrapSettings(remote: remote, profile: profile)
@@ -163,6 +170,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         portNum: Int
     ) {
         guard let session = udpSession else {
+            if everDialed, startCompleted, !stopping {
+                scheduleReconnect("UDP session missing after ready")
+                return
+            }
             failAfterStart("UDP session missing after ready", code: 8)
             return
         }
@@ -220,6 +231,86 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         return settings
     }
 
+    /// Wi-Fi → cellular leaves a satisfied-looking path with no local address
+    /// for a few seconds. createUDPSession then goes .failed with
+    /// "path 1, unresolved" and build 16 cancelled the VPN.
+    private func waitForPhysicalPath(tries: Int, completion: @escaping () -> Void) {
+        if stopping {
+            completion()
+            return
+        }
+        if let ip = Self.physicalIPv4() {
+            let pathOK = defaultPath?.status == .satisfied
+            // After Wi-Fi drops, en0 can keep its address for a moment while
+            // createUDPSession already fails (path satisfied, endpoint unresolved).
+            // Prefer a new address; after ~3s accept the same one (speedtest).
+            let isNew = lastPhysicalIP.isEmpty || ip != lastPhysicalIP
+            if pathOK, isNew || tries >= 6 {
+                lastPhysicalIP = ip
+                publishStatus("physical path \(ip)")
+                workQueue.asyncAfter(deadline: .now() + 0.5, execute: completion)
+                return
+            }
+        }
+        if tries >= 40 {
+            publishStatus("no physical IP yet, trying UDP anyway")
+            completion()
+            return
+        }
+        publishStatus("waiting for network…")
+        workQueue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.waitForPhysicalPath(tries: tries + 1, completion: completion)
+        }
+    }
+
+    private func observeDefaultPath() {
+        pathObs?.invalidate()
+        pathObs = observe(\.defaultPath, options: [.new]) { [weak self] _, _ in
+            guard let self else { return }
+            self.workQueue.async {
+                guard self.everDialed, self.startCompleted, !self.stopping else { return }
+                guard Date() > self.ignorePathChangesUntil else { return }
+                let key = self.pathKey(self.defaultPath)
+                guard key != self.lastPathKey else { return }
+                self.lastPathKey = key
+                self.scheduleReconnect("network path changed")
+            }
+        }
+    }
+
+    private func pathKey(_ path: NetworkExtension.NWPath?) -> String {
+        guard let path else { return "nil" }
+        return "\(path.status.rawValue)/exp=\(path.isExpensive)/v4=\(path.supportsIPv4)"
+    }
+
+    /// First non-tunnel IPv4. utun/ipsec are the VPN itself; 10.8.0.254 is ours.
+    private static func physicalIPv4() -> String? {
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return nil }
+        defer { freeifaddrs(ifaddr) }
+        var ptr: UnsafeMutablePointer<ifaddrs>? = first
+        while let cur = ptr {
+            let flags = Int32(cur.pointee.ifa_flags)
+            let name = String(cString: cur.pointee.ifa_name)
+            let skip = name.hasPrefix("utun") || name.hasPrefix("ipsec")
+                || name.hasPrefix("awdl") || name.hasPrefix("llw")
+                || name.hasPrefix("p2p")
+            if !skip, flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0,
+               let addr = cur.pointee.ifa_addr, addr.pointee.sa_family == sa_family_t(AF_INET) {
+                var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                let len = socklen_t(addr.pointee.sa_len)
+                if getnameinfo(addr, len, &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
+                    let ip = String(cString: host)
+                    if ip != "10.8.0.254", !ip.hasPrefix("169.254") {
+                        return ip
+                    }
+                }
+            }
+            ptr = cur.pointee.ifa_next
+        }
+        return nil
+    }
+
     private func openPhysicalUDP(host: String, port: String, completion: @escaping (Error?) -> Void) {
         teardownUDP()
         // from: nil — the Packet Tunnel API picks the physical path using
@@ -241,6 +332,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self?.publishStatus("UDP state \(sess.state.rawValue)")
             switch sess.state {
             case .ready:
+                self?.lastPhysicalIP = Self.physicalIPv4() ?? self?.lastPhysicalIP ?? ""
                 finish(nil)
             case .failed:
                 let msg = Self.udpErrorText(sess)
@@ -300,7 +392,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let pathStatus = session.currentPath.map { "\($0.status.rawValue)" } ?? "none"
         let target = (session.resolvedEndpoint as? NWHostEndpoint)
             .map { "\($0.hostname):\($0.port)" } ?? "unresolved"
-        return "UDP session failed (path \(pathStatus), \(target))"
+        let local = physicalIPv4() ?? "no-phys-ip"
+        return "UDP session failed (path \(pathStatus), \(target), \(local))"
     }
 
     private func dialThenApplySettings(
@@ -350,6 +443,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 return
             }
             self.reconnectAttempt = 0
+            self.ignorePathChangesUntil = Date().addingTimeInterval(3)
+            self.lastPathKey = self.pathKey(self.defaultPath)
             self.pumpFromDevice()
             self.pumpToDevice()
             self.startPingTimer()
@@ -426,23 +521,28 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self.goCallback = nil
             self.teardownUDP()
             MobileReleaseMemory()
-            self.openPhysicalUDP(host: self.lastServerIP, port: self.lastPort) { [weak self] err in
+            self.waitForPhysicalPath(tries: 0) { [weak self] in
                 guard let self else { return }
-                self.workQueue.async {
+                if self.stopping {
                     self.reconnecting = false
-                    if let err {
-                        // A speedtest can flap the UDP path for a few seconds.
-                        // Do not cancel the Packet Tunnel — retry.
-                        self.scheduleReconnectLater(err.localizedDescription)
-                        return
+                    return
+                }
+                self.openPhysicalUDP(host: self.lastServerIP, port: self.lastPort) { [weak self] err in
+                    guard let self else { return }
+                    self.workQueue.async {
+                        self.reconnecting = false
+                        if let err {
+                            self.scheduleReconnectLater(err.localizedDescription)
+                            return
+                        }
+                        self.attachPipeAndDial(
+                            profile: profile,
+                            dialServer: self.lastDialServer,
+                            remote: self.lastRemote,
+                            serverIP: self.lastServerIP,
+                            portNum: self.lastPortNum
+                        )
                     }
-                    self.attachPipeAndDial(
-                        profile: profile,
-                        dialServer: self.lastDialServer,
-                        remote: self.lastRemote,
-                        serverIP: self.lastServerIP,
-                        portNum: self.lastPortNum
-                    )
                 }
             }
         }
@@ -451,7 +551,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private func scheduleReconnectLater(_ reason: String) {
         guard !stopping, startCompleted, everDialed else { return }
         reconnectAttempt += 1
-        let delay = min(20.0, pow(2.0, Double(min(reconnectAttempt, 4))))
+        let delay = min(8.0, Double(reconnectAttempt))
         publishStatus("reconnect in \(Int(delay))s: \(reason)")
         workQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.scheduleReconnect(reason)
@@ -465,6 +565,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 return
             }
             self.stopping = true
+            self.pathObs?.invalidate()
+            self.pathObs = nil
             self.pingTimer?.cancel()
             self.pingTimer = nil
             self.tunnel?.stop()
