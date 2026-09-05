@@ -18,6 +18,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var udpStateObs: NSKeyValueObservation?
     private var udpWriter: GoUDPWriter?
     private var datagramPipe: MobileDatagramPipe?
+    private var udpWriteErrorLogged = false
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         workQueue.async { [weak self] in
@@ -40,6 +41,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private func startTunnelLocked(completionHandler: @escaping (Error?) -> Void) {
         startCompleted = false
         startHandler = completionHandler
+        udpWriteErrorLogged = false
         AppGroup.defaults.removeObject(forKey: AppGroup.defaultsLastError)
 
         guard let profile = ProfileStore.load() else {
@@ -138,7 +140,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
-        let writer = GoUDPWriter(session: session, queue: udpQueue)
+        let writer = GoUDPWriter(session: session, queue: udpQueue, owner: self)
         udpWriter = writer
         var pipeErr: NSError?
         guard let pipe = MobileNewDatagramPipe(writer, serverIP, portNum, &pipeErr) else {
@@ -343,6 +345,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
+    /// First failed datagram send only: QUIC retransmits, so this would spam.
+    fileprivate func noteUDPWriteError(_ err: Error) {
+        workQueue.async { [weak self] in
+            guard let self, !self.udpWriteErrorLogged else { return }
+            self.udpWriteErrorLogged = true
+            self.recordError("UDP write failed: \(err.localizedDescription)")
+        }
+    }
+
     fileprivate func handleGoStatus(_ msg: String) {
         workQueue.async { [weak self] in
             guard let self else { return }
@@ -503,36 +514,52 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 }
 
-/// gomobile DatagramWriter is a class (not a protocol). writeDatagram must not block the Go thread.
-private final class GoUDPWriter: MobileDatagramWriter {
-    private weak var session: NWUDPSession?
+/// gomobile exports a Go interface as an ObjC protocol *plus* a proxy class for
+/// Go-side values. Builds up to 12 subclassed the proxy class, so Go received an
+/// object with no valid Go reference: WriteDatagram never reached Swift, nothing
+/// went on the wire, and the extension died a few seconds into the dial.
+/// Implement the protocol on a plain NSObject instead.
+///
+/// writeDatagram must not block: gomobile calls it on the Go QUIC thread.
+private final class GoUDPWriter: NSObject, MobileDatagramWriterProtocol {
+    private let session: NWUDPSession
     private let queue: DispatchQueue
+    private weak var owner: PacketTunnelProvider?
 
-    init(session: NWUDPSession, queue: DispatchQueue) {
+    init(session: NWUDPSession, queue: DispatchQueue, owner: PacketTunnelProvider) {
         self.session = session
         self.queue = queue
+        self.owner = owner
         super.init()
     }
 
-    override func writeDatagram(_ p: Data?) throws {
+    func writeDatagram(_ p: Data?) throws {
         guard let data = p, !data.isEmpty else { return }
-        let payload = data
         queue.async { [weak self] in
-            self?.session?.writeDatagram(payload) { _ in }
+            guard let self else { return }
+            self.session.writeDatagram(data) { [weak self] err in
+                if let err {
+                    self?.owner?.noteUDPWriteError(err)
+                }
+            }
         }
     }
 }
 
-private final class GoCallback: MobileCallback {
+private final class GoCallback: NSObject, MobileCallbackProtocol {
     weak var owner: PacketTunnelProvider?
-    init(owner: PacketTunnelProvider) { super.init(); self.owner = owner }
 
-    override func onStatus(_ msg: String?) {
+    init(owner: PacketTunnelProvider) {
+        self.owner = owner
+        super.init()
+    }
+
+    func onStatus(_ msg: String?) {
         guard let msg else { return }
         owner?.handleGoStatus(msg)
     }
 
-    override func onError(_ msg: String?) {
+    func onError(_ msg: String?) {
         guard let msg else { return }
         owner?.handleGoError(msg)
     }
