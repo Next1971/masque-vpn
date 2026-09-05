@@ -174,15 +174,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    /// Full IPv4 default + exclude the MASQUE server. Applied *before* UDP/QUIC
-    /// so we never call setTunnelNetworkSettings again after Dial — that second
-    /// apply cancelled the live NWUDPSession (UDP read «операция отменена»)
-    /// right after «forwarding started».
+    /// Dummy host-route only. Build 13 used this, then applied the real default
+    /// after Dial. Build 14 put the default route on *this* first apply: first
+    /// connect worked, then the session died in minutes and later Connect never
+    /// reached the VPS (UDP already sitting on the capture path).
     private func bootstrapSettings(remote: String, profile: MasqueProfile) -> NEPacketTunnelNetworkSettings {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remote)
         settings.mtu = NSNumber(value: profile.mtu)
         let ipv4 = NEIPv4Settings(addresses: [Self.placeholderIPv4], subnetMasks: ["255.255.255.255"])
-        ipv4.includedRoutes = [NEIPv4Route.default()]
+        ipv4.includedRoutes = [NEIPv4Route(destinationAddress: "198.18.0.1", subnetMask: "255.255.255.255")]
         if remote != "127.0.0.1" {
             ipv4.excludedRoutes = [NEIPv4Route(destinationAddress: remote, subnetMask: "255.255.255.255")]
         }
@@ -190,9 +190,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let ipv6 = NEIPv6Settings(addresses: ["fd00::1"], networkPrefixLengths: [128])
         ipv6.includedRoutes = []
         settings.ipv6Settings = ipv6
-        var dns = [profile.dns]
-        if profile.dns != "8.8.8.8" { dns.append("8.8.8.8") }
-        settings.dnsSettings = NEDNSSettings(servers: dns)
         return settings
     }
 
@@ -219,17 +216,26 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             case .ready:
                 finish(nil)
             case .failed:
+                let msg = Self.udpErrorText(sess)
                 finish(NSError(
                     domain: "masque",
                     code: 9,
-                    userInfo: [NSLocalizedDescriptionKey: Self.udpErrorText(sess)]
+                    userInfo: [NSLocalizedDescriptionKey: msg]
                 ))
+                self?.workQueue.async {
+                    guard let self, self.startCompleted, self.tunnel != nil else { return }
+                    self.failAfterStart(msg, code: 9)
+                }
             case .cancelled:
                 finish(NSError(
                     domain: "masque",
                     code: 9,
                     userInfo: [NSLocalizedDescriptionKey: "UDP session cancelled"]
                 ))
+                self?.workQueue.async {
+                    guard let self, self.startCompleted, self.tunnel != nil else { return }
+                    self.failAfterStart("UDP session cancelled", code: 9)
+                }
             default:
                 break
             }
@@ -297,43 +303,55 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
         tunnel = t
 
-        let assigned = t.assignedAddr() ?? ""
-        let needReapply = !assigned.isEmpty && assigned != Self.placeholderIPv4
-        let startBridge: () -> Void = { [weak self] in
+        // Same as build 13: apply the real default route after Dial. A cancelled
+        // read during this apply is noisy but the session stayed up (~8 Mbit).
+        let settings = networkSettings(for: t, profile: profile, fallbackRemote: remote)
+        setTunnelNetworkSettings(settings) { [weak self] err in
             guard let self else { return }
-            do {
-                try t.startPacketBridge()
-            } catch {
-                t.stop()
-                self.tunnel = nil
-                self.goCallback = nil
-                self.failAfterStart(error.localizedDescription, code: 11)
-                return
+            self.workQueue.async {
+                if let err {
+                    t.stop()
+                    self.tunnel = nil
+                    self.goCallback = nil
+                    self.failAfterStart(err.localizedDescription, code: 10)
+                    return
+                }
+                self.rearmUDPRead(pipe: pipe)
+                do {
+                    try t.startPacketBridge()
+                } catch {
+                    t.stop()
+                    self.tunnel = nil
+                    self.goCallback = nil
+                    self.failAfterStart(error.localizedDescription, code: 11)
+                    return
+                }
+                self.pumpFromDevice()
+                self.pumpToDevice()
+                self.startPingTimer()
+                self.publishStatus("VPN active")
             }
-            self.pumpFromDevice()
-            self.pumpToDevice()
-            self.startPingTimer()
-            self.publishStatus("VPN active")
         }
+    }
 
-        if needReapply {
-            let settings = networkSettings(for: t, profile: profile, fallbackRemote: remote)
-            setTunnelNetworkSettings(settings) { [weak self] err in
-                guard let self else { return }
-                self.workQueue.async {
-                    if let err {
-                        t.stop()
-                        self.tunnel = nil
-                        self.goCallback = nil
-                        self.failAfterStart(err.localizedDescription, code: 10)
-                        return
-                    }
-                    startBridge()
+    /// setReadHandler stops after a cancelled read (settings apply). Arm it again.
+    private func rearmUDPRead(pipe: MobileDatagramPipe) {
+        guard let session = udpSession else { return }
+        session.setReadHandler({ [weak self] datagrams, readErr in
+            if let readErr {
+                let text = readErr.localizedDescription.lowercased()
+                if text.contains("cancel") || text.contains("отмен") {
+                    return
+                }
+                self?.workQueue.async {
+                    guard self?.tunnel == nil else { return }
+                    self?.recordError("UDP read: \(readErr.localizedDescription)")
                 }
             }
-        } else {
-            workQueue.async(execute: startBridge)
-        }
+            for d in datagrams ?? [] {
+                pipe.deliver(d)
+            }
+        }, maxDatagrams: 32)
     }
 
     private func teardownUDP() {
