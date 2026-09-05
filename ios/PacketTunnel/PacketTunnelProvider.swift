@@ -19,6 +19,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var udpWriter: GoUDPWriter?
     private var datagramPipe: MobileDatagramPipe?
     private var udpWriteErrorLogged = false
+    private var stopping = false
+    private var reconnecting = false
+    private var lastProfile: MasqueProfile?
+    private var lastRemote = ""
+    private var lastDialServer = ""
+    private var lastServerIP = ""
+    private var lastPort = ""
+    private var lastPortNum = 0
+    private var everDialed = false
+    private var routesApplied = false
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         workQueue.async { [weak self] in
@@ -42,6 +52,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         startCompleted = false
         startHandler = completionHandler
         udpWriteErrorLogged = false
+        stopping = false
+        reconnecting = false
+        everDialed = false
+        routesApplied = false
         AppGroup.defaults.removeObject(forKey: AppGroup.defaultsLastError)
 
         guard let profile = ProfileStore.load() else {
@@ -71,6 +85,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             ))
             return
         }
+
+        lastProfile = profile
+        lastRemote = remote
+        lastDialServer = dialServer
+        lastServerIP = serverIP
+        lastPort = port
+        lastPortNum = portNum
 
         publishStatus("starting")
         let bootstrap = bootstrapSettings(remote: remote, profile: profile)
@@ -222,20 +243,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     code: 9,
                     userInfo: [NSLocalizedDescriptionKey: msg]
                 ))
-                self?.workQueue.async {
-                    guard let self, self.startCompleted, self.tunnel != nil else { return }
-                    self.failAfterStart(msg, code: 9)
-                }
+                self?.scheduleReconnect(msg)
             case .cancelled:
                 finish(NSError(
                     domain: "masque",
                     code: 9,
                     userInfo: [NSLocalizedDescriptionKey: "UDP session cancelled"]
                 ))
-                self?.workQueue.async {
-                    guard let self, self.startCompleted, self.tunnel != nil else { return }
-                    self.failAfterStart("UDP session cancelled", code: 9)
-                }
+                self?.scheduleReconnect("UDP session cancelled")
             default:
                 break
             }
@@ -302,9 +317,31 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
         tunnel = t
+        everDialed = true
 
-        // Same as build 13: apply the real default route after Dial. A cancelled
-        // read during this apply is noisy but the session stayed up (~8 Mbit).
+        let startBridge: () -> Void = { [weak self] in
+            guard let self else { return }
+            self.rearmUDPRead(pipe: pipe)
+            do {
+                try t.startPacketBridge()
+            } catch {
+                t.stop()
+                self.tunnel = nil
+                self.goCallback = nil
+                self.failAfterStart(error.localizedDescription, code: 11)
+                return
+            }
+            self.pumpFromDevice()
+            self.pumpToDevice()
+            self.startPingTimer()
+            self.publishStatus("VPN active")
+        }
+
+        if routesApplied {
+            workQueue.async(execute: startBridge)
+            return
+        }
+
         let settings = networkSettings(for: t, profile: profile, fallbackRemote: remote)
         setTunnelNetworkSettings(settings) { [weak self] err in
             guard let self else { return }
@@ -316,20 +353,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     self.failAfterStart(err.localizedDescription, code: 10)
                     return
                 }
-                self.rearmUDPRead(pipe: pipe)
-                do {
-                    try t.startPacketBridge()
-                } catch {
-                    t.stop()
-                    self.tunnel = nil
-                    self.goCallback = nil
-                    self.failAfterStart(error.localizedDescription, code: 11)
-                    return
-                }
-                self.pumpFromDevice()
-                self.pumpToDevice()
-                self.startPingTimer()
-                self.publishStatus("VPN active")
+                self.routesApplied = true
+                startBridge()
             }
         }
     }
@@ -364,12 +389,48 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         udpSession = nil
     }
 
+    /// QUIC going idle (server: "no recent network activity") used to cancel the
+    /// whole VPN. Redial on a new UDP session and keep startTunnel completed.
+    private func scheduleReconnect(_ reason: String) {
+        workQueue.async { [weak self] in
+            guard let self, !self.stopping, self.startCompleted, self.everDialed else { return }
+            guard let profile = self.lastProfile, !self.lastServerIP.isEmpty else { return }
+            guard !self.reconnecting else { return }
+            self.reconnecting = true
+            self.publishStatus("reconnecting: \(reason)")
+            self.pingTimer?.cancel()
+            self.pingTimer = nil
+            self.tunnel?.stop()
+            self.tunnel = nil
+            self.goCallback = nil
+            self.teardownUDP()
+            self.openPhysicalUDP(host: self.lastServerIP, port: self.lastPort) { [weak self] err in
+                guard let self else { return }
+                self.workQueue.async {
+                    self.reconnecting = false
+                    if let err {
+                        self.failAfterStart("reconnect failed: \(err.localizedDescription)", code: 12)
+                        return
+                    }
+                    self.attachPipeAndDial(
+                        profile: profile,
+                        dialServer: self.lastDialServer,
+                        remote: self.lastRemote,
+                        serverIP: self.lastServerIP,
+                        portNum: self.lastPortNum
+                    )
+                }
+            }
+        }
+    }
+
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         workQueue.async { [weak self] in
             guard let self else {
                 completionHandler()
                 return
             }
+            self.stopping = true
             self.pingTimer?.cancel()
             self.pingTimer = nil
             self.tunnel?.stop()
@@ -409,12 +470,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     fileprivate func handleGoError(_ msg: String) {
         workQueue.async { [weak self] in
-            self?.recordError(msg)
-            self?.cancelTunnelWithError(NSError(
-                domain: "masque",
-                code: 3,
-                userInfo: [NSLocalizedDescriptionKey: msg]
-            ))
+            guard let self else { return }
+            if self.stopping {
+                self.recordError(msg)
+                return
+            }
+            self.scheduleReconnect(msg)
         }
     }
 
@@ -467,7 +528,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         } else {
             ipv6 = NEIPv6Settings(addresses: ["fd00::1"], networkPrefixLengths: [128])
         }
-        ipv6.includedRoutes = [NEIPv6Route.default()]
+        // No IPv6 default: a second default route makes iOS rebuild the path
+        // and the QUIC UDP session goes silent until idle-timeout.
+        ipv6.includedRoutes = []
         settings.ipv6Settings = ipv6
 
         var dns = [profile.dns]
