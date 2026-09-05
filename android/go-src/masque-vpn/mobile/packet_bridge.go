@@ -16,7 +16,7 @@ const bridgeQueue = 64
 type bridgeTUN struct {
 	mtu       int
 	fromOS    chan *[]byte
-	toOS      chan []byte
+	toOS      chan *[]byte
 	closed    chan struct{}
 	closeOnce sync.Once
 	events    chan tun.Event
@@ -29,7 +29,7 @@ func newBridgeTUN(mtu int) *bridgeTUN {
 	t := &bridgeTUN{
 		mtu:    mtu,
 		fromOS: make(chan *[]byte, bridgeQueue),
-		toOS:   make(chan []byte, bridgeQueue),
+		toOS:   make(chan *[]byte, bridgeQueue),
 		closed: make(chan struct{}),
 		events: make(chan tun.Event, 1),
 	}
@@ -65,14 +65,16 @@ func (t *bridgeTUN) Write(bufs [][]byte, offset int) (int, error) {
 		if offset > len(buf) {
 			continue
 		}
-		pkt := append([]byte(nil), buf[offset:]...)
+		p := getBuf(buf[offset:])
 		select {
 		case <-t.closed:
+			putBuf(p)
 			return n, os.ErrClosed
-		case t.toOS <- pkt:
+		case t.toOS <- p:
 			n++
 		default:
 			// Drop when the Swift reader is behind; never block the pump.
+			putBuf(p)
 			n++
 		}
 	}
@@ -149,7 +151,9 @@ func (t *Tunnel) ReadPacket() []byte {
 	select {
 	case <-br.closed:
 		return nil
-	case pkt := <-br.toOS:
-		return pkt
+	case p := <-br.toOS:
+		out := append([]byte(nil), (*p)...)
+		putBuf(p)
+		return out
 	}
 }

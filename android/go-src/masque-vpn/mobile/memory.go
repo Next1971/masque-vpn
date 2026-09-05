@@ -10,7 +10,7 @@ import (
 // Swift included. The default Go GC waits until the heap doubles, which is far
 // too late here: sessions died after 9-19 minutes of traffic with no reconnect
 // callback ever running, i.e. the process was gone.
-const defaultExtensionLimitMB = 10
+const defaultExtensionLimitMB = 12
 
 // TuneForExtension caps the Go heap and makes the collector far more eager.
 // limitMB <= 0 uses the default. Safe to call more than once.
@@ -19,7 +19,9 @@ func TuneForExtension(limitMB int) {
 		limitMB = defaultExtensionLimitMB
 	}
 	debug.SetMemoryLimit(int64(limitMB) << 20)
-	debug.SetGCPercent(20)
+	// 40%: collect often enough for a Packet Tunnel, but a speedtest burst
+	// must not stall the QUIC thread in a GC storm (20% did).
+	debug.SetGCPercent(40)
 }
 
 // HeapKB is the live Go heap in KiB. For on-screen diagnostics.
