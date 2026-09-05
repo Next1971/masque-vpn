@@ -250,11 +250,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
+    /// NWUDPSession exposes no error, so report the path status and whether the
+    /// endpoint resolved — enough to tell "no route" from "DNS/endpoint bad".
     private static func udpErrorText(_ session: NWUDPSession) -> String {
-        if let err = session.error {
-            return "UDP session failed: \(err.localizedDescription)"
-        }
-        return "UDP session failed"
+        let pathStatus = session.currentPath.map { "\($0.status.rawValue)" } ?? "none"
+        let target = (session.resolvedEndpoint as? NWHostEndpoint)
+            .map { "\($0.hostname):\($0.port)" } ?? "unresolved"
+        return "UDP session failed (path \(pathStatus), \(target))"
     }
 
     private func dialThenApplySettings(
