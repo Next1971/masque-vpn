@@ -269,6 +269,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             guard let self else { return }
             self.workQueue.async {
                 guard self.everDialed, self.startCompleted, !self.stopping else { return }
+                guard !self.reconnecting else { return }
                 guard Date() > self.ignorePathChangesUntil else { return }
                 let key = self.pathKey(self.defaultPath)
                 guard key != self.lastPathKey else { return }
@@ -420,6 +421,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             workQueue.async { [weak self] in
                 guard let self else { return }
                 if self.everDialed, self.startCompleted, !self.stopping {
+                    self.reconnecting = false
                     self.scheduleReconnect(msg)
                     return
                 }
@@ -439,11 +441,20 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 t.stop()
                 self.tunnel = nil
                 self.goCallback = nil
+                if self.everDialed, self.startCompleted, !self.stopping {
+                    self.reconnecting = false
+                    self.scheduleReconnect(error.localizedDescription)
+                    return
+                }
                 self.failAfterStart(error.localizedDescription, code: 11)
                 return
             }
             self.reconnectAttempt = 0
-            self.ignorePathChangesUntil = Date().addingTimeInterval(3)
+            self.reconnecting = false
+            // Cellular keeps flipping defaultPath for several seconds after
+            // the first packet. A second reconnect here killed the new session
+            // (VPS: CONNECT from the new IP, then client shutdown).
+            self.ignorePathChangesUntil = Date().addingTimeInterval(8)
             self.lastPathKey = self.pathKey(self.defaultPath)
             self.pumpFromDevice()
             self.pumpToDevice()
@@ -530,11 +541,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 self.openPhysicalUDP(host: self.lastServerIP, port: self.lastPort) { [weak self] err in
                     guard let self else { return }
                     self.workQueue.async {
-                        self.reconnecting = false
                         if let err {
+                            self.reconnecting = false
                             self.scheduleReconnectLater(err.localizedDescription)
                             return
                         }
+                        // Stay reconnecting through Dial. Clearing the flag
+                        // here let defaultPath fire again and tear down the
+                        // session we had just opened on cellular.
                         self.attachPipeAndDial(
                             profile: profile,
                             dialServer: self.lastDialServer,
