@@ -280,7 +280,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private func pathKey(_ path: NetworkExtension.NWPath?) -> String {
         guard let path else { return "nil" }
-        return "\(path.status.rawValue)/exp=\(path.isExpensive)/v4=\(path.supportsIPv4)"
+        return "\(path.status.rawValue)/exp=\(path.isExpensive)"
     }
 
     /// First non-tunnel IPv4. utun/ipsec are the VPN itself; 10.8.0.254 is ours.
