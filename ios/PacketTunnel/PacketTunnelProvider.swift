@@ -33,8 +33,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         handler?(error)
     }
 
-    /// Open the physical UDP session first, complete startTunnel on a bootstrap
-    /// interface (iOS deadline), then dial QUIC and apply full routes.
+    /// Finish startTunnel on a bootstrap interface (iOS deadline), then open
+    /// UDP. Build 10 opened createUDPSession in parallel with
+    /// setTunnelNetworkSettings; applying routes cancelled that session in ~1s
+    /// (opening UDP, never dialing QUIC, no packets on the VPS).
     private func startTunnelLocked(completionHandler: @escaping (Error?) -> Void) {
         startCompleted = false
         startHandler = completionHandler
@@ -68,27 +70,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
-        // Open the UDP session *before* any tunnel routes exist. After
-        // setTunnelNetworkSettings, createUDPSession often binds to utun and
-        // never leaves .invalid / fails in about a second.
-        publishStatus("opening UDP to \(serverIP):\(port)")
-        openPhysicalUDP(host: serverIP, port: port) { [weak self] err in
-            guard let self else { return }
-            self.workQueue.async {
-                if let err {
-                    self.failAfterStart(err.localizedDescription, code: 9)
-                    return
-                }
-                self.attachPipeAndDial(
-                    profile: profile,
-                    dialServer: dialServer,
-                    remote: remote,
-                    serverIP: serverIP,
-                    portNum: portNum
-                )
-            }
-        }
-
+        publishStatus("starting")
         let bootstrap = bootstrapSettings(remote: remote, profile: profile)
         setTunnelNetworkSettings(bootstrap) { [weak self] err in
             guard let self else {
@@ -98,11 +80,27 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self.workQueue.async {
                 if let err {
                     self.recordError(err.localizedDescription)
-                    self.teardownUDP()
                     self.finishStart(err)
                     return
                 }
                 self.finishStart(nil)
+                self.publishStatus("opening UDP to \(serverIP):\(port)")
+                self.openPhysicalUDP(host: serverIP, port: port) { [weak self] udpErr in
+                    guard let self else { return }
+                    self.workQueue.async {
+                        if let udpErr {
+                            self.failAfterStart(udpErr.localizedDescription, code: 9)
+                            return
+                        }
+                        self.attachPipeAndDial(
+                            profile: profile,
+                            dialServer: dialServer,
+                            remote: remote,
+                            serverIP: serverIP,
+                            portNum: portNum
+                        )
+                    }
+                }
             }
         }
     }
@@ -177,13 +175,21 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             ipv4.excludedRoutes = [NEIPv4Route(destinationAddress: remote, subnetMask: "255.255.255.255")]
         }
         settings.ipv4Settings = ipv4
+        let ipv6 = NEIPv6Settings(addresses: ["fd00::1"], networkPrefixLengths: [128])
+        ipv6.includedRoutes = []
+        settings.ipv6Settings = ipv6
         return settings
     }
 
     private func openPhysicalUDP(host: String, port: String, completion: @escaping (Error?) -> Void) {
         teardownUDP()
         let endpoint = NWHostEndpoint(hostname: host, port: port)
-        let session = createUDPSession(to: endpoint, from: nil)
+        let localIP = Self.physicalIPv4()
+        let from: NWHostEndpoint? = localIP.map { NWHostEndpoint(hostname: $0, port: "0") }
+        if let localIP {
+            publishStatus("opening UDP to \(host):\(port) from \(localIP)")
+        }
+        let session = createUDPSession(to: endpoint, from: from)
         udpSession = session
 
         var finished = false
@@ -198,7 +204,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         // .invalid is the *initial* state of NWUDPSession. Observing .initial
         // and treating it as fatal cancelled the tunnel ~1s after Connect
         // (build 9: "VPN active" then "opening UDP" then Disconnected).
-        udpStateObs = session.observe(\.state, options: [.new]) { sess, _ in
+        udpStateObs = session.observe(\.state, options: [.new]) { [weak self] sess, _ in
+            self?.publishStatus("UDP state \(sess.state.rawValue)")
             switch sess.state {
             case .ready:
                 finish(nil)
@@ -217,6 +224,19 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             default:
                 break
             }
+        }
+
+        switch session.state {
+        case .ready:
+            finish(nil)
+        case .failed:
+            finish(NSError(
+                domain: "masque",
+                code: 9,
+                userInfo: [NSLocalizedDescriptionKey: "UDP session failed"]
+            ))
+        default:
+            break
         }
 
         workQueue.asyncAfter(deadline: .now() + 8) { [weak self] in
@@ -443,6 +463,41 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             if !p.isEmpty { return p }
         }
         return "443"
+    }
+
+    /// Wi-Fi / cellular IPv4, never utun or the bootstrap tunnel address.
+    private static func physicalIPv4() -> String? {
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return nil }
+        defer { freeifaddrs(ifaddr) }
+        var wifi: String?
+        var cell: String?
+        var other: String?
+        var ptr: UnsafeMutablePointer<ifaddrs>? = first
+        while let cur = ptr {
+            let name = String(cString: cur.pointee.ifa_name)
+            let flags = Int32(cur.pointee.ifa_flags)
+            if (flags & IFF_UP) != 0,
+               (flags & IFF_LOOPBACK) == 0,
+               let addr = cur.pointee.ifa_addr,
+               addr.pointee.sa_family == sa_family_t(AF_INET),
+               !name.hasPrefix("utun"),
+               !name.hasPrefix("lo")
+            {
+                var buf = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                let len = socklen_t(addr.pointee.sa_len != 0 ? Int(addr.pointee.sa_len) : MemoryLayout<sockaddr_in>.size)
+                if getnameinfo(addr, len, &buf, socklen_t(buf.count), nil, 0, NI_NUMERICHOST) == 0 {
+                    let ip = String(cString: buf)
+                    if ip != "10.8.0.254" {
+                        if name == "en0" { wifi = ip }
+                        else if name.hasPrefix("pdp_ip") { cell = ip }
+                        else if name.hasPrefix("en") { other = other ?? ip }
+                    }
+                }
+            }
+            ptr = cur.pointee.ifa_next
+        }
+        return wifi ?? cell ?? other
     }
 
     private static func resolveIPv4(_ host: String) -> String? {
