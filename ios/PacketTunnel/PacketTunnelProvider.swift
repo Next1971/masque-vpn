@@ -29,12 +29,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var lastPortNum = 0
     private var everDialed = false
     private var routesApplied = false
+    private var tearingDownUDP = false
+    private var reconnectAttempt = 0
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         // A Packet Tunnel is jetsam-killed around 15 MB. Cap the Go heap before
         // anything allocates, or the process dies mid-session (9-19 min in) and
         // no Swift reconnect handler ever runs.
-        MobileTuneForExtension(10)
+        MobileTuneForExtension(12)
         workQueue.async { [weak self] in
             self?.startTunnelLocked(completionHandler: completionHandler)
         }
@@ -247,14 +249,21 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     code: 9,
                     userInfo: [NSLocalizedDescriptionKey: msg]
                 ))
-                self?.scheduleReconnect(msg)
+                // Handshake failures are retried by the openPhysicalUDP
+                // completion. After the tunnel is up, a speedtest burst can
+                // cancel this session — reconnect instead of killing the VPN.
+                if self?.tearingDownUDP != true, self?.reconnecting != true {
+                    self?.scheduleReconnect(msg)
+                }
             case .cancelled:
                 finish(NSError(
                     domain: "masque",
                     code: 9,
                     userInfo: [NSLocalizedDescriptionKey: "UDP session cancelled"]
                 ))
-                self?.scheduleReconnect("UDP session cancelled")
+                if self?.tearingDownUDP != true, self?.reconnecting != true {
+                    self?.scheduleReconnect("UDP session cancelled")
+                }
             default:
                 break
             }
@@ -316,7 +325,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             goCallback = nil
             let msg = dialErr?.localizedDescription ?? "QUIC dial failed"
             workQueue.async { [weak self] in
-                self?.failAfterStart(msg, code: 6)
+                guard let self else { return }
+                if self.everDialed, self.startCompleted, !self.stopping {
+                    self.scheduleReconnect(msg)
+                    return
+                }
+                self.failAfterStart(msg, code: 6)
             }
             return
         }
@@ -335,6 +349,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 self.failAfterStart(error.localizedDescription, code: 11)
                 return
             }
+            self.reconnectAttempt = 0
             self.pumpFromDevice()
             self.pumpToDevice()
             self.startPingTimer()
@@ -384,6 +399,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     private func teardownUDP() {
+        tearingDownUDP = true
         udpStateObs?.invalidate()
         udpStateObs = nil
         try? datagramPipe?.close()
@@ -391,6 +407,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         udpWriter = nil
         udpSession?.cancel()
         udpSession = nil
+        tearingDownUDP = false
     }
 
     /// QUIC going idle (server: "no recent network activity") used to cancel the
@@ -414,7 +431,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 self.workQueue.async {
                     self.reconnecting = false
                     if let err {
-                        self.failAfterStart("reconnect failed: \(err.localizedDescription)", code: 12)
+                        // A speedtest can flap the UDP path for a few seconds.
+                        // Do not cancel the Packet Tunnel — retry.
+                        self.scheduleReconnectLater(err.localizedDescription)
                         return
                     }
                     self.attachPipeAndDial(
@@ -426,6 +445,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     )
                 }
             }
+        }
+    }
+
+    private func scheduleReconnectLater(_ reason: String) {
+        guard !stopping, startCompleted, everDialed else { return }
+        reconnectAttempt += 1
+        let delay = min(20.0, pow(2.0, Double(min(reconnectAttempt, 4))))
+        publishStatus("reconnect in \(Int(delay))s: \(reason)")
+        workQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.scheduleReconnect(reason)
         }
     }
 
@@ -566,7 +595,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             guard let self else { return }
             while true {
                 guard let tunnel = self.tunnel else { return }
-                guard let pkt = tunnel.readPacket(), !pkt.isEmpty else { return }
+                guard let pkt = tunnel.readPacket() else { return }
+                if pkt.isEmpty { continue }
                 let proto = Self.ipProtocol(pkt)
                 self.packetFlow.writePackets([pkt], withProtocols: [proto])
             }
@@ -639,6 +669,8 @@ private final class GoUDPWriter: NSObject, MobileDatagramWriterProtocol {
     private let session: NWUDPSession
     private let queue: DispatchQueue
     private weak var owner: PacketTunnelProvider?
+    private var pending = 0
+    private static let maxPending = 48
 
     init(session: NWUDPSession, queue: DispatchQueue, owner: PacketTunnelProvider) {
         self.session = session
@@ -651,9 +683,17 @@ private final class GoUDPWriter: NSObject, MobileDatagramWriterProtocol {
         guard let data = p, !data.isEmpty else { return }
         queue.async { [weak self] in
             guard let self else { return }
+            // Unbounded writeDatagram during a speedtest balloons the
+            // extension heap and iOS jetsams the process (~15 MB).
+            if self.pending >= Self.maxPending { return }
+            self.pending += 1
             self.session.writeDatagram(data) { [weak self] err in
-                if let err {
-                    self?.owner?.noteUDPWriteError(err)
+                self?.queue.async {
+                    guard let self else { return }
+                    self.pending = max(0, self.pending - 1)
+                    if let err {
+                        self.owner?.noteUDPWriteError(err)
+                    }
                 }
             }
         }

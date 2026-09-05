@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const datagramQueue = 256
+const datagramQueue = 64
 
 // DatagramWriter sends one UDP payload on the physical path. Implemented in
 // Swift (NWUDPSession / NWConnection). Must return immediately: gomobile
