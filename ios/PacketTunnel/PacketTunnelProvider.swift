@@ -30,13 +30,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler(error)
     }
 
-    /// Dial over NEPacketTunnelProvider.createUDPSession *before* any tunnel
-    /// routes, then apply full settings and complete startTunnel.
+    /// Complete startTunnel within the iOS deadline, then dial.
     ///
-    /// Build 7 completed a placeholder tunnel first, then called BSD
-    /// ListenUDP + IP_BOUND_IF. That crashed the Packet Tunnel (~1s
-    /// Connected flash; 16/20 TestFlight crashes). BSD UDP from the NE
-    /// also never reached the VPS, with or without bind.
+    /// Build 8 resolved DNS, waited for createUDPSession and finished the QUIC
+    /// handshake *before* calling the completion handler — up to ~23s. iOS kills
+    /// a provider that slow, which is what TestFlight counted as crashes (24/32).
+    /// Bring up a bootstrap interface, complete start, then open the UDP session
+    /// and dial in the background; full routes are applied once QUIC is up.
     private func startTunnelLocked(completionHandler: @escaping (Error?) -> Void) {
         startCompleted = false
         AppGroup.defaults.removeObject(forKey: AppGroup.defaultsLastError)
@@ -55,46 +55,69 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let ip = Self.resolveIPv4(host)
         let remote = ip ?? "127.0.0.1"
         let dialServer = ip.map { "\($0):\(port)" } ?? profile.server
-        guard let serverIP = ip else {
-            let msg = "could not resolve \(host) to IPv4"
-            recordError(msg)
-            finishStart(completionHandler, NSError(
-                domain: "masque",
-                code: 7,
-                userInfo: [NSLocalizedDescriptionKey: msg]
-            ))
-            return
-        }
 
+        publishStatus("starting")
+        let bootstrap = bootstrapSettings(remote: remote, profile: profile)
+        setTunnelNetworkSettings(bootstrap) { [weak self] err in
+            guard let self else {
+                completionHandler(err)
+                return
+            }
+            self.workQueue.async {
+                if let err {
+                    self.recordError(err.localizedDescription)
+                    self.finishStart(completionHandler, err)
+                    return
+                }
+                self.finishStart(completionHandler, nil)
+                guard let serverIP = ip, let portNum = Int(port), portNum > 0 else {
+                    let msg = ip == nil
+                        ? "could not resolve \(host) to IPv4"
+                        : "invalid server port \(port)"
+                    self.failAfterStart(msg, code: 7)
+                    return
+                }
+                self.openUDPThenDial(
+                    profile: profile,
+                    dialServer: dialServer,
+                    remote: remote,
+                    serverIP: serverIP,
+                    port: port,
+                    portNum: portNum
+                )
+            }
+        }
+    }
+
+    /// startTunnel already returned, so failures must cancel the tunnel instead.
+    private func failAfterStart(_ msg: String, code: Int) {
+        recordError(msg)
+        teardownUDP()
+        cancelTunnelWithError(NSError(
+            domain: "masque",
+            code: code,
+            userInfo: [NSLocalizedDescriptionKey: msg]
+        ))
+    }
+
+    private func openUDPThenDial(
+        profile: MasqueProfile,
+        dialServer: String,
+        remote: String,
+        serverIP: String,
+        port: String,
+        portNum: Int
+    ) {
         publishStatus("opening UDP to \(serverIP):\(port)")
         openPhysicalUDP(host: serverIP, port: port) { [weak self] err in
             guard let self else { return }
             self.workQueue.async {
                 if let err {
-                    self.recordError(err.localizedDescription)
-                    self.teardownUDP()
-                    self.finishStart(completionHandler, err)
+                    self.failAfterStart(err.localizedDescription, code: 9)
                     return
                 }
                 guard let session = self.udpSession else {
-                    let msg = "UDP session missing after ready"
-                    self.recordError(msg)
-                    self.finishStart(completionHandler, NSError(
-                        domain: "masque",
-                        code: 8,
-                        userInfo: [NSLocalizedDescriptionKey: msg]
-                    ))
-                    return
-                }
-                guard let portNum = Int(port), portNum > 0 else {
-                    let msg = "invalid server port \(port)"
-                    self.recordError(msg)
-                    self.teardownUDP()
-                    self.finishStart(completionHandler, NSError(
-                        domain: "masque",
-                        code: 8,
-                        userInfo: [NSLocalizedDescriptionKey: msg]
-                    ))
+                    self.failAfterStart("UDP session missing after ready", code: 8)
                     return
                 }
 
@@ -102,14 +125,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 self.udpWriter = writer
                 var pipeErr: NSError?
                 guard let pipe = MobileNewDatagramPipe(writer, serverIP, portNum, &pipeErr) else {
-                    let msg = pipeErr?.localizedDescription ?? "UDP pipe failed"
-                    self.recordError(msg)
-                    self.teardownUDP()
-                    self.finishStart(completionHandler, pipeErr ?? NSError(
-                        domain: "masque",
-                        code: 8,
-                        userInfo: [NSLocalizedDescriptionKey: msg]
-                    ))
+                    self.failAfterStart(pipeErr?.localizedDescription ?? "UDP pipe failed", code: 8)
                     return
                 }
                 self.datagramPipe = pipe
@@ -131,12 +147,25 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                         profile: profile,
                         dialServer: dialServer,
                         remote: remote,
-                        pipe: pipe,
-                        completionHandler: completionHandler
+                        pipe: pipe
                     )
                 }
             }
         }
+    }
+
+    /// Bootstrap interface: a host route only, so iOS keeps the tunnel up while
+    /// QUIC connects but no real traffic is captured yet.
+    private func bootstrapSettings(remote: String, profile: MasqueProfile) -> NEPacketTunnelNetworkSettings {
+        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remote)
+        settings.mtu = NSNumber(value: profile.mtu)
+        let ipv4 = NEIPv4Settings(addresses: ["10.8.0.254"], subnetMasks: ["255.255.255.255"])
+        ipv4.includedRoutes = [NEIPv4Route(destinationAddress: "198.18.0.1", subnetMask: "255.255.255.255")]
+        if remote != "127.0.0.1" {
+            ipv4.excludedRoutes = [NEIPv4Route(destinationAddress: remote, subnetMask: "255.255.255.255")]
+        }
+        settings.ipv4Settings = ipv4
+        return settings
     }
 
     private func openPhysicalUDP(host: String, port: String, completion: @escaping (Error?) -> Void) {
@@ -191,8 +220,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         profile: MasqueProfile,
         dialServer: String,
         remote: String,
-        pipe: MobileDatagramPipe,
-        completionHandler: @escaping (Error?) -> Void
+        pipe: MobileDatagramPipe
     ) {
         let cfg = MobileConfig()
         cfg.server = dialServer
@@ -210,14 +238,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             goCallback = nil
             let msg = dialErr?.localizedDescription ?? "QUIC dial failed"
             workQueue.async { [weak self] in
-                guard let self else { return }
-                self.recordError(msg)
-                self.teardownUDP()
-                self.finishStart(completionHandler, dialErr ?? NSError(
-                    domain: "masque",
-                    code: 6,
-                    userInfo: [NSLocalizedDescriptionKey: msg]
-                ))
+                self?.failAfterStart(msg, code: 6)
             }
             return
         }
@@ -231,9 +252,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     t.stop()
                     self.tunnel = nil
                     self.goCallback = nil
-                    self.teardownUDP()
-                    self.recordError(err.localizedDescription)
-                    self.finishStart(completionHandler, err)
+                    self.failAfterStart(err.localizedDescription, code: 10)
                     return
                 }
                 do {
@@ -242,16 +261,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     t.stop()
                     self.tunnel = nil
                     self.goCallback = nil
-                    self.teardownUDP()
-                    self.recordError(error.localizedDescription)
-                    self.finishStart(completionHandler, error)
+                    self.failAfterStart(error.localizedDescription, code: 11)
                     return
                 }
                 self.pumpFromDevice()
                 self.pumpToDevice()
                 self.startPingTimer()
                 self.publishStatus("VPN active")
-                self.finishStart(completionHandler, nil)
             }
         }
     }

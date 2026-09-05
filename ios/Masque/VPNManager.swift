@@ -14,6 +14,7 @@ final class VPNManager: ObservableObject {
 
     private var observer: NSObjectProtocol?
     private var pingTimer: Timer?
+    private var busyWatchdog: Timer?
     private let prefs = DispatchQueue(label: "com.next1971.masque.vpn-prefs")
     /// Only touch on `prefs` queue.
     private var cachedManager: NETunnelProviderManager?
@@ -40,6 +41,7 @@ final class VPNManager: ObservableObject {
     deinit {
         if let observer { NotificationCenter.default.removeObserver(observer) }
         pingTimer?.invalidate()
+        busyWatchdog?.invalidate()
     }
 
     var versionLabel: String {
@@ -49,7 +51,7 @@ final class VPNManager: ObservableObject {
     }
 
     var connectTitle: String {
-        if busy { return connected ? "Disconnecting…" : "Connecting…" }
+        if busy { return connected ? "Disconnecting…" : "Connecting… (tap to stop)" }
         return connected ? "Disconnect" : "Connect"
     }
 
@@ -82,7 +84,19 @@ final class VPNManager: ObservableObject {
 
     func toggle() {
         lastError = nil
-        if busy { return }
+        // A stuck busy flag used to make the button do nothing at all, so a tap
+        // while busy stops whatever is half-started instead of being ignored.
+        if busy {
+            busy = false
+            statusText = "Status: cancelling"
+            prefs.async { [weak self] in
+                self?.reloadManager { mgr in
+                    mgr?.connection.stopVPNTunnel()
+                    DispatchQueue.main.async { self?.refreshProfileStatus() }
+                }
+            }
+            return
+        }
 
         if connected {
             busy = true
@@ -116,6 +130,22 @@ final class VPNManager: ObservableObject {
 
     private func clampMTU(_ v: Int) -> Int {
         min(1500, max(1280, v))
+    }
+
+    /// The extension can die without a final status change, so busy is never
+    /// left on forever; otherwise Connect stays greyed out until app restart.
+    private func setBusy(_ on: Bool) {
+        busy = on
+        busyWatchdog?.invalidate()
+        busyWatchdog = nil
+        guard on else { return }
+        busyWatchdog = Timer.scheduledTimer(withTimeInterval: 25, repeats: false) { [weak self] _ in
+            guard let self, self.busy, !self.connected else { return }
+            self.busy = false
+            let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
+            self.lastError = tunnelErr.isEmpty ? "Connect timed out" : tunnelErr
+            self.refreshProfileStatus()
+        }
     }
 
     private func startTunnel(server: String, attempt: Int) {
@@ -285,19 +315,19 @@ final class VPNManager: ObservableObject {
         switch status {
         case .connected:
             connected = true
-            busy = false
+            setBusy(false)
             statusText = "Status: VPN active"
         case .connecting, .reasserting:
             connected = false
-            busy = true
+            setBusy(true)
             statusText = "Status: connecting"
         case .disconnecting:
             connected = false
-            busy = true
+            setBusy(true)
             statusText = "Status: disconnecting"
         default:
             connected = false
-            busy = false
+            setBusy(false)
             pingText = "Ping: —"
             let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
             if !tunnelErr.isEmpty {
@@ -312,6 +342,11 @@ final class VPNManager: ObservableObject {
             let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
             if !tunnelErr.isEmpty, lastError != tunnelErr {
                 lastError = tunnelErr
+            }
+            // Show how far the extension got: starting / opening UDP / dialing QUIC.
+            if busy, tunnelErr.isEmpty {
+                let stage = AppGroup.defaults.string(forKey: AppGroup.defaultsStatus) ?? ""
+                if !stage.isEmpty { statusText = "Status: \(stage)" }
             }
             return
         }

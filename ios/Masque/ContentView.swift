@@ -40,7 +40,6 @@ struct ContentView: View {
                     vpn.toggle()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(vpn.busy)
 
                 Spacer()
             }
