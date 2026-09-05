@@ -151,6 +151,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         session.setReadHandler({ [weak self] datagrams, readErr in
             if let readErr {
                 self?.workQueue.async {
+                    // A settings update cancels in-flight reads. Do not overwrite
+                    // a live CONNECT-IP status with that cancellation.
+                    guard self?.tunnel == nil else { return }
                     self?.recordError("UDP read: \(readErr.localizedDescription)")
                 }
             }
@@ -171,13 +174,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    /// Bootstrap interface: a host route only, so iOS keeps the tunnel up while
-    /// QUIC connects but no real traffic is captured yet.
+    /// Full IPv4 default + exclude the MASQUE server. Applied *before* UDP/QUIC
+    /// so we never call setTunnelNetworkSettings again after Dial — that second
+    /// apply cancelled the live NWUDPSession (UDP read «операция отменена»)
+    /// right after «forwarding started».
     private func bootstrapSettings(remote: String, profile: MasqueProfile) -> NEPacketTunnelNetworkSettings {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remote)
         settings.mtu = NSNumber(value: profile.mtu)
-        let ipv4 = NEIPv4Settings(addresses: ["10.8.0.254"], subnetMasks: ["255.255.255.255"])
-        ipv4.includedRoutes = [NEIPv4Route(destinationAddress: "198.18.0.1", subnetMask: "255.255.255.255")]
+        let ipv4 = NEIPv4Settings(addresses: [Self.placeholderIPv4], subnetMasks: ["255.255.255.255"])
+        ipv4.includedRoutes = [NEIPv4Route.default()]
         if remote != "127.0.0.1" {
             ipv4.excludedRoutes = [NEIPv4Route(destinationAddress: remote, subnetMask: "255.255.255.255")]
         }
@@ -185,6 +190,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let ipv6 = NEIPv6Settings(addresses: ["fd00::1"], networkPrefixLengths: [128])
         ipv6.includedRoutes = []
         settings.ipv6Settings = ipv6
+        var dns = [profile.dns]
+        if profile.dns != "8.8.8.8" { dns.append("8.8.8.8") }
+        settings.dnsSettings = NEDNSSettings(servers: dns)
         return settings
     }
 
@@ -289,31 +297,42 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
         tunnel = t
 
-        let settings = networkSettings(for: t, profile: profile, fallbackRemote: remote)
-        setTunnelNetworkSettings(settings) { [weak self] err in
+        let assigned = t.assignedAddr() ?? ""
+        let needReapply = !assigned.isEmpty && assigned != Self.placeholderIPv4
+        let startBridge: () -> Void = { [weak self] in
             guard let self else { return }
-            self.workQueue.async {
-                if let err {
-                    t.stop()
-                    self.tunnel = nil
-                    self.goCallback = nil
-                    self.failAfterStart(err.localizedDescription, code: 10)
-                    return
-                }
-                do {
-                    try t.startPacketBridge()
-                } catch {
-                    t.stop()
-                    self.tunnel = nil
-                    self.goCallback = nil
-                    self.failAfterStart(error.localizedDescription, code: 11)
-                    return
-                }
-                self.pumpFromDevice()
-                self.pumpToDevice()
-                self.startPingTimer()
-                self.publishStatus("VPN active")
+            do {
+                try t.startPacketBridge()
+            } catch {
+                t.stop()
+                self.tunnel = nil
+                self.goCallback = nil
+                self.failAfterStart(error.localizedDescription, code: 11)
+                return
             }
+            self.pumpFromDevice()
+            self.pumpToDevice()
+            self.startPingTimer()
+            self.publishStatus("VPN active")
+        }
+
+        if needReapply {
+            let settings = networkSettings(for: t, profile: profile, fallbackRemote: remote)
+            setTunnelNetworkSettings(settings) { [weak self] err in
+                guard let self else { return }
+                self.workQueue.async {
+                    if let err {
+                        t.stop()
+                        self.tunnel = nil
+                        self.goCallback = nil
+                        self.failAfterStart(err.localizedDescription, code: 10)
+                        return
+                    }
+                    startBridge()
+                }
+            }
+        } else {
+            workQueue.async(execute: startBridge)
         }
     }
 
@@ -460,6 +479,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             }
         }
     }
+
+    private static let placeholderIPv4 = "10.8.0.254"
 
     private static func host(of server: String) -> String {
         if server.hasPrefix("["), let end = server.firstIndex(of: "]") {
