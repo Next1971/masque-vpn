@@ -42,7 +42,7 @@ func NewDatagramPipe(w DatagramWriter, host string, port int) (*DatagramPipe, er
 		writer:   w,
 		remote:   remote,
 		local:    &net.UDPAddr{IP: net.IPv4zero, Port: 0},
-		incoming: make(chan []byte, datagramQueue),
+		incoming: make(chan *[]byte, datagramQueue),
 		closed:   make(chan struct{}),
 		poke:     make(chan struct{}, 1),
 	}
@@ -69,7 +69,7 @@ type bridgePacketConn struct {
 	writer    DatagramWriter
 	remote    net.Addr
 	local     net.Addr
-	incoming  chan []byte
+	incoming  chan *[]byte
 	closed    chan struct{}
 	closeOnce sync.Once
 	poke      chan struct{}
@@ -79,12 +79,14 @@ type bridgePacketConn struct {
 }
 
 func (c *bridgePacketConn) deliver(b []byte) {
-	cp := append([]byte(nil), b...)
+	cp := getBuf(b)
 	select {
 	case <-c.closed:
+		putBuf(cp)
 	case c.incoming <- cp:
 	default:
 		// Drop only if Swift is flooding faster than quic-go can read.
+		putBuf(cp)
 	}
 }
 
@@ -103,11 +105,12 @@ func (c *bridgePacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 				timer.Stop()
 			}
 			return 0, nil, net.ErrClosed
-		case pkt := <-c.incoming:
+		case ptr := <-c.incoming:
 			if timer != nil {
 				timer.Stop()
 			}
-			n := copy(p, pkt)
+			n := copy(p, *ptr)
+			putBuf(ptr)
 			return n, c.remote, nil
 		case <-timeout:
 			return 0, nil, os.ErrDeadlineExceeded

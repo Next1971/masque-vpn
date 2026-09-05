@@ -15,7 +15,7 @@ const bridgeQueue = 64
 // Tunnel; Swift copies packets between NEPacketTunnelFlow and this queue.
 type bridgeTUN struct {
 	mtu       int
-	fromOS    chan []byte
+	fromOS    chan *[]byte
 	toOS      chan []byte
 	closed    chan struct{}
 	closeOnce sync.Once
@@ -28,7 +28,7 @@ func newBridgeTUN(mtu int) *bridgeTUN {
 	}
 	t := &bridgeTUN{
 		mtu:    mtu,
-		fromOS: make(chan []byte, bridgeQueue),
+		fromOS: make(chan *[]byte, bridgeQueue),
 		toOS:   make(chan []byte, bridgeQueue),
 		closed: make(chan struct{}),
 		events: make(chan tun.Event, 1),
@@ -46,12 +46,15 @@ func (t *bridgeTUN) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
 	select {
 	case <-t.closed:
 		return 0, os.ErrClosed
-	case pkt := <-t.fromOS:
+	case p := <-t.fromOS:
+		pkt := *p
 		if offset+len(pkt) > len(bufs[0]) {
+			putBuf(p)
 			return 0, io.ErrShortBuffer
 		}
 		copy(bufs[0][offset:], pkt)
 		sizes[0] = len(pkt)
+		putBuf(p)
 		return 1, nil
 	}
 }
@@ -120,14 +123,16 @@ func (t *Tunnel) WritePacket(pkt []byte) error {
 	if br == nil {
 		return fmt.Errorf("packet bridge not started")
 	}
-	cp := append([]byte(nil), pkt...)
+	cp := getBuf(pkt)
 	select {
 	case <-br.closed:
+		putBuf(cp)
 		return fmt.Errorf("tunnel stopped")
 	case br.fromOS <- cp:
 		return nil
 	default:
 		// Drop rather than block the Network Extension read callback.
+		putBuf(cp)
 		return nil
 	}
 }

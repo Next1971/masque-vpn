@@ -31,6 +31,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var routesApplied = false
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
+        // A Packet Tunnel is jetsam-killed around 15 MB. Cap the Go heap before
+        // anything allocates, or the process dies mid-session (9-19 min in) and
+        // no Swift reconnect handler ever runs.
+        MobileTuneForExtension(10)
         workQueue.async { [weak self] in
             self?.startTunnelLocked(completionHandler: completionHandler)
         }
@@ -404,6 +408,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self.tunnel = nil
             self.goCallback = nil
             self.teardownUDP()
+            MobileReleaseMemory()
             self.openPhysicalUDP(host: self.lastServerIP, port: self.lastPort) { [weak self] err in
                 guard let self else { return }
                 self.workQueue.async {
@@ -501,6 +506,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             if ms > 0 {
                 AppGroup.defaults.set(Int(ms), forKey: AppGroup.defaultsPing)
             }
+            // Headroom before jetsam, plus Go heap: tells us whether a drop was
+            // the process being killed or the network going away.
+            let leftMB = Double(os_proc_available_memory()) / 1_048_576
+            let heapMB = Double(MobileHeapKB()) / 1024
+            self.publishStatus(String(
+                format: "VPN active (free %.1f MB, heap %.1f MB)", leftMB, heapMB
+            ))
         }
         timer.resume()
         pingTimer = timer
