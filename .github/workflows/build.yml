@@ -48,8 +48,6 @@ jobs:
 
   windows-build:
     name: Windows client
-    # Temporarily off while iterating on iOS TestFlight. Re-enable after iOS works.
-    if: false
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -116,8 +114,6 @@ jobs:
 
   android-build:
     name: Android (AAR + APK)
-    # Temporarily off while iterating on iOS TestFlight. Re-enable after iOS works.
-    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
