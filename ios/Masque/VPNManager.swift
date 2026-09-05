@@ -58,7 +58,10 @@ final class VPNManager: ObservableObject {
     func refreshProfileStatus() {
         if ProfileStore.isConfigured() {
             if !connected && !busy {
-                statusText = "Status: profile ready"
+                // Keep a failure on screen: "profile ready" used to wipe the
+                // reason the tunnel just died.
+                let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
+                statusText = tunnelErr.isEmpty ? "Status: profile ready" : "Status: \(tunnelErr)"
             }
         } else {
             statusText = "Status: profile not configured"
