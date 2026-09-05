@@ -315,8 +315,14 @@ final class VPNManager: ObservableObject {
         switch status {
         case .connected:
             connected = true
-            setBusy(false)
-            statusText = "Status: VPN active"
+            let stage = AppGroup.defaults.string(forKey: AppGroup.defaultsStatus) ?? ""
+            if stage == "VPN active" {
+                setBusy(false)
+                statusText = "Status: VPN active"
+            } else {
+                setBusy(true)
+                statusText = "Status: \(stage.isEmpty ? "connecting" : stage)"
+            }
         case .connecting, .reasserting:
             connected = false
             setBusy(true)
