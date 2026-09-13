@@ -46,7 +46,7 @@ jobs:
         run: sha256sum vpn-server-linux-amd64 vpn-server-linux-arm64 install.sh gen-config.sh | tee SHA256SUMS
 
       - name: Sigstore / GitHub artifact attestations
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/vpn-server-linux-amd64
