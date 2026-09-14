@@ -15,7 +15,7 @@ fi
 : "${MASQUE_PORT:?set MASQUE_PORT (UDP listen port)}"
 : "${MASQUE_HOST:?set MASQUE_HOST (public hostname or IP)}"
 
-MASQUE_RELEASE="${MASQUE_RELEASE:-v1.5.5}"
+MASQUE_RELEASE="${MASQUE_RELEASE:-v1.5.6}"
 MASQUE_REPO="${MASQUE_REPO:-Next1971/masque-vpn}"
 
 if [[ ! "$MASQUE_PORT" =~ ^[1-9][0-9]{0,4}$ ]] || (( MASQUE_PORT > 65535 )); then
@@ -106,7 +106,14 @@ fi
 install -d -m 0755 /opt/masque/cert /opt/masque/ca
 install -m 0755 "$MASQUE_BIN" /opt/masque/vpn-server
 
-bash "$GEN_CONFIG" --host "$MASQUE_HOST" --port "$MASQUE_PORT" --out /opt/masque/generated --clients 1 --android-only
+GEN_ARGS=(--host "$MASQUE_HOST" --port "$MASQUE_PORT" --out /opt/masque/generated --clients 1 --android-only)
+if [[ -n "${MASQUE_IP:-}" ]]; then
+  GEN_ARGS+=(--ip "$MASQUE_IP")
+fi
+if [[ -n "${MASQUE_DIAL:-}" ]]; then
+  GEN_ARGS+=(--dial "$MASQUE_DIAL")
+fi
+bash "$GEN_CONFIG" "${GEN_ARGS[@]}"
 
 install -d -m 0755 /opt/masque/state /opt/masque/clients
 # App issuance starts at masque-client-9 so test CN 1–8 (and the bootstrap

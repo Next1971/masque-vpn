@@ -2,7 +2,7 @@
 
 Minimal iPhone/iPad client on the same Go core (`clientcore`) as Android and Windows. Swift supplies the UI and a **Packet Tunnel** Network Extension; gomobile produces `Mobile.xcframework`.
 
-This is the iOS client (marketing version **1.7.0**). A first on-device connect has succeeded. The simulator cannot exercise the VPN path. **No IPA is attached to GitHub Releases** (including v1.5.x). TestFlight access is planned for **v1.7**, not later than **12 October 2026**.
+This is the iOS client (marketing version **1.7.0**). A first on-device connect has succeeded. The simulator cannot exercise the VPN path. **No IPA is attached to GitHub Releases** (including v1.5.6). TestFlight access is planned for **v1.7**, not later than **12 October 2026**.
 
 ## Layout
 

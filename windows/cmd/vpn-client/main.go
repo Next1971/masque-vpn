@@ -108,7 +108,11 @@ func run(ctx context.Context, prof *clientcore.Profile, testMode, fullRoute bool
 	// 4. Routing.
 	var cleanup func()
 	if fullRoute {
-		cleanup, err = setupFullRoute(name, prof.Server, v4.Addr(), prof.DNS)
+		bypass := sess.DialAddr
+		if bypass == "" {
+			bypass = prof.Server
+		}
+		cleanup, err = setupFullRoute(name, bypass, v4.Addr(), prof.DNS)
 		if err != nil {
 			sess.Close()
 			return fmt.Errorf("setup full route: %w", err)

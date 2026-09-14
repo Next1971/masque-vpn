@@ -112,6 +112,17 @@ func (p *Pump) setSession(s *Session) {
 	p.mu.Unlock()
 }
 
+// Close tears down the live session so a blocked ReadPacket returns.
+// Disconnect must cancel the Run context first, then call Close; otherwise
+// Run treats the drop as a network failure and reconnects. Safe from another
+// goroutine; nil-safe.
+func (p *Pump) Close() {
+	if p == nil {
+		return
+	}
+	p.closeSession()
+}
+
 func (p *Pump) closeSession() {
 	p.mu.Lock()
 	s := p.sess

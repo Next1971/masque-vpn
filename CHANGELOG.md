@@ -4,9 +4,28 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
+## [v1.5.6] - 2026-09-14
+
+**GitHub release; Latest stays [v1.5.3](https://github.com/Next1971/masque-vpn/releases/tag/v1.5.3).** QUIC to the server over IPv6 (AAAA or an IPv6 literal). Linux full-route adds a `/128` host bypass so the UDP socket does not loop into TUN. Same CONNECT-IP protocol as v1.5.4. Android `1.5.6` (`versionCode` 22); Windows product **1.5.6**. **If a previous version already works, you do not need to install 1.5.6.**
+
+### Fixed
+
+- Windows: **Disconnect** closes the CONNECT-IP/QUIC session immediately. Previously the service only cancelled a context while `ReadPacket` stayed blocked, so the GUI stayed on Connected until a packet arrived or you stopped the `MasqueVpn` service.
+
+### Added
+
+- Client resolves A and AAAA; IPv6 is preferred. The QUIC UDP socket matches the peer family (`udp4` / `udp6`).
+- `gen-config.sh --dial` writes a bracketed IPv6 address into client profiles. Server bind defaults to `[::]:port`.
+- `install.sh` accepts optional `MASQUE_IP` (extra SAN) and `MASQUE_DIAL` (client QUIC address).
+
+### Notes
+
+- All earlier 1.5.x clients reach a 1.5.6 server over IPv4; a 1.5.6 client reaches an older IPv4-only server when the profile is IPv4 (or a name without a real AAAA). Do not publish AAAA for hostnames still used by pre-1.5.6 clients.
+- `masque-setup.exe` still picks one UDP port and an IPv4/DNS public host. Dual-port and IPv6 literals stay in `gen-config.sh` / `install.sh`.
+
 ## [v1.5.5] - 2026-09-11
 
-**GitHub pre-release.** Server install packaging. Same CONNECT-IP protocol as v1.5.4; existing profiles keep working. v1.5.3 remains **Latest**.
+**Not published as a GitHub tag.** Server install packaging (`install.sh`, SHA256SUMS, Sigstore). Same CONNECT-IP protocol as v1.5.4. Those files ship in **v1.5.6**. v1.5.3 remains **Latest**.
 
 ### Added
 

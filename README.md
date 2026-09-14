@@ -15,7 +15,8 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 
 ## Release status
 
-- **Latest:** [v1.5.3](../../releases/tag/v1.5.3) — IPv6 in the tunnel, optional kill switch (default off), Android TV Connect fix (MSI, APKs; same Linux server as v1.5.0/1.5.1)
+- **Latest:** [v1.5.3](../../releases/tag/v1.5.3) — daily driver. IPv6 in the tunnel, optional kill switch (default off), Android TV Connect fix (MSI, APKs; same Linux server as v1.5.0/1.5.1).
+- **v1.5.6 (optional):** [v1.5.6](../../releases/tag/v1.5.6) — QUIC to the server over IPv6, Windows Disconnect fix, dual-stack server bind, `install.sh`. Previous 1.5.x clients and servers stay compatible over IPv4. **If your setup already works, you do not need to install 1.5.6.**
 - **v1.5.4 (pre-release):** `connect-ip-go` v0.3.0 + optional `alt_port` dual-port. New Linux server binary.
 - **v1.5.2 (pre-release):** optional **kill switch** on Android and Windows (default off). Same protocol; no server binary change.
 - **v1.5.1 (pre-release):** CN denylist / Windows revoke, TUN MTU **1369**, UDP 443 VPS redirect.
@@ -23,7 +24,7 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 - v1.4.1: maintenance pre-release (Docker, graceful shutdown, Android IPv6 leak protection)
 - v1.4.2: experimental Windows VPS Setup Helper (superseded for revoke by v1.5.1 `masque-setup.exe`)
 
-  What is next lives in the [roadmap](docs/ROADMAP.md) (**v1.5.4** pre-release: library bump + `alt_port`, **v1.7** TestFlight not later than **12 October 2026**, **v1.8** phone QR import).
+  What is next lives in the [roadmap](docs/ROADMAP.md) (**v1.7** TestFlight not later than **12 October 2026**, **v1.8** phone QR import).
 
 ## Is this for me?
 
@@ -51,8 +52,8 @@ Do not use it if you:
 | Goal | Start here |
 |---|---|
 | Download Latest (v1.5.3) | [GitHub Release](../../releases/latest) |
-| Download v1.5.2 pre-release | [v1.5.2](../../releases/tag/v1.5.2) |
-| Download v1.5.1 pre-release | [v1.5.1](../../releases/tag/v1.5.1) |
+| Download v1.5.6 (optional IPv6 QUIC) | [v1.5.6](../../releases/tag/v1.5.6) |
+| Download v1.5.4 pre-release | [v1.5.4](../../releases/tag/v1.5.4) |
 | Deploy a Linux server | [Detailed server guide](server/README.md) |
 | Connect from Android | [Android guide](android/README.md) |
 | Connect from iOS (source / TestFlight) | [iOS guide](ios/README.md) |

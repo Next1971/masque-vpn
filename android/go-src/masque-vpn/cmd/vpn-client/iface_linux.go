@@ -9,6 +9,8 @@ import (
 	"net/netip"
 	"os/exec"
 	"strings"
+
+	"github.com/Next1971/masque-vpn/internal/clientcore"
 )
 
 // runCmd runs a command and returns an error with output on failure.
@@ -80,39 +82,24 @@ func setupTestRoute(iface string, dst netip.Addr, src netip.Addr) (func(), error
 // from looping into the tunnel, it adds a host route to the server through the current
 // default gateway. For a real device only (E3), NOT a VPS.
 func setupFullRoute(iface, server string, _ netip.Addr, _ []string) (func(), error) {
-	// Extract the server IP (host:port).
-	host := server
-	if i := strings.LastIndex(server, ":"); i > 0 {
-		host = server[:i]
-	}
+	host := clientcore.ServerHost(server)
 	serverIP, err := netip.ParseAddr(host)
 	if err != nil {
-		return nil, fmt.Errorf("server host %q is not an IP (test mode expects literal IP): %w", host, err)
+		return nil, fmt.Errorf("server host %q is not an IP (expects literal IP): %w", host, err)
 	}
 
-	// Determine the current default gateway.
-	gw, dev, err := defaultGateway()
+	bypassClean, err := addServerBypass(serverIP)
 	if err != nil {
-		return nil, fmt.Errorf("detect default gateway: %w", err)
-	}
-	log.Printf("current default gateway: %s dev %s", gw, dev)
-
-	// 1. Host route to the VPS through the previous gateway (otherwise it loops).
-	srvRoute := serverIP.String() + "/32"
-	if err := runCmd("ip", "route", "add", srvRoute, "via", gw.String(), "dev", dev); err != nil {
-		return nil, fmt.Errorf("add server bypass route: %w", err)
+		return nil, err
 	}
 
-	// 2. Route all traffic through TUN using two /1 halves (they override the default
-	//    without removing the original, so rollback is easy).
 	added := []string{}
 	for _, half := range []string{"0.0.0.0/1", "128.0.0.0/1"} {
 		if err := runCmd("ip", "route", "add", half, "dev", iface); err != nil {
-			// roll back routes already added
 			for _, h := range added {
 				_ = runCmd("ip", "route", "del", h, "dev", iface)
 			}
-			_ = runCmd("ip", "route", "del", srvRoute, "via", gw.String(), "dev", dev)
+			bypassClean()
 			return nil, fmt.Errorf("add default-half %s: %w", half, err)
 		}
 		added = append(added, half)
@@ -124,10 +111,50 @@ func setupFullRoute(iface, server string, _ netip.Addr, _ []string) (func(), err
 				log.Printf("cleanup: del %s: %v", h, err)
 			}
 		}
+		bypassClean()
+	}, nil
+}
+
+func addServerBypass(serverIP netip.Addr) (func(), error) {
+	if serverIP.Is6() {
+		gw, dev, err := defaultGateway6()
+		if err != nil {
+			return nil, fmt.Errorf("detect default IPv6 gateway: %w", err)
+		}
+		log.Printf("current default IPv6 gateway: %s dev %s", gw, dev)
+		srvRoute := serverIP.String() + "/128"
+		if err := runCmd("ip", "-6", "route", "add", srvRoute, "via", gw.String(), "dev", dev); err != nil {
+			return nil, fmt.Errorf("add server IPv6 bypass route: %w", err)
+		}
+		return func() {
+			if err := runCmd("ip", "-6", "route", "del", srvRoute, "via", gw.String(), "dev", dev); err != nil {
+				log.Printf("cleanup: del server IPv6 route: %v", err)
+			}
+		}, nil
+	}
+
+	gw, dev, err := defaultGateway()
+	if err != nil {
+		return nil, fmt.Errorf("detect default gateway: %w", err)
+	}
+	log.Printf("current default gateway: %s dev %s", gw, dev)
+	srvRoute := serverIP.String() + "/32"
+	if err := runCmd("ip", "route", "add", srvRoute, "via", gw.String(), "dev", dev); err != nil {
+		return nil, fmt.Errorf("add server bypass route: %w", err)
+	}
+	return func() {
 		if err := runCmd("ip", "route", "del", srvRoute, "via", gw.String(), "dev", dev); err != nil {
 			log.Printf("cleanup: del server route: %v", err)
 		}
 	}, nil
+}
+
+func defaultGateway6() (netip.Addr, string, error) {
+	out, err := exec.Command("ip", "-6", "route", "show", "default").CombinedOutput()
+	if err != nil {
+		return netip.Addr{}, "", fmt.Errorf("ip -6 route show default: %w", err)
+	}
+	return parseDefaultRoute(string(out))
 }
 
 // defaultGateway parses `ip route show default` → (gateway, dev).
@@ -136,8 +163,12 @@ func defaultGateway() (netip.Addr, string, error) {
 	if err != nil {
 		return netip.Addr{}, "", fmt.Errorf("ip route show default: %w", err)
 	}
+	return parseDefaultRoute(string(out))
+}
+
+func parseDefaultRoute(out string) (netip.Addr, string, error) {
 	// example: "default via 203.0.113.1 dev ens3 proto static"
-	fields := strings.Fields(string(out))
+	fields := strings.Fields(out)
 	var gw, dev string
 	for i := 0; i < len(fields)-1; i++ {
 		switch fields[i] {
@@ -148,7 +179,7 @@ func defaultGateway() (netip.Addr, string, error) {
 		}
 	}
 	if gw == "" || dev == "" {
-		return netip.Addr{}, "", fmt.Errorf("could not parse default route: %q", strings.TrimSpace(string(out)))
+		return netip.Addr{}, "", fmt.Errorf("could not parse default route: %q", strings.TrimSpace(out))
 	}
 	addr, err := netip.ParseAddr(gw)
 	if err != nil {

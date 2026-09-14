@@ -108,7 +108,7 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 		return nil, err
 	}
 
-	udpAddr, err := net.ResolveUDPAddr("udp", p.Server)
+	addrs, err := resolveDialAddrs(p.Server, p.AltPort)
 	if err != nil {
 		return nil, fmt.Errorf("resolve server %q: %w", p.Server, err)
 	}
@@ -118,7 +118,6 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 		return nil, err
 	}
 
-	addrs := dualDialAddrs(udpAddr, p.AltPort)
 	var leg *quicLeg
 	if len(addrs) == 1 {
 		leg, err = listenAndDialQUIC(ctx, addrs[0], tlsConf)
