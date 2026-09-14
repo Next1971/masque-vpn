@@ -1,19 +1,19 @@
 # Roadmap
 
-> Status snapshot: last updated 2026-09-11. See [CHANGELOG.md](../CHANGELOG.md) for release history.
+> Status snapshot: last updated 2026-09-14. See [CHANGELOG.md](../CHANGELOG.md) for release history.
 
 ## Current status
 
-MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** (server, Windows, Android). **v1.0** shipped **14 August 2026**. **v1.5.3** is GitHub **Latest**. **v1.5.4** is a technical pre-release (`connect-ip-go` v0.3.0 + dual-port). **v1.5.1** and **v1.5.2** remain technical pre-releases. **v1.5.0** was Latest until v1.5.3.
+MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** (server, Windows, Android). **v1.0** shipped **14 August 2026**. **v1.5.3** is GitHub **Latest** (daily driver). **v1.5.6** is an optional full release (QUIC to the server over IPv6 + Windows Disconnect fix); previous versions stay compatible over IPv4 — skip it if everything already works. **v1.5.4** is a technical pre-release (`connect-ip-go` v0.3.0 + dual-port). **v1.5.1** and **v1.5.2** remain technical pre-releases. **v1.5.0** was Latest until v1.5.3.
 
 **v1.7** (iOS TestFlight) is scheduled **not later than 12 October 2026**. Client/installer **design work can happen in any branch** and is not gated on a version number. **Store listings** (Play / F-Droid) start **after** that visual snapshot, not in 1.5.x.
 
 | Component | Status | Notes |
 |---|---|---|
-| Server | Stable | v1.5.3 Latest uses the v1.5.1 binary. **v1.5.4** pre-release ships a new server (`connect-ip-go` v0.3.0) |
-| Windows client | Stable | Latest v1.5.3; **v1.5.4** pre-release adds dual-port |
-| Windows VPS installer | **Experimental (v1.5.1)** | `masque-setup.exe`; not required for v1.5.3 / v1.5.4 |
-| Android client | Stable | Latest v1.5.3; **v1.5.4** pre-release adds dual-port |
+| Server | Stable | v1.5.3 Latest uses the v1.5.1 binary. **v1.5.6** optional dual-stack `[::]` + IPv6 QUIC. **v1.5.4** pre-release ships `connect-ip-go` v0.3.0 |
+| Windows client | Stable | Latest v1.5.3; **v1.5.6** optional (IPv6 QUIC + Disconnect fix); **v1.5.4** pre-release adds dual-port |
+| Windows VPS installer | **Experimental (v1.5.6)** | `masque-setup.exe` one UDP port, IPv4/DNS host; not required if the server already runs |
+| Android client | Stable | Latest v1.5.3; **v1.5.6** optional IPv6 QUIC; **v1.5.4** pre-release adds dual-port |
 | iOS client | **In progress (v1.7)** | Source in `ios/`; TestFlight planned for v1.7 |
 
 This is experimental software and has not received an independent security audit.
@@ -24,9 +24,9 @@ This is experimental software and has not received an independent security audit
 |---|---|---|
 | **v1.5.3** | Latest: kill switch + TV Connect fix | Client-only vs v1.5.0. Default kill switch **off**. Same protocol. |
 | **v1.5.4** | Pre-release: `connect-ip-go` v0.3.0 + dual-port | New server binary. Clients race `[server]` and optional `alt_port`. DoH not in this tag. |
-| **v1.5.5** | Short pre-release: server install packaging | `install.sh`, SHA256SUMS, Sigstore attestations. Little/no protocol change.  Latest stays v1.5.3. |
+| **v1.5.5** | Packaging (not a GitHub tag) | `install.sh`, SHA256SUMS, Sigstore. Folded into **v1.5.6**. Latest stays v1.5.3. |
 | **(after v1.5.5)** | Android AGP/Gradle bump | Reopen deferred Dependabot [#75](https://github.com/Next1971/masque-vpn/pull/75): AGP **9.4.0** + Gradle wrapper **9.6.0**. Soak on main; **no GitHub pre-release**. |
-| **v1.5.6** | QUIC to the server over IPv6 | AAAA + host-route / exclude so the UDP socket does not loop into TUN. Separate from dual-port. Changelog also notes the AGP/Gradle pair. |
+| **v1.5.6** | Optional: QUIC to the server over IPv6 | Full GitHub release, **not** Latest. AAAA + host-route. Windows Disconnect fix. Skip if 1.5.3 already works. |
 | **v1.7** | iOS TestFlight | UI refresh ships in whichever build is ready; stores follow the designed UI. |
 | **v1.8** | Phone QR profile import | Installer shows a QR; **phone** clients scan it. TV and Windows stay on file/paste. |
 
@@ -98,7 +98,7 @@ This is experimental software and has not received an independent security audit
 
 ## Known limitations (all platforms)
 
-- Connecting to the VPN server is still **IPv4 QUIC** (no AAAA / UDP 443 on IPv6 until **v1.5.6**).
+- Connecting to the VPN server on **Latest (v1.5.3)** is still **IPv4 QUIC**. **v1.5.6** adds AAAA / UDP 443 on IPv6 (optional). Do not publish AAAA for names still used by pre-1.5.6 clients.
 - Some networks drop outbound **UDP 443**. Use an alternate UDP port with VPS DNAT (see [server README](../server/README.md#udp-443-blocked-on-the-client-path)). **v1.5.4** clients race the profile port and optional `alt_port`.
 - In-tunnel DNS is plaintext UDP:53 — hidden from the local ISP but visible to the server operator. DoH/DoT is **not planned**: the project targets a **VPS you operate**, so that visibility is not treated as a product hole.
 - Kill switch (v1.5.2+) does not survive a killed VPN process. On Android, system Always-on VPN / “Block connections without VPN” is the extra layer.
@@ -108,19 +108,19 @@ This is experimental software and has not received an independent security audit
 - NAT64/DNS64 is not included: AAAA destinations need WAN IPv6 on the VPS.
 - CN denylist is not a CRL/OCSP PKI: it is a server-side name list reloaded on process start.
 
-## Planned for v1.5.5
+## Completed (v1.5.5)
 
-- [ ] Server `install.sh`, SHA256SUMS, Sigstore attestations on release artifacts.
-- Short GitHub **pre-release** (about 30–40 minutes). Not Latest.
+- [x] Server `install.sh`, SHA256SUMS, Sigstore attestations (shipped in the **v1.5.6** GitHub release; no separate v1.5.5 tag).
 
-## After v1.5.5 (no separate tag)
+## Completed (v1.5.6)
+
+- [x] QUIC to the server over IPv6 (AAAA + host-route bypass). Dual-port stayed in v1.5.4.
+- [x] Windows **Disconnect** closes the QUIC session immediately.
+- [x] GitHub full release with MSI, APKs, setup, Linux server, `install.sh`. Latest remains v1.5.3.
+
+## After v1.5.6 (no separate tag)
 
 - [ ] Android toolchain: AGP **9.3.2 → 9.4.0** with Gradle wrapper **9.5.0 → 9.6.0** (deferred [#75](https://github.com/Next1971/masque-vpn/pull/75)). Merge and test phone/TV builds; do not cut a pre-release for this bump.
-
-## Planned for v1.5.6
-
-- [ ] QUIC to the server over IPv6 (AAAA + host-route bypass). Do not mix with dual-port in the same drop.
-- Mention in the 1.5.6 notes that Android is on AGP 9.4 / Gradle 9.6 (landed after 1.5.5, not a separate GitHub release).
 
 ## Planned for v1.7 (not later than 12 October 2026)
 

@@ -21,9 +21,12 @@ cd server/scripts
 ./gen-config.sh --host YOUR_SERVER_HOST --ip YOUR_SERVER_IP --port 443 --clients 2
 ```
 
-- `--host` — public hostname or IP that clients dial (used as TLS server name).
+- `--host` — public hostname or IPv4 that clients dial (used as TLS server name).
 - `--ip` — extra IP added to the server certificate SAN (use when `--host` is a
-  domain but clients may also connect by raw IP).
+  domain but clients may also connect by raw IP; v1.5.6 can add an IPv6 SAN).
+- `--dial` — address written into client profiles (default: `--host`). Use a
+  bracketed IPv6 literal so v1.5.6 clients QUIC over AAAA.
+- `--alt-port` — optional second UDP port in client profiles (`alt_port`, v1.5.4+).
 - `--port` — UDP port the server listens on.
 - `--clients N` — how many client bundles to generate.
 

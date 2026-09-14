@@ -4,7 +4,7 @@ A minimal Android VPN client on the same Go core (`clientcore`) as Windows/Linux
 
 The core is an `.aar` from **gomobile**. Kotlin supplies `VpnService`, a small UI, and profile import.
 
-**v1.3** added QUIC keepalives, a battery-exemption prompt, reconnect without tearing the TUN, and Wi-Fi → LTE recovery (sticky `/32` on the server). **v1.3.1** added **Paste config from clipboard** on Android TV. **v1.4** added the app icon and on-screen **Ping**. **v1.4.1** bumps the Android toolchain (AGP 9 / Gradle 9), shows the **version** in the UI, sinks IPv6 so apps cannot bypass the VPN, and uses TUN `/24` on-link. **v1.5.0** forwards IPv6 through the tunnel when the server assigns a ULA address. **v1.5.1** sets TUN MTU to **1369** from path MTU tests. **v1.5.2** adds an optional **kill switch** (default off). **v1.5.3** is GitHub **Latest**: TV Connect crash fix plus the 1.5.2 client. **v1.5.4** (pre-release) races the profile port and optional `alt_port`.
+**v1.3** added QUIC keepalives, a battery-exemption prompt, reconnect without tearing the TUN, and Wi-Fi → LTE recovery (sticky `/32` on the server). **v1.3.1** added **Paste config from clipboard** on Android TV. **v1.4** added the app icon and on-screen **Ping**. **v1.4.1** bumps the Android toolchain (AGP 9 / Gradle 9), shows the **version** in the UI, sinks IPv6 so apps cannot bypass the VPN, and uses TUN `/24` on-link. **v1.5.0** forwards IPv6 through the tunnel when the server assigns a ULA address. **v1.5.1** sets TUN MTU to **1369** from path MTU tests. **v1.5.2** adds an optional **kill switch** (default off). **v1.5.3** is GitHub **Latest**: TV Connect crash fix plus the 1.5.2 client. **v1.5.4** (pre-release) races the profile port and optional `alt_port`. **v1.5.6** is optional: QUIC to the server over IPv6. Previous APKs keep working against a 1.5.6 server on IPv4 — skip 1.5.6 if 1.5.3 already works.
 
 Use a **release APK** if you only want to connect. The rest of this file is for building from source.
 
@@ -61,7 +61,7 @@ In Android Studio, install via SDK Manager:
 
 ## Use a release APK
 
-1. Download `masque-phone-1.5.3.apk` or `masque-tv-1.5.3.apk` from [v1.5.3](../../releases/tag/v1.5.3) ([Latest](../../releases/latest)).
+1. Download `masque-phone-1.5.3.apk` or `masque-tv-1.5.3.apk` from [v1.5.3](../../releases/tag/v1.5.3) ([Latest](../../releases/latest)). Optional **v1.5.6** APKs from [v1.5.6](../../releases/tag/v1.5.6) if you want IPv6 QUIC.
 2. Install the phone or TV APK (allow installation from unknown sources).
 3. Import a real `profile.masque` from the server generator. The APK also ships a non-production `sample-profile.masque` in assets so you can see the expected format — do not use it to connect.
 4. Grant **VPN** permission. On Connect the app may ask to **ignore battery optimizations** — allow it so keepalives can run with the screen off.

@@ -11,6 +11,8 @@ The server tunnels IP traffic over QUIC + HTTP/3 CONNECT-IP and authenticates cl
 
 **v1.4** / **v1.4.1** clients talk to the same v1.3+ server protocol (sticky `/32` after reconnect). **v1.4.1** adds optional **Docker** packaging (`server/docker-compose.yml`) and **graceful shutdown** on `SIGTERM`/`SIGINT`. **v1.5** optionally assigns ULA IPv6 (`fd00:8::/64`) inside the tunnel (sticky `/128`) and NAT66s it to the VPS WAN IPv6. IPv4-only configs without the v6 keys keep working. Old Android APKs sink IPv6 instead of forwarding it. **v1.5.1** adds a CN denylist (`/opt/masque/blocked_cns`) and documents a UDP 443 fallback redirect. New client profiles default TUN MTU **1369**.
 
+**v1.5.6** (optional GitHub release, Latest stays v1.5.3) can bind `[::]:port` so clients QUIC over IPv4 or IPv6. Old 1.5.x clients keep working on IPv4. Do not publish an AAAA for a hostname still used by pre-1.5.6 clients. `masque-setup.exe` still picks one UDP port and an IPv4/DNS public host; use `gen-config.sh --alt-port` / `--dial` (or `MASQUE_DIAL` on `install.sh`) for a second port or an IPv6 literal. If the current server already works, you do not need to upgrade it.
+
 > Keep the CA private key, server private key, and client private keys out of Git and distribute client bundles only through a secure channel.
 
 ## 1. Prerequisites

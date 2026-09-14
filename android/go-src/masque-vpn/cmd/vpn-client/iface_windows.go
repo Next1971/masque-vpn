@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/Next1971/masque-vpn/internal/clientcore"
 )
 
 // tunnelSubnetBits is the tunnel subnet mask (server pool 10.8.0.0/24).
@@ -133,10 +135,7 @@ func setupTestRoute(iface string, dst netip.Addr, src netip.Addr) (func(), error
 // from looping, it adds a host route to the server through the current default gateway.
 // It then adds two /1 halves that override the default route (and are easy to roll back).
 func setupFullRoute(iface, server string, client netip.Addr, dns []string) (func(), error) {
-	host := server
-	if i := strings.LastIndex(server, ":"); i > 0 {
-		host = server[:i]
-	}
+	host := clientcore.ServerHost(server)
 	serverIP, err := netip.ParseAddr(host)
 	if err != nil {
 		// host is a name rather than an IP: resolve it to IPv4 for the VPS bypass route.

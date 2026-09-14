@@ -125,7 +125,7 @@ func ConnectWithPacketConn(ctx context.Context, p *Profile, dev tun.Device, pc n
 		return nil, err
 	}
 
-	udpAddr, err := net.ResolveUDPAddr("udp", p.Server)
+	addrs, err := resolveDialAddrs(p.Server, p.AltPort)
 	if err != nil {
 		return nil, fmt.Errorf("resolve server %q: %w", p.Server, err)
 	}
@@ -137,6 +137,7 @@ func ConnectWithPacketConn(ctx context.Context, p *Profile, dev tun.Device, pc n
 
 	// iOS supplies one UDP session aimed at the profile port — no second socket.
 	if pc != nil {
+		udpAddr := addrs[0]
 		leg := &quicLeg{packetConn: pc, ownUDP: false, addr: udpAddr.String()}
 		if err := leg.dial(ctx, udpAddr, tlsConf); err != nil {
 			return nil, err
@@ -144,7 +145,6 @@ func ConnectWithPacketConn(ctx context.Context, p *Profile, dev tun.Device, pc n
 		return finishCONNECTIP(ctx, p, leg, dev)
 	}
 
-	addrs := dualDialAddrs(udpAddr, p.AltPort)
 	if len(addrs) == 1 {
 		leg, err := listenAndDialQUIC(ctx, p, addrs[0], tlsConf)
 		if err != nil {

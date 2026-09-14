@@ -164,11 +164,13 @@ func (e *Engine) Connect() error {
 func (e *Engine) Disconnect() {
 	e.mu.Lock()
 	cancel := e.cancel
-	e.cancel = nil
+	pump := e.pump
 	e.mu.Unlock()
+	// Cancel first so Pump.Run does not reconnect when the session closes.
 	if cancel != nil {
 		cancel()
 	}
+	pump.Close()
 }
 
 func (e *Engine) loop(ctx context.Context) {

@@ -119,6 +119,35 @@ func (t *Tunnel) RTTMillis() int64 {
 	return d.Milliseconds()
 }
 
+// ServerIP is the VPN server address to exclude from the tunnel (IPv4 or IPv6).
+func (t *Tunnel) ServerIP() string {
+	t.mu.Lock()
+	prof := t.prof
+	t.mu.Unlock()
+	if prof == nil {
+		return ""
+	}
+	host := clientcore.ServerHost(prof.Server)
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.String()
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return ""
+	}
+	for _, ip := range ips {
+		if ip.To4() == nil && ip.To16() != nil {
+			return ip.String()
+		}
+	}
+	for _, ip := range ips {
+		if v4 := ip.To4(); v4 != nil {
+			return v4.String()
+		}
+	}
+	return ""
+}
+
 // ServerIPv4 is the VPN server's IPv4, used on iOS to exclude the QUIC
 // path from the tunnel (there is no VpnService.protect).
 func (t *Tunnel) ServerIPv4() string {

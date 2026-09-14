@@ -60,7 +60,7 @@ func (l *quicLeg) dial(ctx context.Context, udpAddr *net.UDPAddr, tlsConf *tls.C
 }
 
 func listenAndDialQUIC(ctx context.Context, p *Profile, udpAddr *net.UDPAddr, tlsConf *tls.Config) (*quicLeg, error) {
-	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero})
+	udpConn, err := listenUDPFor(udpAddr)
 	if err != nil {
 		return nil, fmt.Errorf("listen UDP: %w", err)
 	}
