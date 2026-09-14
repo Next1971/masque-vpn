@@ -20,9 +20,6 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 - **v1.5.4 (pre-release):** `connect-ip-go` v0.3.0 + optional `alt_port` dual-port. New Linux server binary.
 - **v1.5.2 (pre-release):** optional **kill switch** on Android and Windows (default off). Same protocol; no server binary change.
 - **v1.5.1 (pre-release):** CN denylist / Windows revoke, TUN MTU **1369**, UDP 443 VPS redirect.
-- v1.5.0: optional IPv6 inside the tunnel (was Latest until v1.5.3)
-- v1.4.1: maintenance pre-release (Docker, graceful shutdown, Android IPv6 leak protection)
-- v1.4.2: experimental Windows VPS Setup Helper (superseded for revoke by v1.5.1 `masque-setup.exe`)
 
   What is next lives in the [roadmap](docs/ROADMAP.md) (**v1.7** TestFlight not later than **12 October 2026**, **v1.8** phone QR import).
 
@@ -45,7 +42,7 @@ Do not use it if you:
 |---|---|---|---|
 | Manual SSH install | Users who want to inspect every server-side command | Recommended | [Server guide](server/README.md) |
 | Docker Compose | Users familiar with Docker on a dedicated Linux VPS | Experimental | [Docker guide](server/README.md#docker) |
-| Windows VPS Setup Helper | Testers using a disposable VPS | Test pre-release only | [masque-setup.exe](windows/README.md#install-the-server-from-windows-masque-setupexe) |
+| Windows VPS Setup Helper | Testers using a disposable VPS | Test pre-release only Ubuntu 22.04, 24.04, or 26.04, or Debian 12 | [masque-setup.exe](windows/README.md#install-the-server-from-windows-masque-setupexe) |
 
 ## Quick start
 
