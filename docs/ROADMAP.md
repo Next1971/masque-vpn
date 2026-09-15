@@ -14,7 +14,7 @@ Client/installer **design work can happen in any branch** and is not gated on a 
 | Windows client | Stable | Latest v1.5.3; **v1.5.6** optional (IPv6 QUIC + Disconnect fix); **v1.5.4** pre-release adds dual-port |
 | Windows VPS installer | **Experimental (v1.5.6)** | `masque-setup.exe` one UDP port, IPv4/DNS host; not required if the server already runs |
 | Android client | Stable | Latest v1.5.3; **v1.5.6** optional IPv6 QUIC; **v1.5.4** pre-release adds dual-port |
-| iOS client | **TestFlight (v1.7)** | Public link [join/x52N41V1](https://testflight.apple.com/join/x52N41V1); Apple build **20**. No GitHub IPA |
+| iOS client | **TestFlight (v1.7)** | Public link [join/x52N41V1](https://testflight.apple.com/join/x52N41V1); Apple build **20**. Expires **4 December 2026**; then a new 90-day build. No GitHub IPA |
 
 This is experimental software and has not received an independent security audit.
 
@@ -120,7 +120,7 @@ This is experimental software and has not received an independent security audit
 
 ## Completed (v1.7)
 
-- [x] iOS TestFlight (public [join link](https://testflight.apple.com/join/x52N41V1); Apple build **20**; no GitHub IPA). Latest remains v1.5.3.
+- [x] iOS TestFlight (public [join link](https://testflight.apple.com/join/x52N41V1); Apple build **20**; expires **4 December 2026**, then a new 90-day build; no GitHub IPA). Latest remains v1.5.3.
 
 ## After v1.5.6 (no separate tag)
 

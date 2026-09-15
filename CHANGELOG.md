@@ -10,7 +10,7 @@ All notable changes to MASQUE VPN are documented here.
 
 ### Added
 
-- Public TestFlight: [https://testflight.apple.com/join/x52N41V1](https://testflight.apple.com/join/x52N41V1). Marketing **1.7.0**, Apple build **20** (external testing approved). Built from [Actions run 20](https://github.com/Next1971/masque-vpn/actions/runs/33980112341) on `e708ea7`.
+- Public TestFlight: [https://testflight.apple.com/join/x52N41V1](https://testflight.apple.com/join/x52N41V1). Marketing **1.7.0**, Apple build **20** (external testing approved). Built from [Actions run 20](https://github.com/Next1971/masque-vpn/actions/runs/33980112341) on `e708ea7`. **Expires in 80 days (4 December 2026)**; after that a new TestFlight build will be published for 90 days.
 
 ### Notes
 

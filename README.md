@@ -16,7 +16,7 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 ## Release status
 
 - **Latest:** [v1.5.3](../../releases/tag/v1.5.3) — daily driver. IPv6 in the tunnel, optional kill switch (default off), Android TV Connect fix (MSI, APKs; same Linux server as v1.5.0/1.5.1).
-- **v1.7 (iOS TestFlight):** [v1.7](../../releases/tag/v1.7) — public TestFlight [join link](https://testflight.apple.com/join/x52N41V1), Apple build **20**. No APK/MSI/server on this tag. **Latest stays v1.5.3.**
+- **v1.7 (iOS TestFlight):** [v1.7](../../releases/tag/v1.7) — public TestFlight [join link](https://testflight.apple.com/join/x52N41V1), Apple build **20**. Expires **4 December 2026** (80 days); a new 90-day build follows. No APK/MSI/server on this tag. **Latest stays v1.5.3.**
 - **v1.5.6 (optional):** [v1.5.6](../../releases/tag/v1.5.6) — QUIC to the server over IPv6, Windows Disconnect fix, dual-stack server bind, `install.sh`. Previous 1.5.x clients and servers stay compatible over IPv4. **If your setup already works, you do not need to install 1.5.6.**
 - **v1.5.4 (pre-release):** `connect-ip-go` v0.3.0 + optional `alt_port` dual-port. New Linux server binary.
 - **v1.5.2 (pre-release):** optional **kill switch** on Android and Windows (default off). Same protocol; no server binary change.

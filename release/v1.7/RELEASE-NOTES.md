@@ -7,6 +7,7 @@ v1.7 is **iOS TestFlight only**. It does **not** replace **Latest**. Daily drive
 - Public link: [https://testflight.apple.com/join/x52N41V1](https://testflight.apple.com/join/x52N41V1)
 - Marketing version **1.7.0**, Apple build **20** (external testing approved).
 - Built from GitHub Actions [TestFlight run 20](https://github.com/Next1971/masque-vpn/actions/runs/33980112341) on `e708ea7` (`fix/ios-reconnect-hold`).
+- This build **expires in 80 days, on 4 December 2026**. After that date a new TestFlight build will be published for **90 days**.
 
 ## Who should use this
 
