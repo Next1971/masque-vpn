@@ -1,12 +1,12 @@
 # Roadmap
 
-> Status snapshot: last updated 2026-09-14. See [CHANGELOG.md](../CHANGELOG.md) for release history.
+> Status snapshot: last updated 2026-09-15. See [CHANGELOG.md](../CHANGELOG.md) for release history.
 
 ## Current status
 
-MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** (server, Windows, Android). **v1.0** shipped **14 August 2026**. **v1.5.3** is GitHub **Latest** (daily driver). **v1.5.6** is an optional full release (QUIC to the server over IPv6 + Windows Disconnect fix); previous versions stay compatible over IPv4 — skip it if everything already works. **v1.5.4** is a technical pre-release (`connect-ip-go` v0.3.0 + dual-port). **v1.5.1** and **v1.5.2** remain technical pre-releases. **v1.5.0** was Latest until v1.5.3.
+MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** (server, Windows, Android). **v1.0** shipped **14 August 2026**. **v1.5.3** is GitHub **Latest** (daily driver). **v1.7** is iOS TestFlight only (public link; no IPA on GitHub). **v1.5.6** is an optional full release (QUIC to the server over IPv6 + Windows Disconnect fix); previous versions stay compatible over IPv4 — skip it if everything already works. **v1.5.4** is a technical pre-release (`connect-ip-go` v0.3.0 + dual-port). **v1.5.1** and **v1.5.2** remain technical pre-releases. **v1.5.0** was Latest until v1.5.3.
 
-**v1.7** (iOS TestFlight) is scheduled **not later than 12 October 2026**. Client/installer **design work can happen in any branch** and is not gated on a version number. **Store listings** (Play / F-Droid) start **after** that visual snapshot, not in 1.5.x.
+Client/installer **design work can happen in any branch** and is not gated on a version number. **Store listings** (Play / F-Droid) start **after** that visual snapshot, not in 1.5.x.
 
 | Component | Status | Notes |
 |---|---|---|
@@ -14,7 +14,7 @@ MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** (s
 | Windows client | Stable | Latest v1.5.3; **v1.5.6** optional (IPv6 QUIC + Disconnect fix); **v1.5.4** pre-release adds dual-port |
 | Windows VPS installer | **Experimental (v1.5.6)** | `masque-setup.exe` one UDP port, IPv4/DNS host; not required if the server already runs |
 | Android client | Stable | Latest v1.5.3; **v1.5.6** optional IPv6 QUIC; **v1.5.4** pre-release adds dual-port |
-| iOS client | **In progress (v1.7)** | Source in `ios/`; TestFlight planned for v1.7 |
+| iOS client | **TestFlight (v1.7)** | Public link [join/x52N41V1](https://testflight.apple.com/join/x52N41V1); Apple build **20**. No GitHub IPA |
 
 This is experimental software and has not received an independent security audit.
 
@@ -27,7 +27,7 @@ This is experimental software and has not received an independent security audit
 | **v1.5.5** | Packaging (not a GitHub tag) | `install.sh`, SHA256SUMS, Sigstore. Folded into **v1.5.6**. Latest stays v1.5.3. |
 | **(after v1.5.5)** | Android AGP/Gradle bump | Reopen deferred Dependabot [#75](https://github.com/Next1971/masque-vpn/pull/75): AGP **9.4.0** + Gradle wrapper **9.6.0**. Soak on main; **no GitHub pre-release**. |
 | **v1.5.6** | Optional: QUIC to the server over IPv6 | Full GitHub release, **not** Latest. AAAA + host-route. Windows Disconnect fix. Skip if 1.5.3 already works. |
-| **v1.7** | iOS TestFlight | UI refresh ships in whichever build is ready; stores follow the designed UI. |
+| **v1.7** | iOS TestFlight (shipped) | Public link; Apple build 20. No GitHub IPA. Latest stays v1.5.3. |
 | **v1.8** | Phone QR profile import | Installer shows a QR; **phone** clients scan it. TV and Windows stay on file/paste. |
 
 ## Completed (v1.0)
@@ -118,18 +118,19 @@ This is experimental software and has not received an independent security audit
 - [x] Windows **Disconnect** closes the QUIC session immediately.
 - [x] GitHub full release with MSI, APKs, setup, Linux server, `install.sh`. Latest remains v1.5.3.
 
+## Completed (v1.7)
+
+- [x] iOS TestFlight (public [join link](https://testflight.apple.com/join/x52N41V1); Apple build **20**; no GitHub IPA). Latest remains v1.5.3.
+
 ## After v1.5.6 (no separate tag)
 
 - [ ] Android toolchain: AGP **9.3.2 → 9.4.0** with Gradle wrapper **9.5.0 → 9.6.0** (deferred [#75](https://github.com/Next1971/masque-vpn/pull/75)). Merge and test phone/TV builds; do not cut a pre-release for this bump.
 
-## Planned for v1.7 (not later than 12 October 2026)
-
-- [ ] iOS TestFlight access (source already in `ios/`; first on-device connect succeeded; no GitHub IPA in 1.5.x).
-- Visual refresh of clients and `masque-setup.exe` can merge whenever it is ready. **App stores after that UI**, not before.
-
 ## Planned for v1.8
 
-- [ ] Phone QR instead of (or in addition to) a profile file: after Issue, `masque-setup.exe` shows a QR of the bundle. **Android phone** (and iOS once TestFlight exists) scan it in-app. Not for Android TV or Windows (no camera / not the path). File save remains. Payload is the existing `profile.masque` (private key in the QR — treat like the file). Compact encoding if a raw TOML QR is too dense.
+- [ ] Phone QR instead of (or in addition to) a profile file: after Issue, `masque-setup.exe` shows a QR of the bundle. **Android phone** and **iOS** (TestFlight) scan it in-app. Not for Android TV or Windows (no camera / not the path). File save remains. Payload is the existing `profile.masque` (private key in the QR — treat like the file). Compact encoding if a raw TOML QR is too dense.
+
+Visual refresh of clients and `masque-setup.exe` can merge whenever it is ready. **App stores after that UI**, not before.
 
 ## Dependency notes
 
