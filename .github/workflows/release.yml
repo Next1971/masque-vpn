@@ -19,6 +19,7 @@ permissions:
 jobs:
   linux-server:
     name: Linux server + checksums + Sigstore
+    if: ${{ github.ref != 'refs/tags/v1.7' && (github.event_name != 'workflow_dispatch' || github.event.inputs.tag != 'v1.7') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

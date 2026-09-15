@@ -2,7 +2,7 @@
 
 Minimal iPhone/iPad client on the same Go core (`clientcore`) as Android and Windows. Swift supplies the UI and a **Packet Tunnel** Network Extension; gomobile produces `Mobile.xcframework`.
 
-This is the iOS client (marketing version **1.7.0**). A first on-device connect has succeeded. The simulator cannot exercise the VPN path. **No IPA is attached to GitHub Releases** (including v1.5.6). TestFlight access is planned for **v1.7**, not later than **12 October 2026**.
+This is the iOS client (marketing version **1.7.0**). The simulator cannot exercise the VPN path. **No IPA is attached to GitHub Releases.** External TestFlight is live: [https://testflight.apple.com/join/x52N41V1](https://testflight.apple.com/join/x52N41V1) (Apple build **20**).
 
 ## Layout
 
@@ -61,7 +61,7 @@ If Swift cannot see `MobileDial` / `MobileConfig`, gomobile used un-prefixed nam
 
 ## TestFlight via GitHub (no Mac)
 
-The workflow [.github/workflows/ios-testflight.yml](../.github/workflows/ios-testflight.yml) runs on GitHub’s Mac, signs an App Store IPA, and uploads it to **internal TestFlight**. You still need a physical iPhone to install it. Do **not** click Submit for Review in App Store Connect.
+The workflow [.github/workflows/ios-testflight.yml](../.github/workflows/ios-testflight.yml) runs on GitHub’s Mac, signs an App Store IPA, and uploads it to TestFlight. Testers install from the [public link](https://testflight.apple.com/join/x52N41V1) or Internal Testing. You still need a physical iPhone. Do **not** click Submit for Review in App Store Connect (that would be the App Store listing, not TestFlight).
 
 Do this once. Keep `dist.key` / `.p12` / `.p8` off git (they are gitignored).
 
@@ -137,15 +137,15 @@ That writes one-line `.txt` files in `ios/signing-local`. Paste each line into t
 
 ### 6. Run the workflow
 
-GitHub → **Actions** → **TestFlight** → **Run workflow** → branch `feature/ios-client`.
+GitHub → **Actions** → **TestFlight** → **Run workflow** → branch `main`.
 
 The first run often takes 20–40 minutes (gomobile). If it fails, open the log: missing secret, wrong profile type (must be App Store, not Development), or OpenSSL/p12 password.
 
-When it succeeds: App Store Connect → **TestFlight** (not the store listing). After Apple processes the build (sometimes 10+ minutes), add yourself under Internal Testing and install **TestFlight** on an iPhone.
+When it succeeds: App Store Connect → **TestFlight** (not the store listing). After Apple processes the build (sometimes 10+ minutes), it can go to Internal Testing and, after Beta App Review, External Testing / the public link.
 
 ## Use
 
-1. Install from TestFlight.
+1. Install [TestFlight](https://apps.apple.com/app/testflight/id899247664), then open [https://testflight.apple.com/join/x52N41V1](https://testflight.apple.com/join/x52N41V1) on the iPhone.
 2. Import a real `profile.masque` (the sample in the app bundle is format-only).
 3. Allow VPN when iOS asks.
 4. Connect. Ping is QUIC RTT to the MASQUE server.

@@ -4,6 +4,18 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
+## [v1.7] - 2026-09-15
+
+**GitHub pre-release; Latest stays [v1.5.3](https://github.com/Next1971/masque-vpn/releases/tag/v1.5.3).** iOS TestFlight only. No APK, MSI, or Linux server on this tag. Optional IPv6 QUIC remains [v1.5.6](https://github.com/Next1971/masque-vpn/releases/tag/v1.5.6).
+
+### Added
+
+- Public TestFlight: [https://testflight.apple.com/join/x52N41V1](https://testflight.apple.com/join/x52N41V1). Marketing **1.7.0**, Apple build **20** (external testing approved). Built from [Actions run 20](https://github.com/Next1971/masque-vpn/actions/runs/33980112341) on `e708ea7`.
+
+### Notes
+
+- Android, Windows, and the Linux server stay on Latest **v1.5.3** (or optional **v1.5.6**). This TestFlight binary does not include later `main` iOS work (`alt_port`, QUIC over IPv6). Use an IPv4 profile and a single UDP port.
+
 ## [v1.5.6] - 2026-09-14
 
 **GitHub release; Latest stays [v1.5.3](https://github.com/Next1971/masque-vpn/releases/tag/v1.5.3).** QUIC to the server over IPv6 (AAAA or an IPv6 literal). Linux full-route adds a `/128` host bypass so the UDP socket does not loop into TUN. Same CONNECT-IP protocol as v1.5.4. Android `1.5.6` (`versionCode` 22); Windows product **1.5.6**. **If a previous version already works, you do not need to install 1.5.6.**
