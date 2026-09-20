@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MASQUE VPN — Privacy Policy</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      line-height: 1.55;
+      max-width: 42rem;
+      margin: 2rem auto;
+      padding: 0 1.25rem 4rem;
+    }
+    h1, h2 { line-height: 1.25; }
+    h1 { font-size: 1.75rem; }
+    h2 { font-size: 1.2rem; margin-top: 2rem; }
+    .meta { color: #666; }
+    hr { border: 0; border-top: 1px solid #ccc; margin: 2.5rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <p class="meta">MASQUE VPN iOS app (<code>com.next1971.masque</code>)<br>
+  Effective date: 20 September 2026</p>
+
+  <p>
+    MASQUE VPN is a self-hosted VPN client. You run your own server and import a
+    <code>.masque</code> profile that you created. This policy describes what the
+    iOS app does with information on your device.
+  </p>
+
+  <h2>1. We do not collect your data</h2>
+  <p>
+    The app developer does not operate a VPN service, user accounts, analytics,
+    advertising, or crash-reporting backend. The iOS app does not send personal
+    data, identifiers, usage logs, or VPN traffic to the developer.
+  </p>
+  <p>
+    There is no sign-in. There are no third-party analytics, advertising, or
+    social SDKs in the app.
+  </p>
+
+  <h2>2. What stays on your device</h2>
+  <ul>
+    <li>The imported VPN profile (server address, certificates) is stored locally in the app’s App Group so the Packet Tunnel extension can connect.</li>
+    <li>Optional settings such as MTU are stored locally.</li>
+    <li>iOS also keeps a VPN configuration that you approve in Settings.</li>
+  </ul>
+  <p>
+    Uninstalling the app removes the app’s local copy of this data. You can also
+    delete the VPN configuration in iOS Settings.
+  </p>
+
+  <h2>3. Traffic when you connect</h2>
+  <p>
+    When the VPN is on, IP traffic from your device is sent to <strong>the MASQUE
+    server that you configured</strong> — a machine you (or your family) control,
+    not a server run by the app developer. That server’s operator is responsible
+    for whatever logging or retention they enable on their VPS.
+  </p>
+  <p>
+    The tunnel uses HTTP/3 (QUIC) and mutual TLS with certificates from your own
+    internal CA. The developer never receives those certificates or your traffic.
+  </p>
+
+  <h2>4. Permissions</h2>
+  <p>
+    The app uses a Network Extension (Packet Tunnel) so iOS can start a VPN.
+    iOS will ask you to allow the VPN configuration. The app does not request
+    access to contacts, photos, location, microphone, camera, or tracking.
+  </p>
+
+  <h2>5. Children</h2>
+  <p>
+    The app is not directed at children and does not knowingly collect personal
+    information from anyone, including children under 13 (or the equivalent age
+    in your country).
+  </p>
+
+  <h2>6. Changes</h2>
+  <p>
+    If this policy changes, the updated text will be published at this URL with
+    a new effective date.
+  </p>
+
+  <h2>7. Contact</h2>
+  <p>
+    Questions about this policy or the app:
+  </p>
+  <ul>
+    <li>Source and issues: <a href="https://github.com/Next1971/masque-vpn">github.com/Next1971/masque-vpn</a></li>
+    <li>Security reports: see the repository <a href="https://github.com/Next1971/masque-vpn/blob/main/SECURITY.md">security policy</a></li>
+  </ul>
+
+  <hr>
+
+  <h1>Политика конфиденциальности</h1>
+  <p class="meta">Приложение MASQUE VPN для iOS (<code>com.next1971.masque</code>)<br>
+  Дата вступления в силу: 20 сентября 2026</p>
+
+  <p>
+    MASQUE VPN — клиент для своего VPN-сервера. Вы запускаете сервер сами и
+    импортируете профиль <code>.masque</code>, который создали. Здесь описано,
+    что iOS-приложение делает с данными на устройстве.
+  </p>
+
+  <h2>1. Мы не собираем ваши данные</h2>
+  <p>
+    Разработчик приложения не предоставляет VPN-сервис, не ведёт аккаунты,
+    аналитику, рекламу и сервер сбоев. Приложение не отправляет разработчику
+    персональные данные, идентификаторы, логи использования и трафик VPN.
+  </p>
+  <p>
+    Входа в аккаунт нет. Сторонних SDK аналитики, рекламы и соцсетей в приложении нет.
+  </p>
+
+  <h2>2. Что хранится на устройстве</h2>
+  <ul>
+    <li>Импортированный VPN-профиль (адрес сервера, сертификаты) хранится локально в App Group, чтобы расширение Packet Tunnel могло подключиться.</li>
+    <li>Локально сохраняются настройки вроде MTU.</li>
+    <li>iOS отдельно хранит конфигурацию VPN, которую вы подтверждаете в Настройках.</li>
+  </ul>
+  <p>
+    Удаление приложения удаляет локальную копию этих данных. Конфигурацию VPN
+    можно удалить в Настройках iOS.
+  </p>
+
+  <h2>3. Трафик при подключении</h2>
+  <p>
+    Когда VPN включён, IP-трафик устройства идёт на <strong>тот MASQUE-сервер,
+    который вы указали в профиле</strong> — на машину, которую контролируете вы
+    (или ваша семья), а не разработчик приложения. Что сервер пишет в логи,
+    решает оператор этого VPS.
+  </p>
+  <p>
+    Туннель использует HTTP/3 (QUIC) и взаимный TLS с сертификатами вашего CA.
+    Разработчик не получает ни сертификаты, ни трафик.
+  </p>
+
+  <h2>4. Разрешения</h2>
+  <p>
+    Приложение использует Network Extension (Packet Tunnel). iOS запросит
+    разрешение на конфигурацию VPN. Доступ к контактам, фото, геолокации,
+    микрофону, камере и трекингу не запрашивается.
+  </p>
+
+  <h2>5. Дети</h2>
+  <p>
+    Приложение не предназначено для детей и сознательно не собирает персональные
+    данные ни у кого, включая детей младше 13 лет (или возраста, установленного
+    в вашей стране).
+  </p>
+
+  <h2>6. Изменения</h2>
+  <p>
+    Обновлённый текст политики будет опубликован по этому же адресу с новой датой.
+  </p>
+
+  <h2>7. Контакты</h2>
+  <ul>
+    <li>Исходный код и вопросы: <a href="https://github.com/Next1971/masque-vpn">github.com/Next1971/masque-vpn</a></li>
+    <li>Сообщения о уязвимостях: <a href="https://github.com/Next1971/masque-vpn/blob/main/SECURITY.md">политика безопасности</a> репозитория</li>
+  </ul>
+</body>
+</html>
