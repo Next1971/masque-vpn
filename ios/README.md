@@ -1,6 +1,6 @@
 # MASQUE VPN — iOS client (TestFlight)
 
-Minimal iPhone/iPad client on the same Go core (`clientcore`) as Android and Windows. Swift supplies the UI and a **Packet Tunnel** Network Extension; gomobile produces `Mobile.xcframework`.
+Minimal iPhone client on the same Go core (`clientcore`) as Android and Windows. Swift supplies the UI and a **Packet Tunnel** Network Extension; gomobile produces `Mobile.xcframework`. The App Store binary is **iPhone-only** (iPad can still run it in compatibility mode).
 
 This is the iOS client (marketing version **1.7.0**). The simulator cannot exercise the VPN path. **No IPA is attached to GitHub Releases.** External TestFlight is live: [https://testflight.apple.com/join/x52N41V1](https://testflight.apple.com/join/x52N41V1) (Apple build **20**). This build **expires in 80 days, on 4 December 2026**; after that a new TestFlight build will be published for **90 days**.
 
