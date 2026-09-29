@@ -2,13 +2,13 @@
 
 A Windows VPN client on the shared Go core (`clientcore`). It speaks **QUIC + HTTP/3 CONNECT-IP (MASQUE, RFC 9484)** with mutual TLS, and tunnels traffic through a **Wintun** adapter.
 
-From **v1.3.1** the normal install is a per-machine **MSI**: a **LocalSystem** service runs the tunnel, and a **Fyne GUI** (Start menu, no UAC) imports a profile and connects. Closing the window does not tear down the tunnel. The console `vpn-client.exe` remains for debug. **v1.4** adds the app icon (tray, window, Start menu, MSI, EXE) and **Ping** on the GUI (smoothed QUIC RTT to the server). **v1.5.0** adds IPv6 on the tunnel when the server assigns it (GUI and console). **v1.5.1** uses TUN MTU **1369** and adds **certificate revoke** in `masque-setup.exe`. **v1.5.2** adds an optional kill switch (default off). **v1.5.3** is GitHub **Latest** (same Windows client as 1.5.2, product version bump). **v1.5.4** (pre-release) bumps `connect-ip-go` and races optional `alt_port`. **v1.5.6** adds QUIC over IPv6 and makes **Disconnect** close the session immediately.
+From **v1.3.1** the normal install is a per-machine **MSI**: a **LocalSystem** service runs the tunnel, and a **Fyne GUI** (Start menu, no UAC) imports a profile and connects. Closing the window does not tear down the tunnel. The console `vpn-client.exe` remains for debug. **v1.4** adds the app icon (tray, window, Start menu, MSI, EXE) and **Ping** on the GUI (smoothed QUIC RTT to the server). **v1.5.0** adds IPv6 on the tunnel when the server assigns it (GUI and console). **v1.5.1** uses TUN MTU **1369** and adds **certificate revoke** in `masque-setup.exe`. **v1.5.2** adds an optional kill switch (default off). **v1.5.3** is the previous Latest (same Windows client as 1.5.2, product version bump). **v1.5.4** (pre-release) bumps `connect-ip-go` and races optional `alt_port`. **v1.5.6** adds QUIC over IPv6 and makes **Disconnect** close the session immediately. **v1.7.1** is GitHub **Latest**.
 
 ---
 
 ## Install from a release (recommended)
 
-1. Download `masque-1.5.3.msi` from [v1.5.3](../../releases/tag/v1.5.3) ([Latest](../../releases/latest)). Optional: `masque-1.5.6.msi` from [v1.5.6](../../releases/tag/v1.5.6) if you want IPv6 QUIC or the Disconnect fix — not required if 1.5.3 already works.
+1. Download `masque-1.7.1.msi` from [v1.7.1](../../releases/tag/v1.7.1) ([Latest](../../releases/latest)). A 1.5.x server still accepts this client.
 2. Run the installer (one UAC prompt). It installs `MasqueVpn` (auto-start), `wintun.dll`, `masque-gui.exe`, and `vpn-client.exe` under `C:\Program Files\MASQUE`.
 3. Open **MASQUE VPN** from the Start menu (no admin).
 4. **Import profile**: `profile.masque` (same single-file bundle as Android).
@@ -28,11 +28,11 @@ The imported profile is stored under `%ProgramData%\MASQUE\` (not next to the EX
 
 This is a separate app from the VPN client (not in the MSI). It SSHes to a **root** VPS and runs the same layout as [server/README.md](../server/README.md).
 
-**Put the Linux server binary next to the EXE:** `vpn-server-linux-amd64` or `vpn-server-linux-arm64` from the **same** [v1.5.6 release](../../releases/tag/v1.5.6) (or pick the file in the UI). The installer does not contain the server. The wizard still chooses **one** UDP port and a Public host that is **IPv4 or DNS** (no IPv6 literal). Dual-port and IPv6 dial stay in `gen-config.sh --alt-port` / `--dial`.
+**Put the Linux server binary next to the EXE:** `vpn-server-linux-amd64` or `vpn-server-linux-arm64` from [v1.5.6](../../releases/tag/v1.5.6) (or pick the file in the UI). **v1.7.1** does not include a server binary. The installer does not contain the server. The wizard still chooses **one** UDP port and a Public host that is **IPv4 or DNS** (no IPv6 literal). Dual-port and IPv6 dial stay in `gen-config.sh --alt-port` / `--dial`.
 
 **Supported OS:** Ubuntu **22.04**, **24.04**, or **26.04**, or Debian **12**, with systemd, `apt`, and `/dev/net/tun`. Anything else is refused.
 
-1. Download `masque-setup.exe` and the matching `vpn-server-linux-*` from [v1.5.6](../../releases/tag/v1.5.6). Keep them in one folder.
+1. Download `masque-setup.exe` and the matching `vpn-server-linux-*` from [v1.5.6](../../releases/tag/v1.5.6). Keep them in one folder. The VPN client itself is the [v1.7.1 MSI](../../releases/tag/v1.7.1).
 2. Enter SSH host, root password or key, and **Connect and check OS**. If MASQUE is **already installed**, the app **does not reinstall** (no new CA, no new `server.crt`). Port pick / Install are disabled; use **Issue next bundle**.
 3. Pick a suggested UDP port (443, 2053, 8443, 41234 if not already listening) and **Confirm** — only when installing onto a blank VPS.
 4. **Install**. If `ufw` exists, UDP is allowed there. **Reachability OK** means this PC got a QUIC reply **after** the service was listening. ICMP ping is not used. A timeout usually means the **cloud security group** still blocks UDP.
