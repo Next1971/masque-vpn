@@ -121,9 +121,16 @@ func run(ctx context.Context, proxyAddr, serverName, caFile, certFile, keyFile s
 	defer ipconn.Close()
 
 	// Read assigned addresses and routes (evidence of capsule exchange).
-	prefixes, err := ipconn.LocalPrefixes(ctx)
+	assigned, err := ipconn.ReceiveAddressAssignment(ctx)
 	if err != nil {
 		return fmt.Errorf("get local prefixes: %w", err)
+	}
+	prefixes := make([]netip.Prefix, 0, len(assigned))
+	for _, a := range assigned {
+		if a.Rejected() || !a.IPPrefix.IsValid() {
+			continue
+		}
+		prefixes = append(prefixes, a.IPPrefix)
 	}
 	log.Printf("server assigned prefixes: %v", prefixes)
 
