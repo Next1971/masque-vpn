@@ -6,7 +6,7 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [v1.7.1] - 2026-09-29
 
-**Client drop (APK + MSI).** The Linux server already running stays on 1.5.x. Android and Windows use `connect-ip-go` v0.4.0 but only wait for the server's address assignment, so they still connect to a v0.3.0 server. Android `1.7.1` (`versionCode` 23); Windows product **1.7.1**.
+**GitHub Latest.** Client drop (APK + MSI). Replaces [v1.5.3](https://github.com/Next1971/masque-vpn/releases/tag/v1.5.3). The Linux server already running stays on 1.5.x. Android and Windows use `connect-ip-go` v0.4.0 but only wait for the server's address assignment, so they still connect to a v0.3.0 server. Android `1.7.1` (`versionCode` 23); Windows product **1.7.1**.
 
 ### Fixed
 

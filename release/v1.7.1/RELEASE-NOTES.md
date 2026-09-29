@@ -1,4 +1,4 @@
-v1.7.1 is a **client** drop: Android APK and Windows MSI. The Linux server already running (1.5.x, `connect-ip-go` v0.3.0) stays in place.
+v1.7.1 is GitHub **Latest**. It replaces [v1.5.3](https://github.com/Next1971/masque-vpn/releases/tag/v1.5.3). This drop is Android APK and Windows MSI only. The Linux server already running (1.5.x, `connect-ip-go` v0.3.0) stays in place.
 
 **Clients use `connect-ip-go` v0.4.0.** They only wait for the server's address assignment (`ReceiveAddressAssignment`) and do not send `ADDRESS_REQUEST`, so a 0.3 server still accepts the session. A 1.5.x client also still reaches that same server. This tag does not replace the server binary.
 
