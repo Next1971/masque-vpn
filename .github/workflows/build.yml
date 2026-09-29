@@ -73,7 +73,7 @@ jobs:
           foreach ($pkg in @("cmd\vpn-gui", "cmd\vpn-setup", "cmd\vpn-service", "cmd\vpn-client")) {
             $manifest = if ($pkg -eq "cmd\vpn-gui") { "gui" } else { "cli" }
             Push-Location $pkg
-            go run github.com/tc-hib/go-winres@latest simply --icon $ico --arch amd64 --manifest $manifest --product-name "MASQUE VPN" --file-description "MASQUE VPN" --product-version "1.5.6.0" --file-version "1.5.6.0"
+            go run github.com/tc-hib/go-winres@latest simply --icon $ico --arch amd64 --manifest $manifest --product-name "MASQUE VPN" --file-description "MASQUE VPN" --product-version "1.7.1.0" --file-version "1.7.1.0"
             Pop-Location
           }
 
@@ -111,6 +111,13 @@ jobs:
         working-directory: windows
         # WiX v7 OSMF: https://wixtoolset.org/osmf/ (fee $0 under $10k revenue)
         run: wix build -acceptEula wix7 .\installer\masque.wxs -bindpath bin=dist -out dist\masque.msi -arch x64
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-client
+          path: |
+            windows/dist/masque.msi
+            windows/dist/masque-setup.exe
 
   android-build:
     name: Android (AAR + APK)
@@ -161,6 +168,13 @@ jobs:
       - name: Build debug APK
         working-directory: android
         run: ./gradlew :app:assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-apk
+          path: |
+            android/app/build/outputs/apk/phone/debug/*.apk
+            android/app/build/outputs/apk/tv/debug/*.apk
 
   ios-build:
     name: iOS client

@@ -61,7 +61,7 @@ In Android Studio, install via SDK Manager:
 
 ## Use a release APK
 
-1. Download `masque-phone-1.5.3.apk` or `masque-tv-1.5.3.apk` from [v1.5.3](../../releases/tag/v1.5.3) ([Latest](../../releases/latest)). Optional **v1.5.6** APKs from [v1.5.6](../../releases/tag/v1.5.6) if you want IPv6 QUIC.
+1. Download `masque-phone-1.7.1.apk` or `masque-tv-1.7.1.apk` from [v1.7.1](../../releases/tag/v1.7.1) ([Latest](../../releases/latest)). The server must be 1.7.1 as well.
 2. Install the phone or TV APK (allow installation from unknown sources).
 3. Import a real `profile.masque` from the server generator. The APK also ships a non-production `sample-profile.masque` in assets so you can see the expected format — do not use it to connect.
 4. Grant **VPN** permission. On Connect the app may ask to **ignore battery optimizations** — allow it so keepalives can run with the screen off.

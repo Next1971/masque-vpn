@@ -125,11 +125,12 @@ func finishCONNECTIP(ctx context.Context, p *Profile, leg *quicLeg, dev tun.Devi
 	}
 	log.Printf("CONNECT-IP session established (HTTP %d) via %s", rsp.StatusCode, leg.addr)
 
-	prefixes, err := ipconn.LocalPrefixes(ctx)
+	assigned, err := ipconn.ReceiveAddressAssignment(ctx)
 	if err != nil {
 		ipconn.Close()
 		return fail(fmt.Errorf("get local prefixes: %w", err))
 	}
+	prefixes := prefixesFromAssignment(assigned)
 	if len(prefixes) == 0 {
 		ipconn.Close()
 		return fail(fmt.Errorf("server assigned no prefixes"))

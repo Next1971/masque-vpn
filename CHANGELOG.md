@@ -4,6 +4,21 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
+## [v1.7.1] - 2026-09-29
+
+**GitHub Latest.** Replaces [v1.5.3](https://github.com/Next1971/masque-vpn/releases/tag/v1.5.3). Android `1.7.1` (`versionCode` 23); Windows product **1.7.1**.
+
+Upgrade the **Linux server and every client together**. `connect-ip-go` v0.4.0 changes the ADDRESS_ASSIGN capsule (request id). A 1.5.x client, or the current iOS TestFlight **v1.7.0** build, will not receive an address from a 1.7.1 server. iOS stays on TestFlight until a new build.
+
+### Fixed
+
+- Android no longer shows Connected before the QUIC socket is excluded from the VPN. `protect` and bind to the physical network happen before the TUN route. Connected is shown only after an ICMP echo to the server tunnel address (`10.8.0.x.1`) comes back. Two automatic redials if that probe fails.
+
+### Changed
+
+- `connect-ip-go` 0.3.0 → 0.4.0 (Android/iOS Go module and Windows). `quic-go` 0.63.0 (already on main).
+- Android Gradle Plugin 9.3.2 → 9.4.1. Wrapper is already Gradle 9.8.0.
+
 ## [v1.7] - 2026-09-15
 
 **GitHub pre-release; Latest stays [v1.5.3](https://github.com/Next1971/masque-vpn/releases/tag/v1.5.3).** iOS TestFlight only. No APK, MSI, or Linux server on this tag. Optional IPv6 QUIC remains [v1.5.6](https://github.com/Next1971/masque-vpn/releases/tag/v1.5.6).

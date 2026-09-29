@@ -171,78 +171,146 @@ class MasqueVpnService : VpnService() {
             }
         }
 
-        try {
-            val t = Mobile.dial(cfg, cb)
-            tunnel = t
-
-            val existing = pfd
-            if (existing == null) {
-                var addr = t.assignedAddr()
-                if (addr.isNullOrEmpty()) {
-                    Log.w(TAG, "server assigned no address; using fallback $TUN_ADDR_FALLBACK")
-                    addr = TUN_ADDR_FALLBACK
+        var lastError = "tunnel did not pass traffic"
+        for (attempt in 1..3) {
+            if (userStop) return
+            try {
+                updateNotification(if (attempt == 1) "Connecting…" else "Checking tunnel ($attempt/3)…")
+                val t = Mobile.dial(cfg, cb)
+                tunnel = t
+                if (!excludeQuic(t)) {
+                    lastError = "could not exclude the VPN socket from the tunnel"
+                    dropSession()
+                    continue
                 }
-                Log.i(TAG, "building TUN $addr/$TUN_PREFIX (server assigned /${t.assignedPrefixLen()})")
-
-                val builder = Builder()
-                    .setSession("MASQUE")
-                    .setMtu(TUN_MTU)
-                    .setBlocking(ProfileStore.killSwitch(this))
-                    .addAddress(addr, TUN_PREFIX)
-                    .addRoute("0.0.0.0", 0)
-                    .addDnsServer(prof.dns)
-                // Many Android TV VpnService stacks reject IPv6 addresses/routes.
-                try {
-                    builder.addRoute("::", 0)
-                    val v6 = t.assignedAddrV6()
-                    if (!v6.isNullOrEmpty()) {
-                        builder.addAddress(v6, TUN_PREFIX_V6)
-                        Log.i(TAG, "TUN IPv6 $v6/$TUN_PREFIX_V6")
-                    } else {
-                        builder.addAddress("fd00::1", 128)
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "IPv6 TUN not supported on this device: ${e.message}")
-                }
-                if (prof.dns != "8.8.8.8") {
-                    builder.addDnsServer("8.8.8.8")
-                }
-
-                try {
-                    builder.addDisallowedApplication(packageName)
-                } catch (e: Exception) {
-                    Log.w(TAG, "addDisallowedApplication: ${e.message}")
-                }
-
-                val iface = builder.establish()
-                if (iface == null) {
-                    Log.e(TAG, "establish() returned null (VPN permission?)")
-                    broadcast("Error: VPN permission unavailable")
-                    stopVpn()
+                if (pfd == null && !openTun(t, prof.dns)) {
                     return
                 }
-                pfd = iface
+                if (!excludeQuic(t)) {
+                    lastError = "could not exclude the VPN socket from the tunnel"
+                    dropSession()
+                    continue
+                }
+                t.probe(3000)
+                val iface = pfd ?: run {
+                    lastError = "VPN interface missing"
+                    dropSession()
+                    continue
+                }
                 t.startWithFD(iface.fd.toLong())
-            } else {
-                Log.i(TAG, "reusing TUN fd after kill-switch hold")
-                t.startWithFD(existing.fd.toLong())
-            }
-            registerUnderlyingNetworks()
-            protectUdp()
-            isRunning = true
-            broadcast("Connected")
-            updateNotification("VPN active")
-            rttHandler.removeCallbacks(rttTick)
-            rttHandler.post(rttTick)
-        } catch (e: Exception) {
-            Log.e(TAG, "connect failed", e)
-            if (!userStop && ProfileStore.killSwitch(this) && pfd != null) {
-                holdKillSwitch("Kill switch: traffic blocked, reconnecting")
+                registerUnderlyingNetworks()
+                excludeQuic(t)
+                isRunning = true
+                broadcast("Connected")
+                updateNotification("VPN active")
+                rttHandler.removeCallbacks(rttTick)
+                rttHandler.post(rttTick)
                 return
+            } catch (e: Exception) {
+                Log.w(TAG, "connect attempt $attempt failed", e)
+                lastError = e.message ?: lastError
+                dropSession()
             }
-            broadcast("Connection error: ${e.message}")
-            stopVpn()
         }
+        Log.e(TAG, "connect failed: $lastError")
+        if (!userStop && ProfileStore.killSwitch(this) && pfd != null) {
+            holdKillSwitch("Kill switch: traffic blocked, reconnecting")
+            return
+        }
+        broadcast("Connection error: $lastError")
+        stopVpn()
+    }
+
+    /** Mark the QUIC socket so it stays on the physical network. */
+    private fun excludeQuic(t: Tunnel): Boolean {
+        val fd = t.udpFd().toInt()
+        if (fd <= 0) {
+            Log.w(TAG, "no UDP fd to protect")
+            return false
+        }
+        if (!protect(fd)) {
+            Log.w(TAG, "protect($fd) failed")
+            return false
+        }
+        Log.i(TAG, "protected UDP fd $fd")
+        val net = physicalNetwork() ?: return true
+        underlying = net
+        try {
+            setUnderlyingNetworks(arrayOf(net))
+        } catch (e: Exception) {
+            Log.w(TAG, "setUnderlyingNetworks: ${e.message}")
+        }
+        bindUdpFd(net, fd)
+        return true
+    }
+
+    private fun physicalNetwork(): Network? {
+        val nets = connectivity.allNetworks
+        for (net in nets) {
+            val caps = connectivity.getNetworkCapabilities(net) ?: continue
+            if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            ) {
+                return net
+            }
+        }
+        return null
+    }
+
+    private fun openTun(t: Tunnel, dns: String): Boolean {
+        var addr = t.assignedAddr()
+        if (addr.isNullOrEmpty()) {
+            Log.w(TAG, "server assigned no address; using fallback $TUN_ADDR_FALLBACK")
+            addr = TUN_ADDR_FALLBACK
+        }
+        Log.i(TAG, "building TUN $addr/$TUN_PREFIX (server assigned /${t.assignedPrefixLen()})")
+
+        val builder = Builder()
+            .setSession("MASQUE")
+            .setMtu(TUN_MTU)
+            .setBlocking(ProfileStore.killSwitch(this))
+            .addAddress(addr, TUN_PREFIX)
+            .addRoute("0.0.0.0", 0)
+            .addDnsServer(dns)
+        try {
+            builder.addRoute("::", 0)
+            val v6 = t.assignedAddrV6()
+            if (!v6.isNullOrEmpty()) {
+                builder.addAddress(v6, TUN_PREFIX_V6)
+                Log.i(TAG, "TUN IPv6 $v6/$TUN_PREFIX_V6")
+            } else {
+                builder.addAddress("fd00::1", 128)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "IPv6 TUN not supported on this device: ${e.message}")
+        }
+        if (dns != "8.8.8.8") {
+            builder.addDnsServer("8.8.8.8")
+        }
+        try {
+            builder.addDisallowedApplication(packageName)
+        } catch (e: Exception) {
+            Log.w(TAG, "addDisallowedApplication: ${e.message}")
+        }
+        val iface = builder.establish()
+        if (iface == null) {
+            Log.e(TAG, "establish() returned null (VPN permission?)")
+            broadcast("Error: VPN permission unavailable")
+            stopVpn()
+            return false
+        }
+        pfd = iface
+        return true
+    }
+
+    /** Drop the Go session and keep the TUN so the next attempt can reuse it. */
+    private fun dropSession() {
+        try {
+            tunnel?.stop()
+        } catch (e: Exception) {
+            Log.w(TAG, "tunnel.stop: ${e.message}")
+        }
+        tunnel = null
     }
 
     /** Keep the VpnService TUN so apps cannot fall back to the underlay. */
@@ -327,6 +395,10 @@ class MasqueVpnService : VpnService() {
     private fun bindUdp(network: Network) {
         val fd = tunnel?.udpFd()?.toInt() ?: return
         if (fd <= 0) return
+        bindUdpFd(network, fd)
+    }
+
+    private fun bindUdpFd(network: Network, fd: Int) {
         try {
             val javaFd = FileDescriptor()
             val field = FileDescriptor::class.java.declaredFields.firstOrNull {
