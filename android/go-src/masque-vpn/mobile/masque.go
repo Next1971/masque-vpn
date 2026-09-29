@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"time"
 
 	"github.com/Next1971/masque-vpn/internal/clientcore"
 	"golang.zx2c4.com/wireguard/tun"
@@ -102,6 +103,23 @@ func (t *Tunnel) UDPFd() int {
 		return -1
 	}
 	return t.sess.UDPFd()
+}
+
+// Probe checks that an ICMP echo to the server tunnel address comes back.
+// Call it after the QUIC socket is excluded from the VPN and before forwarding
+// starts. timeoutMs <= 0 uses 3 seconds. A failure closes the session.
+func (t *Tunnel) Probe(timeoutMs int64) error {
+	t.mu.Lock()
+	sess := t.sess
+	stopped := t.stopped
+	t.mu.Unlock()
+	if stopped || sess == nil {
+		return fmt.Errorf("tunnel not dialed")
+	}
+	if timeoutMs <= 0 {
+		timeoutMs = 3000
+	}
+	return sess.ProbeGateway(time.Duration(timeoutMs) * time.Millisecond)
 }
 
 // RTTMillis is the smoothed QUIC RTT to the VPN server in milliseconds.
