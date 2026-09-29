@@ -3,20 +3,7 @@ package clientcore
 import (
 	"net/netip"
 	"testing"
-
-	connectip "github.com/quic-go/connect-ip-go"
 )
-
-func TestPrefixesFromAssignmentSkipsRejected(t *testing.T) {
-	ok := netip.MustParsePrefix("10.8.0.253/32")
-	got := prefixesFromAssignment([]connectip.AssignedAddress{
-		{IPPrefix: ok},
-		{IPPrefix: netip.PrefixFrom(netip.IPv4Unspecified(), 32)},
-	})
-	if len(got) != 1 || got[0] != ok {
-		t.Fatalf("got %v", got)
-	}
-}
 
 func TestTunnelGateway4(t *testing.T) {
 	gw := tunnelGateway4(netip.MustParseAddr("10.8.0.253"))

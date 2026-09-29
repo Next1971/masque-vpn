@@ -8,7 +8,7 @@ From **v1.3.1** the normal install is a per-machine **MSI**: a **LocalSystem** s
 
 ## Install from a release (recommended)
 
-1. Download `masque-1.7.1.msi` from [v1.7.1](../../releases/tag/v1.7.1) ([Latest](../../releases/latest)). The Linux server must be 1.7.1 as well.
+1. Download `masque-1.7.1.msi` from [v1.7.1](../../releases/tag/v1.7.1) ([Latest](../../releases/latest)). A 1.5.x server still accepts this client.
 2. Run the installer (one UAC prompt). It installs `MasqueVpn` (auto-start), `wintun.dll`, `masque-gui.exe`, and `vpn-client.exe` under `C:\Program Files\MASQUE`.
 3. Open **MASQUE VPN** from the Start menu (no admin).
 4. **Import profile**: `profile.masque` (same single-file bundle as Android).

@@ -15,8 +15,8 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 
 ## Release status
 
-- **Latest:** [v1.7.1](../../releases/tag/v1.7.1) — Android, Windows, and the Linux server. Upgrade them together: `connect-ip-go` v0.4.0 is not compatible with 1.5.x or with the current iOS TestFlight build.
-- **v1.7 (iOS TestFlight):** [v1.7](../../releases/tag/v1.7) — public TestFlight [join link](https://testflight.apple.com/join/x52N41V1), Apple build **20**. Expires **4 December 2026**. That build still speaks the 1.5.x capsule format. Do not point it at a 1.7.1 server.
+- **Latest:** [v1.7.1](../../releases/tag/v1.7.1) — Android, Windows, and the Linux server. Same CONNECT-IP capsules as 1.5.x, so old and new clients and servers still connect to each other.
+- **v1.7 (iOS TestFlight):** [v1.7](../../releases/tag/v1.7) — public TestFlight [join link](https://testflight.apple.com/join/x52N41V1), Apple build **20**. Expires **4 December 2026**. No APK/MSI/server on this tag.
 - **v1.5.6 (optional):** [v1.5.6](../../releases/tag/v1.5.6) — QUIC to the server over IPv6, Windows Disconnect fix, dual-stack server bind, `install.sh`. Previous 1.5.x clients and servers stay compatible over IPv4. **If your setup already works, you do not need to install 1.5.6.**
 - **v1.5.4 (pre-release):** `connect-ip-go` v0.3.0 + optional `alt_port` dual-port. New Linux server binary.
 - **v1.5.2 (pre-release):** optional **kill switch** on Android and Windows (default off). Same protocol; no server binary change.

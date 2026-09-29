@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/quic-go/connect-ip-go v0.4.0
+	github.com/quic-go/connect-ip-go v0.3.0
 	github.com/quic-go/quic-go v0.63.0
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	golang.org/x/sys v0.48.0

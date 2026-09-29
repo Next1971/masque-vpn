@@ -6,9 +6,7 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [v1.7.1] - 2026-09-29
 
-**GitHub Latest.** Replaces [v1.5.3](https://github.com/Next1971/masque-vpn/releases/tag/v1.5.3). Android `1.7.1` (`versionCode` 23); Windows product **1.7.1**.
-
-Upgrade the **Linux server and every client together**. `connect-ip-go` v0.4.0 changes the ADDRESS_ASSIGN capsule (request id). A 1.5.x client, or the current iOS TestFlight **v1.7.0** build, will not receive an address from a 1.7.1 server. iOS stays on TestFlight until a new build.
+**GitHub Latest.** Replaces [v1.5.3](https://github.com/Next1971/masque-vpn/releases/tag/v1.5.3). Same CONNECT-IP capsules as 1.5.x: a 1.7.1 client still reaches a 1.5.x server, and a 1.5.x client still reaches a 1.7.1 server. Android `1.7.1` (`versionCode` 23); Windows product **1.7.1**.
 
 ### Fixed
 
@@ -16,8 +14,8 @@ Upgrade the **Linux server and every client together**. `connect-ip-go` v0.4.0 c
 
 ### Changed
 
-- `connect-ip-go` 0.3.0 → 0.4.0 (Android/iOS Go module and Windows). `quic-go` 0.63.0 (already on main).
 - Android Gradle Plugin 9.3.2 → 9.4.1. Wrapper is already Gradle 9.8.0.
+- `quic-go` 0.63.0 is already on main. `connect-ip-go` stays at 0.3.0.
 
 ## [v1.7] - 2026-09-15
 

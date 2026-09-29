@@ -4,14 +4,14 @@
 
 ## Current status
 
-MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** (server, Windows, Android). **v1.0** shipped **14 August 2026**. **v1.7.1** is GitHub **Latest** (Android, Windows, Linux server; upgrade them together — `connect-ip-go` v0.4.0). **v1.7** remains iOS TestFlight only and does **not** speak the 1.7.1 capsule format. **v1.5.3** was the previous Latest. **v1.5.6** remains the optional IPv6-QUIC release for anyone still on the 1.5.x protocol.
+MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** (server, Windows, Android). **v1.0** shipped **14 August 2026**. **v1.7.1** is GitHub **Latest** (Android, Windows, Linux server). It keeps `connect-ip-go` v0.3.0, so 1.5.x clients and servers stay compatible. **v1.7** is iOS TestFlight only. **v1.5.3** was the previous Latest. **v1.5.6** is the optional IPv6-QUIC release.
 
 Client/installer **design work can happen in any branch** and is not gated on a version number. **Store listings** (Play / F-Droid) start **after** that visual snapshot, not in 1.5.x.
 
 | Component | Status | Notes |
 |---|---|---|
-| Server | Stable | **v1.7.1** Latest (`connect-ip-go` v0.4.0). Upgrade with the clients. **v1.5.6** is the last 1.5.x server |
-| Windows client | Stable | **v1.7.1** Latest. **v1.5.6** remains the last build that speaks the old capsule format |
+| Server | Stable | **v1.7.1** Latest, same capsules as 1.5.x. **v1.5.6** optional dual-stack `[::]` + IPv6 QUIC |
+| Windows client | Stable | **v1.7.1** Latest. Still speaks to a 1.5.x server |
 | Windows VPS installer | **Experimental** | `masque-setup.exe` from **v1.7.1**. One UDP port, IPv4/DNS host |
 | Android client | Stable | **v1.7.1** Latest. Connected only after the tunnel echo succeeds |
 | iOS client | **TestFlight (v1.7)** | Public link [join/x52N41V1](https://testflight.apple.com/join/x52N41V1); Apple build **20**. Expires **4 December 2026**; then a new 90-day build. No GitHub IPA |
