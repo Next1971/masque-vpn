@@ -1,6 +1,6 @@
 # Roadmap
 
-> Status snapshot: last updated 2026-09-15. See [CHANGELOG.md](../CHANGELOG.md) for release history.
+> Status snapshot: last updated 2026-10-04. See [CHANGELOG.md](../CHANGELOG.md) for release history.
 
 ## Current status
 
@@ -139,6 +139,8 @@ Visual refresh of clients and `masque-setup.exe` can merge whenever it is ready.
 ## Planned for future releases (no committed dates)
 
 - [ ] Expanded troubleshooting and platform-specific FAQ.
+- [ ] Session byte counters in the clients (bytes up and down for the current Connect, reset on Disconnect). Count tunnel IP packets in the shared pump. No server or protocol change. Show next to ping on Android (phone and TV), Windows, and iOS.
+- [ ] Android phone: user-selected apps excluded from the tunnel (`VpnService.Builder.addDisallowedApplication`). The Masque package itself stays excluded. The list applies on the next Connect. Not for Android TV. Excluded apps leave the tunnel, so they are outside the kill switch.
 
 ## Explicitly out of scope for now
 
