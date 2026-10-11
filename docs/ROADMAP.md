@@ -1,142 +1,80 @@
 # Roadmap
 
-> Status snapshot: last updated 2026-10-04. See [CHANGELOG.md](../CHANGELOG.md) for release history.
+> Status snapshot: 2026-10-11. This document covers current release status, project decisions, and future work. See [CHANGELOG.md](../CHANGELOG.md) and [GitHub Releases](../../../releases) for detailed release history.
 
-## Current status
+## Current releases
 
-MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** (server, Windows, Android). **v1.0** shipped **14 August 2026**. **v1.7.1** is GitHub **Latest**: Android and Windows clients on `connect-ip-go` v0.4.0 that still talk to the 1.5.x server. The server binary is not replaced. **v1.7** is iOS TestFlight only.
-
-Client/installer **design work can happen in any branch** and is not gated on a version number. **Store listings** (Play / F-Droid) start **after** that visual snapshot, not in 1.5.x.
-
-| Component | Status | Notes |
+| Release | Status | Scope |
 |---|---|---|
-| Server | Stable | Still the 1.5.x binary on the VPS. **v1.5.6** optional dual-stack `[::]` + IPv6 QUIC |
-| Windows client | Stable | **v1.7.1** Latest MSI, `connect-ip-go` v0.4.0, still speaks to a 1.5.x server |
-| Windows VPS installer | **Experimental** | `masque-setup.exe`. One UDP port, IPv4/DNS host |
-| Android client | Stable | **v1.7.1** Latest APK. Connected only after the tunnel echo succeeds |
-| iOS client | **TestFlight (v1.7)** | Public link [join/x52N41V1](https://testflight.apple.com/join/x52N41V1); Apple build **20**. Expires **4 December 2026**; then a new 90-day build. No GitHub IPA |
+| [v1.7.1](../../../releases/tag/v1.7.1) | GitHub Latest | Android phone/TV and Windows clients. Compatible with the existing 1.5.x UDP server; no server upgrade is required for this release. |
+| [v2.0.0](../../../releases/tag/v2.0.0) | Experimental pre-release | Android phone/TV, Windows, and Linux server: client MTU 1340 and automatic HTTP/2 CONNECT-IP fallback when the UDP probe receives no reply. Does not replace Latest. |
+| [v1.7](../../../releases/tag/v1.7) | iOS TestFlight | Public [join link](https://testflight.apple.com/join/x52N41V1), Apple build 20. UDP-only; unchanged by v2.0.0. Expires 4 December 2026. No GitHub IPA. |
+| [v1.5.6](../../../releases/tag/v1.5.6) | Optional earlier release | IPv6 QUIC transport, dual-stack server bind, Windows Disconnect fix, and server installation packaging. |
 
-This is experimental software and has not received an independent security audit.
+If your current VPN works, you do not need to install v2.0.0. Use v1.7.1 for the current daily-driver client line.
 
-## Release slices (near term)
+All releases remain experimental software. GitHub build/test checks are not an independent security audit.
 
-| Tag | Focus | Notes |
-|---|---|---|
-| **v1.5.3** | Latest: kill switch + TV Connect fix | Client-only vs v1.5.0. Default kill switch **off**. Same protocol. |
-| **v1.5.4** | Pre-release: `connect-ip-go` v0.3.0 + dual-port | New server binary. Clients race `[server]` and optional `alt_port`. DoH not in this tag. |
-| **v1.5.5** | Packaging (not a GitHub tag) | `install.sh`, SHA256SUMS, Sigstore. Folded into **v1.5.6**. Latest stays v1.5.3. |
-| **(after v1.5.5)** | Android AGP/Gradle bump | Reopen deferred Dependabot [#75](https://github.com/Next1971/masque-vpn/pull/75): AGP **9.4.0** + Gradle wrapper **9.6.0**. Soak on main; **no GitHub pre-release**. |
-| **v1.5.6** | Optional: QUIC to the server over IPv6 | Full GitHub release, **not** Latest. AAAA + host-route. Windows Disconnect fix. Skip if 1.5.3 already works. |
-| **v1.7** | iOS TestFlight (shipped) | Public link; Apple build 20. No GitHub IPA. Latest stays v1.5.3. |
+## v2.0.0: shipped experiment
 
-## Completed (v1.0)
+### Transport and MTU decisions
 
-- QUIC + HTTP/3 transport via `quic-go`.
-- CONNECT-IP (RFC 9484) tunneling via `connect-ip-go`.
-- Mutual TLS with an internal EC (P-256) CA.
-- Server config/certificate generator (`gen-config.sh`) producing ready-to-use client bundles.
-- Windows client: signed EXE + Wintun DLL, console mode + local web UI.
-- Android client: signed APK (all ABIs), Kotlin app + shared Go core (`clientcore`) via gomobile.
-- systemd service unit with IP forwarding and NAT.
-- CONTRIBUTING.md, SECURITY.md, issue templates.
+- Android phone, Android TV, and Windows force tunnel MTU 1340. There is no user-facing MTU field or TCP/UDP switch.
+- UDP remains the normal transport. HTTP/2 CONNECT-IP over TCP starts only when a short UDP probe receives no reply; this is not automatic selection of the fastest transport.
+- TCP uses the same host and profile port, followed by the optional `alt_port`.
+- One server process listens on UDP and TCP on the same bind port. Existing profiles and certificates do not change.
+- The Android `1.8.0-tcp` build with manual transport and MTU controls is a lab APK, not the v2.0.0 UI.
 
-## Completed (v1.2)
+These decisions followed a phone-path sweep on 2026-10-11: UDP was usable at MTU 1280 and 1340, slow at 1359, and unusable at 1365 and 1369. TCP remained usable at every tested MTU and was fastest at 1280. These are observations from that tested path, not universal protocol rankings.
 
-- Server multi-client return-path demux by destination IP.
-- Android two-phase connect using the server-assigned `/32`.
-- Android TV product flavor (leanback, paste-text import).
+### Compatibility and deployment
 
-## Completed (v1.3)
+- Older UDP clients, including v1.7.1, can connect to the v2.0.0 server.
+- v2.0.0 clients can connect to older servers over UDP. TCP fallback requires the v2.0.0 server.
+- iOS TestFlight v1.7 stays UDP-only.
+- Linux amd64/arm64 server binaries, `install.sh`, `gen-config.sh`, checksums, and Docker sources are included. Install the new server with `install.sh`, or use the documented Docker build.
+- `masque-setup.exe` is not included in v2.0.0: the existing experimental Windows wizard still opens only a UDP port.
+- Server TUN MTU remains 1369; v2.0.0 client MTU is 1340.
+- Losing UDP probes no longer remain blocked after the first answer or cancellation of Connect.
 
-- QUIC keepalive and idle timeout on client and server.
-- Android battery-optimization exemption prompt.
-- Reconnect in the gomobile bridge without closing the TUN.
-- `NetworkCallback` + `setUnderlyingNetworks` + UDP `protect` for Wi-Fi → cellular.
-- Sticky IP pool keyed by client certificate CN.
-- `poc-client` requires a CA (no default `InsecureSkipVerify`).
+See the [v2.0.0 release notes](../../../releases/tag/v2.0.0) for files and deployment details.
 
-## Completed (v1.4)
+## Planned work
 
-- App icon on Android and Windows (launcher, tray, MSI, notification, TV banner).
-- On-screen ping: smoothed QUIC RTT to the MASQUE server.
-- Android airplane-mode soak: after 8 hours offline the tunnel came back cleanly (reconnect + sticky `/32`).
+No committed release numbers or dates are assigned to the items below.
 
-## Completed (v1.4.1)
+- [ ] Expand troubleshooting documentation and platform-specific FAQs.
+- [ ] Add session byte counters to Android phone/TV, Windows, and iOS. Count tunnel IP packets in the shared pump; show upload/download totals for the current connection next to ping and reset on Disconnect. No server or protocol change.
+- [ ] Add user-selected app exclusions on Android phone using `VpnService.Builder.addDisallowedApplication`. The MASQUE package itself remains excluded. Apply changes on the next Connect. Android TV is not included; excluded apps are outside the tunnel and its kill switch.
+- [ ] Add QR profile import for phone clients, with the installer displaying a QR code. TV and Windows retain file/paste import.
+- [ ] Refresh the iOS TestFlight build before the current build expires on 4 December 2026.
 
-- Android toolchain: AGP 9.x + Gradle 9.x + built-in Kotlin (see `android/README.md` for current versions).
-- Docker image / Compose for the server (host network, TUN, NAT).
-- Server graceful shutdown on SIGTERM/SIGINT.
-- Android IPv6 sink + TUN `/24` (block dual-stack bypass on IPv4-only servers).
-- Version label in Android UI; high-contrast launcher icon.
+Client and installer design work may happen in any branch and is not tied to a version number. Play / F-Droid listing work follows the agreed visual snapshot; no publication date is committed here.
 
-## Completed (v1.5.0)
+## Delivered foundation
 
-- [x] Full IPv6 in the tunnel (optional pool, NAT66/forwarding, client assigned v6).
-- Android forwards assigned IPv6 instead of sinking it when the server has a v6 pool.
-- Windows GUI/console and Linux console install IPv6 on TUN and `::/0`.
+This is a capability summary, not a second changelog.
 
-## Completed (v1.5.1)
+| Area | Delivered capabilities |
+|---|---|
+| Core tunnel | QUIC + HTTP/3 CONNECT-IP, mutual TLS with an internal CA, and a shared Go client core. |
+| Server | Config/certificate generator, systemd/NAT setup, multi-client return-path demultiplexing, sticky addresses by client certificate CN, graceful shutdown, and optional IPv6 pools/forwarding. |
+| Android and TV | Server-assigned addresses, two-phase connection setup, TV flavor and paste import, network-change reconnect without closing TUN, battery-exemption prompt on phones, optional kill switch, and IPv6 handling. |
+| Windows | Service + GUI + MSI client, Wintun, optional kill switch, IPv6 tunnel routes, and immediate QUIC session closure on Disconnect. |
+| Connectivity | QUIC keepalive, optional dual-port QUIC dialing, IPv6 QUIC transport, and documented alternate UDP-port redirects. |
+| Operations | Experimental Windows VPS installer with certificate issuance/revocation, server CN denylist, `install.sh`, checksums/attestations, and Docker/Compose sources. |
+| User interface | Android/Windows icons, version display, and QUIC RTT display. |
+| iOS | Public TestFlight distribution with a Packet Tunnel client and shared Go core. |
 
-- [x] CN denylist on the server (`/opt/masque/blocked_cns`) and revoke in `masque-setup.exe`.
-- [x] Default TUN MTU **1369** from path MTU tests (`docs/benchmarks/mtu.md`).
-- [x] Documented VPS port redirect when UDP 443 is unusable on the client path.
+The initial public v1.0 release shipped on 14 August 2026. Detailed version-by-version changes belong in the [changelog](../CHANGELOG.md).
 
-## Completed (v1.5.2)
+## Dependency policy
 
-- [x] Optional kill switch on Android (`setBlocking` + held TUN) and Windows (routes before dial, held until Disconnect). Default off.
+`quic-go` and `connect-ip-go` versions are pinned deliberately. Their APIs and release schedules do not always move together. Dependency upgrades require end-to-end testing across the affected clients and server before adoption; historical upgrade tasks are not future release commitments.
 
-## Completed (v1.5.3)
+## Out of scope for now
 
-- [x] Android TV Connect crash: leanback notification intent, skip battery-exemption on TV, IPv6 TUN optional if the device rejects it.
-- [x] GitHub **Latest** now includes kill switch + IPv6 tunnel clients (phone, TV, Windows).
-
-## Completed (v1.5.4)
-
-- [x] `connect-ip-go` **v0.3.0** on server and clients (`quic-go` remains v0.62.0).
-- [x] Dual-port QUIC dial via optional `[server].alt_port` (any second UDP port; first handshake wins).
-
-## Completed (v1.5.5)
-
-- [x] Server `install.sh`, SHA256SUMS, Sigstore attestations (shipped in the **v1.5.6** GitHub release; no separate v1.5.5 tag).
-
-## Completed (v1.5.6)
-
-- [x] QUIC to the server over IPv6 (AAAA + host-route bypass). Dual-port stayed in v1.5.4.
-- [x] Windows **Disconnect** closes the QUIC session immediately.
-- [x] GitHub full release with MSI, APKs, setup, Linux server, `install.sh`. Latest remains v1.5.3.
-
-## Completed (v1.7)
-
-- [x] iOS TestFlight (public [join link](https://testflight.apple.com/join/x52N41V1); Apple build **20**; expires **4 December 2026**, then a new 90-day build; no GitHub IPA). Latest remains v1.5.3.
-
-## After v1.5.6 (no separate tag)
-
-- [x] Android toolchain: AGP **9.3.2 → 9.4.1**. Gradle wrapper is **9.8.0** (already past 9.6.0). Shipped in **v1.7.1**.
-
-
-## Dependency notes
-
-- `quic-go` and `connect-ip-go` versions are pinned deliberately; `connect-ip-go` releases historically lag behind `quic-go` API changes (e.g. `http3.ParseCapsule`). Upgrades are tested end-to-end on all three platforms before bumping either dependency.
-
-## Decided for v2.0
-
-Phone sweep on 2026-10-11: UDP is up at MTU 1280 and 1340, already slow at 1359, and dead at 1365 and at the old default 1369. TCP keeps a channel at every tested MTU and is fastest at 1280.
-
-- Tunnel MTU base is **1340**. No MTU control in the client.
-- No TCP/UDP switch. UDP is the normal path. TCP HTTP/2 CONNECT-IP opens only when UDP does not answer.
-- The Android build `1.8.0-tcp` (manual switch and MTU field) is a lab APK, not the 2.0 UI.
-- Published as GitHub pre-release **v2.0.0** (full file set). **Latest stays v1.7.1.**
-
-## Planned for future releases (no committed dates)
-
-- [ ] Expanded troubleshooting and platform-specific FAQ.
-- [ ] Session byte counters in the clients (bytes up and down for the current Connect, reset on Disconnect). Count tunnel IP packets in the shared pump. No server or protocol change. Show next to ping on Android (phone and TV), Windows, and iOS.
-- [ ] Android phone: user-selected apps excluded from the tunnel (`VpnService.Builder.addDisallowedApplication`). The Masque package itself stays excluded. The list applies on the next Connect. Not for Android TV. Excluded apps leave the tunnel, so they are outside the kill switch.
-- [ ] | Phone QR profile import | Installer shows a QR; **phone** clients scan it. TV and Windows stay on file/paste. |
-
-## Explicitly out of scope for now
-
-- Extra numbered-profile work (`masque-client-N.masque` rename, index in the client UI). Issue already writes `masque-client-N.profile.masque` with CN `masque-client-N`; revoke uses that `N`. Bootstrap stays `profile.masque`.
-- DoH/DoT inside the tunnel. MASQUE is aimed at a **self-hosted VPS**; plaintext UDP:53 in the tunnel is visible to the operator by design, not to the local ISP.
-- GUI-based certificate management beyond the experimental Windows VPS installer (certs are generated/distributed out-of-band by design).
-- Multi-hop / chained proxy support.
+- Additional numbered-profile UI or rename work. Issuance already writes `masque-client-N.profile.masque` with CN `masque-client-N`; revocation uses that index. Bootstrap remains `profile.masque`.
+- DoH/DoT inside the tunnel. This is a self-hosted VPS model; plaintext DNS carried inside the tunnel is visible to the VPS operator by design, rather than to the local ISP on the client-to-VPS path.
+- GUI certificate management beyond the experimental Windows VPS installer. Credentials are generated and distributed out of band.
+- Multi-hop or chained proxy support.
