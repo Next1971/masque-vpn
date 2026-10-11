@@ -320,7 +320,7 @@ func (e *Engine) pumpOn(ctx context.Context, prof *clientcore.Profile, dev tun.D
 		}
 	}()
 
-	e.set(ipc.StateConnected, "connected", clientAddr.Addr().String())
+	e.set(ipc.StateConnected, "connected via "+sess.Transport, clientAddr.Addr().String())
 
 	pump := clientcore.NewPump(sess, dev)
 	e.mu.Lock()
@@ -339,7 +339,7 @@ func (e *Engine) pumpOn(ctx context.Context, prof *clientcore.Profile, dev tun.D
 		if err != nil {
 			return nil, err
 		}
-		e.set(ipc.StateConnected, "reconnected", clientAddr.Addr().String())
+		e.set(ipc.StateConnected, "reconnected via "+s.Transport, clientAddr.Addr().String())
 		return s, nil
 	})
 	if ctx.Err() != nil {

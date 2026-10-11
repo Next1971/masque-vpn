@@ -19,6 +19,9 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// TunnelMTU is the fixed v2.0 tunnel MTU. The client has no MTU control.
+const TunnelMTU = 1340
+
 // Profile is the client server profile. The same set of parameters
 // is used for both Android and Windows (PROJECT.md requirement). It is read
 // from a TOML file, which is edited on the device through the UI.
@@ -114,12 +117,9 @@ func (p *Profile) Validate() error {
 	if err := validateAltPort(p.Server, p.AltPort); err != nil {
 		return err
 	}
-	if p.MTU == 0 {
-		p.MTU = 1369 // v1.5.1 default from path MTU tests (see docs/benchmarks/mtu.md)
-	}
-	if p.MTU < 576 || p.MTU > 9000 {
-		return fmt.Errorf("profile: [tun].mtu %d out of range (576..9000)", p.MTU)
-	}
+	// v2.0 base from the phone sweep: UDP is up through 1340 and dead at 1365.
+	// The profile may still say 1369. There is no MTU control in the client.
+	p.MTU = TunnelMTU
 	if p.TUNName == "" {
 		p.TUNName = "masque0"
 	}

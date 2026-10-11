@@ -136,6 +136,15 @@ Visual refresh of clients and `masque-setup.exe` can merge whenever it is ready.
 
 - `quic-go` and `connect-ip-go` versions are pinned deliberately; `connect-ip-go` releases historically lag behind `quic-go` API changes (e.g. `http3.ParseCapsule`). Upgrades are tested end-to-end on all three platforms before bumping either dependency.
 
+## Decided for v2.0
+
+Phone sweep on 2026-10-11: UDP is up at MTU 1280 and 1340, already slow at 1359, and dead at 1365 and at the old default 1369. TCP keeps a channel at every tested MTU and is fastest at 1280.
+
+- Tunnel MTU base is **1340**. No MTU control in the client.
+- No TCP/UDP switch. UDP is the normal path. TCP HTTP/2 CONNECT-IP opens only when UDP does not answer.
+- The Android build `1.8.0-tcp` (manual switch and MTU field) is a lab APK, not the 2.0 UI.
+- Published as GitHub pre-release **v2.0.0** (full file set). **Latest stays v1.7.1.**
+
 ## Planned for future releases (no committed dates)
 
 - [ ] Expanded troubleshooting and platform-specific FAQ.

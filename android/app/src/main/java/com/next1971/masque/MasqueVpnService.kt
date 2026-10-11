@@ -52,7 +52,7 @@ class MasqueVpnService : VpnService() {
         // drops them and DNS never reaches 1.1.1.1.
         const val TUN_PREFIX = 24
         const val TUN_PREFIX_V6 = 64
-        const val TUN_MTU = 1369
+        const val TUN_MTU = 1340
     }
 
     private var tunnel: Tunnel? = null
@@ -232,7 +232,7 @@ class MasqueVpnService : VpnService() {
             Log.w(TAG, "protect($fd) failed")
             return false
         }
-        Log.i(TAG, "protected UDP fd $fd")
+        Log.i(TAG, "protected tunnel fd $fd")
         val net = physicalNetwork() ?: return true
         underlying = net
         try {
@@ -263,7 +263,7 @@ class MasqueVpnService : VpnService() {
             Log.w(TAG, "server assigned no address; using fallback $TUN_ADDR_FALLBACK")
             addr = TUN_ADDR_FALLBACK
         }
-        Log.i(TAG, "building TUN $addr/$TUN_PREFIX (server assigned /${t.assignedPrefixLen()})")
+        Log.i(TAG, "building TUN $addr/$TUN_PREFIX mtu $TUN_MTU (server assigned /${t.assignedPrefixLen()})")
 
         val builder = Builder()
             .setSession("MASQUE")
@@ -388,7 +388,7 @@ class MasqueVpnService : VpnService() {
         if (!protect(fd)) {
             Log.w(TAG, "protect($fd) failed")
         } else {
-            Log.i(TAG, "protected UDP fd $fd")
+            Log.i(TAG, "protected tunnel fd $fd")
         }
     }
 

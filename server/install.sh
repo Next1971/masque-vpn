@@ -147,6 +147,7 @@ StartLimitBurst=5
 [Service]
 Type=simple
 WorkingDirectory=/opt/masque
+Environment=GODEBUG=http2xconnect=1
 ExecStartPre=/sbin/sysctl -w net.ipv4.ip_forward=1
 ExecStartPre=/sbin/sysctl -w net.ipv6.conf.all.forwarding=1
 ExecStartPre=/sbin/sysctl -w net.core.rmem_max=67108864
@@ -172,10 +173,11 @@ EOF
 
 if command -v ufw >/dev/null 2>&1; then
   ufw allow "${MASQUE_PORT}/udp" comment 'MASQUE VPN' || true
+  ufw allow "${MASQUE_PORT}/tcp" comment 'MASQUE VPN' || true
   if ufw status 2>/dev/null | grep -qi 'Status: active'; then
     ufw reload || true
   fi
-  echo "UFW: allowed UDP ${MASQUE_PORT}"
+  echo "UFW: allowed UDP and TCP ${MASQUE_PORT}"
 else
   echo "UFW: not installed (skipped)"
 fi

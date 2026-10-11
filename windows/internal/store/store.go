@@ -100,7 +100,7 @@ func Import(text, filename, extraCA, extraCert, extraKey string) error {
 		p.TUNName = "masque0"
 	}
 	if p.MTU == 0 {
-		p.MTU = 1369
+		p.MTU = clientcore.TunnelMTU
 	}
 	if len(p.DNS) == 0 {
 		p.DNS = []string{"1.1.1.1"}

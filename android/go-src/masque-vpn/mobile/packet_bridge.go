@@ -24,7 +24,7 @@ type bridgeTUN struct {
 
 func newBridgeTUN(mtu int) *bridgeTUN {
 	if mtu <= 0 {
-		mtu = 1369
+		mtu = 1340
 	}
 	t := &bridgeTUN{
 		mtu:    mtu,
@@ -100,7 +100,7 @@ func (t *bridgeTUN) BatchSize() int { return 1 }
 // starts forwarding. Call ReadPacket/WritePacket from the iOS extension.
 func (t *Tunnel) StartPacketBridge() error {
 	t.mu.Lock()
-	mtu := 1369
+	mtu := 1340
 	if t.prof != nil && t.prof.MTU > 0 {
 		mtu = t.prof.MTU
 	}

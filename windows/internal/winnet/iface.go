@@ -35,7 +35,7 @@ func IfUpIPv6(iface string, addr netip.Prefix) error {
 	if err := runCmd("netsh", "interface", "ipv6", "add", "address", iface, cidr); err != nil {
 		return err
 	}
-	_ = runCmd("netsh", "interface", "ipv6", "set", "subinterface", iface, "mtu=1369", "store=active")
+	_ = runCmd("netsh", "interface", "ipv6", "set", "subinterface", iface, "mtu=1340", "store=active")
 	return nil
 }
 
@@ -68,7 +68,7 @@ func IfUp(iface string, addr netip.Prefix) error {
 		"name="+iface, "static", ip, mask); err != nil {
 		return err
 	}
-	_ = runCmd("netsh", "interface", "ipv4", "set", "subinterface", iface, "mtu=1369", "store=active")
+	_ = runCmd("netsh", "interface", "ipv4", "set", "subinterface", iface, "mtu=1340", "store=active")
 	return nil
 }
 

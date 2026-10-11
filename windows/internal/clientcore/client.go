@@ -35,13 +35,24 @@ func vlog(format string, args ...any) {
 	}
 }
 
-// Session is an active VPN connection. It keeps QUIC/UDP resources and TUN,
+// packetSession is the CONNECT-IP packet pipe. QUIC uses connect-ip-go.
+// TCP uses the HTTP/2 capsule session.
+type packetSession interface {
+	ReadPacket([]byte) (int, error)
+	WritePacket([]byte) ([]byte, error)
+	Close() error
+}
+
+// Session is an active VPN connection. It keeps QUIC/UDP or TCP resources and TUN,
 // and supports graceful shutdown. Created via Connect.
 type Session struct {
 	udpConn *net.UDPConn
 	qconn   *quic.Conn
-	ipconn  *connectip.Conn
+	ipconn  packetSession
 	dev     tun.Device
+
+	// Transport is "udp" or "tcp". TCP is used only when the UDP probe is silent.
+	Transport string
 
 	// AssignedPrefixes are the addresses assigned by the server to the client
 	// (used by the platform wrapper to configure TUN and routes).
@@ -108,6 +119,15 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 		return nil, err
 	}
 
+	up, err := udpReachable(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	if !up {
+		log.Printf("UDP %s did not answer; opening TCP", p.Server)
+		return connectTCP(ctx, p, dev)
+	}
+
 	addrs, err := resolveDialAddrs(p.Server, p.AltPort)
 	if err != nil {
 		return nil, fmt.Errorf("resolve server %q: %w", p.Server, err)
@@ -151,7 +171,7 @@ func (s *Session) Run(ctx context.Context) error {
 	errCh := make(chan error, 2)
 	mtu, err := s.dev.MTU()
 	if err != nil || mtu <= 0 {
-		mtu = 1369
+		mtu = TunnelMTU
 	}
 
 	// conn → TUN: write packets from the server (responses from the internet)

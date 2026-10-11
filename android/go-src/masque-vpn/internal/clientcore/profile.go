@@ -18,6 +18,9 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// TunnelMTU is the fixed v2.0 tunnel MTU. The client has no MTU control.
+const TunnelMTU = 1340
+
 // Profile is the client server profile. The same parameter set is used
 // for Android and Windows (a PROJECT.md requirement). It is read from a TOML file
 // that is edited through the device UI.
@@ -47,6 +50,10 @@ type Profile struct {
 	// BindInterface, if set, binds the QUIC UDP socket to that network
 	// interface (iOS Packet Tunnel: Wi‑Fi/LTE so handshake is not swallowed by utun).
 	BindInterface string `toml:"-"`
+
+	// Transport is an app setting, not a profile field. Empty and "udp" use
+	// QUIC. "tcp" uses HTTP/2 CONNECT-IP on the same host:port and certificates.
+	Transport string `toml:"-"`
 }
 
 // tomlProfile is an intermediate structure for TOML sections.
@@ -117,12 +124,8 @@ func (p *Profile) Validate() error {
 	if err := validateAltPort(p.Server, p.AltPort); err != nil {
 		return err
 	}
-	if p.MTU == 0 {
-		p.MTU = 1369 // v1.5.1 default from path MTU tests (see docs/benchmarks/mtu.md)
-	}
-	if p.MTU < 576 || p.MTU > 9000 {
-		return fmt.Errorf("profile: [tun].mtu %d out of range (576..9000)", p.MTU)
-	}
+	// v2.0 base. The profile may still say 1369. There is no MTU control.
+	p.MTU = TunnelMTU
 	if p.TUNName == "" {
 		p.TUNName = "masque0"
 	}

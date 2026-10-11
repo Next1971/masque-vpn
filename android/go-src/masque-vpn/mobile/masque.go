@@ -28,6 +28,9 @@ type Config struct {
 	AltPort int
 	// BindInterface is the OS interface name for the QUIC UDP socket (iOS).
 	BindInterface string
+	// Transport is "udp" (default) or "tcp". It is an app setting, not a
+	// profile field: the same certificate and server address are used.
+	Transport string
 }
 
 // Callback provides status/error notifications to Java.
@@ -200,7 +203,7 @@ func (t *Tunnel) ServerIPv4() string {
 func profileFromConfig(cfg *Config) *clientcore.Profile {
 	mtu := cfg.MTU
 	if mtu == 0 {
-		mtu = 1369
+		mtu = 1340
 	}
 	return &clientcore.Profile{
 		Server:        cfg.Server,
@@ -212,6 +215,7 @@ func profileFromConfig(cfg *Config) *clientcore.Profile {
 		TUNName:       "",
 		MTU:           mtu,
 		BindInterface: cfg.BindInterface,
+		Transport:     cfg.Transport,
 	}
 }
 

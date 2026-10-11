@@ -192,19 +192,22 @@ IPv6 in the tunnel needs WAN IPv6 on the VPS, `net.ipv6.conf.all.forwarding=1`, 
 Some networks (mobile carriers, hotel Wi-Fi, a few VPS providers on the *egress* side) drop **outbound UDP 443** while other UDP ports still work. The MASQUE listener can stay on UDP 443. On the VPS, open an alternate port and redirect it to 443. **2053** is the usual choice.
 
 ```bash
-# Cloud security group + host firewall must allow the alternate UDP port.
+# Cloud security group + host firewall must allow the alternate port.
 ufw allow 2053/udp
+ufw allow 2053/tcp
 
-# Keep poc-server bound to 443. Redirect inbound UDP 2053 → 443.
+# Keep the server bound to 443. Redirect inbound 2053 → 443 for both transports.
 iptables -t nat -C PREROUTING -p udp --dport 2053 -j REDIRECT --to-ports 443 2>/dev/null \
   || iptables -t nat -A PREROUTING -p udp --dport 2053 -j REDIRECT --to-ports 443
+iptables -t nat -C PREROUTING -p tcp --dport 2053 -j REDIRECT --to-ports 443 2>/dev/null \
+  || iptables -t nat -A PREROUTING -p tcp --dport 2053 -j REDIRECT --to-ports 443
 
 # Persist on Debian/Ubuntu
 apt-get install -y iptables-persistent
 netfilter-persistent save
 ```
 
-Then set the client profile `address` (or `[server].server`) to `your.host:2053`. TLS `server_name` stays the hostname from the certificate. Do **not** change `bind` in `config.server.toml` for this workaround.
+Then set the client profile `address` (or `[server].server`) to `your.host:2053`. TLS `server_name` stays the hostname from the certificate. Do **not** change `bind` in `config.server.toml` for this workaround. The TCP redirect uses the same alternate port, so a client that falls back from UDP reaches the same process.
 
 **v1.5.4** clients race the profile port and optional `[server].alt_port` (first QUIC handshake wins). Older clients ignore `alt_port` and dial **one** port. Generate it with `gen-config.sh --alt-port 2053` (or any port you DNAT/listen on).
 
