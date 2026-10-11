@@ -11,7 +11,7 @@ services:
     build:
       context: ..
       dockerfile: server/Dockerfile
-    image: masque-vpn-server:1.5.1
+    image: masque-vpn-server:2.0.0
     container_name: masque
     restart: unless-stopped
     network_mode: host

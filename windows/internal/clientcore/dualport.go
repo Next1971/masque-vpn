@@ -153,6 +153,7 @@ func finishCONNECTIP(ctx context.Context, p *Profile, leg *quicLeg, dev tun.Devi
 		dev:              dev,
 		AssignedPrefixes: prefixes,
 		Routes:           routes,
+		Transport:        "udp",
 		DialAddr:         leg.addr,
 		done:             make(chan struct{}),
 	}, nil

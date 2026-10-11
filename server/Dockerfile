@@ -1,7 +1,7 @@
 # MASQUE VPN server — multi-stage build.
 # Run with host networking (or publish UDP) + NET_ADMIN + /dev/net/tun.
 # Certificates and config are mounted at runtime; nothing secret is baked in.
-FROM golang:1.25.5-bookworm AS build
+FROM golang:1.26-bookworm AS build
 WORKDIR /src
 COPY android/go-src/masque-vpn/go.mod android/go-src/masque-vpn/go.sum ./
 RUN go mod download
@@ -16,5 +16,6 @@ COPY --from=build /out/vpn-server /usr/local/bin/vpn-server
 COPY server/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh /usr/local/bin/vpn-server
 WORKDIR /opt/masque
-EXPOSE 443/udp
+ENV GODEBUG=http2xconnect=1
+EXPOSE 443/udp 443/tcp
 ENTRYPOINT ["/entrypoint.sh"]

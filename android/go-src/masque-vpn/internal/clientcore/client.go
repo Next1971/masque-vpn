@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	connectip "github.com/quic-go/connect-ip-go"
@@ -35,14 +36,23 @@ func vlog(format string, args ...any) {
 	}
 }
 
-// Session is an active VPN connection. It owns QUIC/UDP resources and TUN
-// and can close gracefully. It is created by Connect.
+// packetSession is the CONNECT-IP packet pipe. QUIC uses connect-ip-go;
+// TCP uses the HTTP/2 capsule session.
+type packetSession interface {
+	ReadPacket([]byte) (int, error)
+	WritePacket([]byte) ([]byte, error)
+	Close() error
+}
+
+// Session is an active VPN connection. It owns QUIC/UDP or TCP resources and
+// TUN and can close gracefully. It is created by Connect.
 type Session struct {
 	udpConn    *net.UDPConn
 	packetConn net.PacketConn
 	ownUDP     bool
 	qconn      *quic.Conn
-	ipconn     *connectip.Conn
+	tcpConn    *net.TCPConn
+	ipconn     packetSession
 	dev        tun.Device
 
 	// AssignedPrefixes are addresses assigned to the client by the server (for
@@ -124,7 +134,6 @@ func ConnectWithPacketConn(ctx context.Context, p *Profile, dev tun.Device, pc n
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
-
 	addrs, err := resolveDialAddrs(p.Server, p.AltPort)
 	if err != nil {
 		return nil, fmt.Errorf("resolve server %q: %w", p.Server, err)
@@ -136,6 +145,17 @@ func ConnectWithPacketConn(ctx context.Context, p *Profile, dev tun.Device, pc n
 	}
 
 	// iOS supplies one UDP session aimed at the profile port — no second socket.
+	// Android probes UDP itself and opens TCP only when that probe is silent.
+	if pc == nil {
+		up, err := udpReachable(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		if !up {
+			log.Printf("UDP %s did not answer; opening TCP", p.Server)
+			return connectTCP(ctx, p, dev)
+		}
+	}
 	if pc != nil {
 		udpAddr := addrs[0]
 		leg := &quicLeg{packetConn: pc, ownUDP: false, addr: udpAddr.String()}
@@ -176,10 +196,20 @@ func (s *Session) RTT() time.Duration {
 // UDPFd returns the underlying UDP socket fd for VpnService.protect / bindSocket.
 // -1 if the session has no live socket.
 func (s *Session) UDPFd() int {
-	if s == nil || s.udpConn == nil {
+	if s == nil {
 		return -1
 	}
-	sc, err := s.udpConn.SyscallConn()
+	if s.tcpConn != nil {
+		return rawFd(s.tcpConn)
+	}
+	if s.udpConn == nil {
+		return -1
+	}
+	return rawFd(s.udpConn)
+}
+
+func rawFd(c syscall.Conn) int {
+	sc, err := c.SyscallConn()
 	if err != nil {
 		return -1
 	}
@@ -200,7 +230,7 @@ func (s *Session) Run(ctx context.Context) error {
 	errCh := make(chan error, 2)
 	mtu, err := s.dev.MTU()
 	if err != nil || mtu <= 0 {
-		mtu = 1369
+		mtu = TunnelMTU
 	}
 
 	// conn → TUN: write packets from the server (Internet replies) to TUN,

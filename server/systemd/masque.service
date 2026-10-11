@@ -8,6 +8,7 @@ StartLimitBurst=5
 [Service]
 Type=simple
 WorkingDirectory=/opt/masque
+Environment=GODEBUG=http2xconnect=1
 # Enable IP forwarding and NAT so client traffic reaches the internet.
 # Replace "eth0" with your server's public network interface (check: ip route get 1.1.1.1).
 # Replace "10.8.0.0/24" if you changed pool_cidr in the config.

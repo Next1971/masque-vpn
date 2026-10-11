@@ -3,11 +3,9 @@ package clientcore
 import (
 	"fmt"
 	"time"
-
-	connectip "github.com/quic-go/connect-ip-go"
 )
 
-func readPacketTimeout(conn *connectip.Conn, buf []byte, timeout time.Duration) (int, error) {
+func readPacketTimeout(conn packetSession, buf []byte, timeout time.Duration) (int, error) {
 	type res struct {
 		n   int
 		err error

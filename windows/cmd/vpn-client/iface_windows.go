@@ -43,7 +43,7 @@ func ifUpIPv6(iface string, addr netip.Prefix) error {
 	if err := runCmd("netsh", "interface", "ipv6", "add", "address", iface, cidr); err != nil {
 		return err
 	}
-	_ = runCmd("netsh", "interface", "ipv6", "set", "subinterface", iface, "mtu=1369", "store=active")
+	_ = runCmd("netsh", "interface", "ipv6", "set", "subinterface", iface, "mtu=1340", "store=active")
 	return nil
 }
 
@@ -90,7 +90,7 @@ func ifUp(iface string, addr netip.Prefix) error {
 	}
 	// MTU is set by CreateTUN; set it through netsh as an additional safeguard.
 	// (not critical; do not treat an error as fatal)
-	_ = runCmd("netsh", "interface", "ipv4", "set", "subinterface", iface, "mtu=1369", "store=active")
+	_ = runCmd("netsh", "interface", "ipv4", "set", "subinterface", iface, "mtu=1340", "store=active")
 	return nil
 }
 

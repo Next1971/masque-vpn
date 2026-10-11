@@ -46,6 +46,7 @@ import (
 const tunOffset = 16
 
 func main() {
+	ensureHTTP2Connect()
 	var (
 		bind       = flag.String("bind", "0.0.0.0:4433", "UDP address to bind QUIC listener")
 		certFile   = flag.String("cert", "cert/server.crt", "TLS certificate (PEM)")
@@ -82,7 +83,7 @@ func main() {
 			serverName: c.Server.ServerName, clientCA: c.TLS.ClientCA,
 			tunName: c.TUN.Name, tunAddr: c.Network.TunAddr, tunAddrV6: c.Network.TunAddrV6,
 			mtu: c.TUN.MTU, poolCIDR: c.Network.PoolCIDR, poolCIDRV6: c.Network.PoolCIDRV6,
-			route: routePrefix,
+			route:   routePrefix,
 			blocked: loadBlockedSet(c.TLS.BlockedCNs, defaultBlockedFile),
 		}
 		if c.Network.RouteV6 != "" {
@@ -104,7 +105,7 @@ func main() {
 			serverName: *serverName, clientCA: *clientCA,
 			tunName: *tunName, tunAddr: *tunAddr, tunAddrV6: *tunAddrV6,
 			mtu: *mtu, poolCIDR: *poolCIDR, poolCIDRV6: *poolCIDRV6,
-			route: routePrefix,
+			route:   routePrefix,
 			blocked: loadBlockedSet(nil, defaultBlockedFile),
 		}
 		if *poolCIDRV6 != "" {
@@ -138,6 +139,13 @@ type serverConfig struct {
 	blocked                                       map[string]struct{}
 }
 
+// clientLink is the packet pipe of one CONNECT-IP session, QUIC or TCP.
+type clientLink interface {
+	ReadPacket([]byte) (int, error)
+	WritePacket([]byte) ([]byte, error)
+	Close() error
+}
+
 // Router demultiplexes packets read from the single shared TUN device to the
 // correct client connection, keyed by the client's assigned IP address.
 //
@@ -148,22 +156,22 @@ type serverConfig struct {
 // return packet reaches exactly its owner instead of racing between clients.
 type Router struct {
 	mu      sync.RWMutex
-	clients map[netip.Addr]*connectip.Conn
+	clients map[netip.Addr]clientLink
 }
 
 func NewRouter() *Router {
-	return &Router{clients: make(map[netip.Addr]*connectip.Conn)}
+	return &Router{clients: make(map[netip.Addr]clientLink)}
 }
 
 // Add registers a client address → connection mapping.
-func (r *Router) Add(addr netip.Addr, conn *connectip.Conn) {
+func (r *Router) Add(addr netip.Addr, conn clientLink) {
 	r.mu.Lock()
 	r.clients[addr] = conn
 	r.mu.Unlock()
 }
 
 // Remove drops a client mapping (only if the stored conn still matches).
-func (r *Router) Remove(addr netip.Addr, conn *connectip.Conn) {
+func (r *Router) Remove(addr netip.Addr, conn clientLink) {
 	r.mu.Lock()
 	if r.clients[addr] == conn {
 		delete(r.clients, addr)
@@ -172,7 +180,7 @@ func (r *Router) Remove(addr netip.Addr, conn *connectip.Conn) {
 }
 
 // lookup returns the connection owning dst, if any.
-func (r *Router) lookup(dst netip.Addr) (*connectip.Conn, bool) {
+func (r *Router) lookup(dst netip.Addr) (clientLink, bool) {
 	r.mu.RLock()
 	conn, ok := r.clients[dst]
 	r.mu.RUnlock()
@@ -183,10 +191,10 @@ func (r *Router) lookup(dst netip.Addr) (*connectip.Conn, bool) {
 // so a reconnect can close the stale one before reusing the sticky /32.
 type sessionIndex struct {
 	mu   sync.Mutex
-	byCN map[string]*connectip.Conn
+	byCN map[string]clientLink
 }
 
-func (s *sessionIndex) take(cn string, conn *connectip.Conn) {
+func (s *sessionIndex) take(cn string, conn clientLink) {
 	if cn == "" {
 		return
 	}
@@ -198,7 +206,7 @@ func (s *sessionIndex) take(cn string, conn *connectip.Conn) {
 	s.mu.Unlock()
 }
 
-func (s *sessionIndex) drop(cn string, conn *connectip.Conn) {
+func (s *sessionIndex) drop(cn string, conn clientLink) {
 	if cn == "" {
 		return
 	}
@@ -304,7 +312,7 @@ func run(cfg serverConfig) error {
 		}
 		log.Printf("IPv6 pool %s ready (server %s reserved)", cfg.poolCIDRV6, serverTun6.Addr())
 	}
-	live := &sessionIndex{byCN: make(map[string]*connectip.Conn)}
+	live := &sessionIndex{byCN: make(map[string]clientLink)}
 	blocked := cfg.blocked
 	if blocked == nil {
 		blocked = map[string]struct{}{}
@@ -347,6 +355,10 @@ func run(cfg serverConfig) error {
 
 	// URI template used by the client to access the proxy (RFC 9484 §3).
 	template := uritemplate.MustNew(fmt.Sprintf("https://%s/vpn", serverName))
+
+	// Clone before HTTP/3 adjusts NextProtos. TCP uses the same certificate
+	// and the same client CA on the same port number.
+	tcpTLS := tlsConf.Clone()
 
 	ln, err := quic.ListenEarly(
 		udpConn,
@@ -456,6 +468,26 @@ func run(cfg serverConfig) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	tcpLn, err := net.Listen("tcp", bind)
+	if err != nil {
+		log.Printf("TCP CONNECT-IP disabled: %v", err)
+	} else {
+		defer tcpLn.Close()
+		log.Printf("TCP HTTP/2 CONNECT-IP listening on %s", tcpLn.Addr())
+		go func() {
+			err := serveTCP(ctx, tcpLn, tcpTLS, tcpConnect{
+				blocked: blocked,
+				pool:    pool, poolV6: poolV6,
+				assign: assign, route: route, routeV6: cfg.routeV6,
+				tunDev: tunDev, router: router, mtu: cfg.mtu, live: live,
+			})
+			if err != nil {
+				log.Printf("TCP CONNECT-IP: %v", err)
+			}
+		}()
+	}
+
 	<-ctx.Done()
 	log.Printf("shutdown signal received; closing QUIC listener")
 	_ = srv.Close()
@@ -489,6 +521,13 @@ func handleConn(conn *connectip.Conn, tunDev tun.Device, router *Router, mtu int
 	}
 	log.Printf("advertised %d route(s) to client", len(routes))
 
+	return relayClient(conn, tunDev, router, mtu, assign, assignV6)
+}
+
+// relayClient moves packets for one session. Without a TUN it only logs.
+// With a TUN, the session writes into the device and the shared router
+// writes return traffic back to this session.
+func relayClient(conn clientLink, tunDev tun.Device, router *Router, mtu int, assign, assignV6 netip.Prefix) error {
 	if tunDev == nil {
 		buf := make([]byte, 1500)
 		for {
@@ -508,7 +547,6 @@ func handleConn(conn *connectip.Conn, tunDev tun.Device, router *Router, mtu int
 		router.Add(ip6, conn)
 		defer router.Remove(ip6, conn)
 	}
-
 	return forward(conn, tunDev, mtu)
 }
 
@@ -518,7 +556,7 @@ func handleConn(conn *connectip.Conn, tunDev tun.Device, router *Router, mtu int
 //
 // When the client disconnects, conn.ReadPacket returns an error; we return it,
 // which triggers the deferred router.Remove and pool.Release in the caller.
-func forward(conn *connectip.Conn, dev tun.Device, mtu int) error {
+func forward(conn clientLink, dev tun.Device, mtu int) error {
 	log.Printf("forwarding started (conn→TUN; TUN→conn via router)")
 	buf := make([]byte, tunOffset+mtu+64)
 	for {
