@@ -20,6 +20,10 @@ All notable changes to MASQUE VPN are documented here.
 - Android `2.0.0` (`versionCode` 25). Windows product **2.0.0**.
 - iOS stays UDP-only (TestFlight **v1.7**). A packet-pipe session does not fall back to TCP.
 
+### Fixed
+
+- A UDP probe that loses the race (another address already answered, or Connect was cancelled) no longer blocks forever on its completion signal. The socket closes when that probe finishes.
+
 ## [v1.7.1] - 2026-09-29
 
 **GitHub Latest.** Client drop (APK + MSI). Replaces [v1.5.3](https://github.com/Next1971/masque-vpn/releases/tag/v1.5.3). The Linux server already running stays on 1.5.x. Android and Windows use `connect-ip-go` v0.4.0 but only wait for the server's address assignment, so they still connect to a v0.3.0 server. Android `1.7.1` (`versionCode` 23); Windows product **1.7.1**.

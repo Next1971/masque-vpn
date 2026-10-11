@@ -43,6 +43,10 @@ docker compose -f server/docker-compose.yml build
 - `install.sh`, `gen-config.sh`, `SHA256SUMS`
 - `masque-docker-2.0.0.zip`
 
+## Fix
+
+- Losing UDP probes no longer stay blocked after the first answer or after Connect is cancelled.
+
 ## Notes
 
 - Server TUN MTU stays 1369. Client packets are 1340, so they fit.
