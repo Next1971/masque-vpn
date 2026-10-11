@@ -6,7 +6,7 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [v2.0.0] - 2026-10-11
 
-**GitHub pre-release. Latest stays [v1.7.1](https://github.com/Next1971/masque-vpn/releases/tag/v1.7.1).** Full experimental drop: phone APK, TV APK, Windows MSI, `masque-setup.exe`, Linux server, `install.sh`, and Docker sources. Profiles and certificates are unchanged.
+**GitHub pre-release. Latest stays [v1.7.1](https://github.com/Next1971/masque-vpn/releases/tag/v1.7.1).** Full experimental drop: phone APK, TV APK, Windows MSI, Linux server, `install.sh`, and Docker sources. `masque-setup.exe` is not attached. Profiles and certificates are unchanged.
 
 ### Added
 
@@ -19,6 +19,10 @@ All notable changes to MASQUE VPN are documented here.
 - Tunnel MTU is **1340** on Android, Android TV, and Windows. The client forces this value. There is no MTU control and no TCP/UDP switch.
 - Android `2.0.0` (`versionCode` 25). Windows product **2.0.0**.
 - iOS stays UDP-only (TestFlight **v1.7**). A packet-pipe session does not fall back to TCP.
+
+### Fixed
+
+- A UDP probe that loses the race (another address already answered, or Connect was cancelled) no longer blocks forever on its completion signal. The socket closes when that probe finishes.
 
 ## [v1.7.1] - 2026-09-29
 

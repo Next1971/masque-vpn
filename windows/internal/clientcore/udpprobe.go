@@ -24,7 +24,9 @@ func udpReachable(ctx context.Context, p *Profile) (bool, error) {
 
 	var found atomic.Bool
 	var pending int
-	done := make(chan struct{})
+	// Buffered so a probe that finishes after udpReachable has returned
+	// (first hit, or parent cancel) can still deliver and exit.
+	done := make(chan struct{}, len(addrs))
 	for _, addr := range addrs {
 		pending++
 		go func(a *net.UDPAddr) {

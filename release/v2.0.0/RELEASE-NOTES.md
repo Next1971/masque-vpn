@@ -8,7 +8,7 @@ If the current VPN already works, you do not need to install 2.0.0.
 - UDP is the normal path. TCP HTTP/2 CONNECT-IP opens only when a short UDP probe to the server gets no reply. TCP uses the same host and the same ports (profile port, then optional `alt_port`).
 - One server process listens on UDP and TCP on the same bind port. Profiles and certificates do not change.
 - Android `2.0.0` (`versionCode` 25, TV `2.0.0-tv`). Windows product **2.0.0**.
-- New Linux server binaries, `install.sh`, `gen-config.sh`, `masque-setup.exe`, and Docker sources (`masque-docker-2.0.0.zip`, image tag `masque-vpn-server:2.0.0`).
+- New Linux server binaries, `install.sh`, `gen-config.sh`, and Docker sources (`masque-docker-2.0.0.zip`, image tag `masque-vpn-server:2.0.0`). Install the server with `install.sh`. `masque-setup.exe` is not in this release: that wizard still opens only a UDP port.
 
 ## Who should try it
 
@@ -38,10 +38,13 @@ docker compose -f server/docker-compose.yml build
 - `masque-phone-2.0.0.apk` — Android phone
 - `masque-tv-2.0.0.apk` — Android TV
 - `masque-2.0.0.msi` — Windows VPN client
-- `masque-setup.exe` — experimental VPS installer
 - `vpn-server-linux-amd64`, `vpn-server-linux-arm64`
 - `install.sh`, `gen-config.sh`, `SHA256SUMS`
 - `masque-docker-2.0.0.zip`
+
+## Fix
+
+- Losing UDP probes no longer stay blocked after the first answer or after Connect is cancelled.
 
 ## Notes
 
