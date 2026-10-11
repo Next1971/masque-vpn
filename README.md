@@ -22,7 +22,7 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 - **v1.5.2 (pre-release):** optional **kill switch** on Android and Windows (default off). Same protocol; no server binary change.
 - **v1.5.1 (pre-release):** CN denylist / Windows revoke, TUN MTU **1369**, UDP 443 VPS redirect.
 
-  What is next lives in the [roadmap](docs/ROADMAP.md) (**v1.8** phone QR import).
+  What is next lives in the [roadmap](docs/ROADMAP.md).
 
 ## Is this for me?
 
