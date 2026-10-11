@@ -915,14 +915,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     private func rememberAssigned(_ tunnel: MobileTunnel) {
-        if let v4 = tunnel.assignedAddr(), !v4.isEmpty { lastAssignedV4 = v4 }
-        if let v6 = tunnel.assignedAddrV6(), !v6.isEmpty { lastAssignedV6 = v6 }
+        let v4 = tunnel.assignedAddr()
+        if !v4.isEmpty { lastAssignedV4 = v4 }
+        let v6 = tunnel.assignedAddrV6()
+        if !v6.isEmpty { lastAssignedV6 = v6 }
     }
 
     private func networkSettings(for tunnel: MobileTunnel, profile: MasqueProfile, fallbackRemote: String) -> NEPacketTunnelNetworkSettings {
-        var v4 = tunnel.assignedAddr() ?? ""
+        var v4 = tunnel.assignedAddr()
         if v4.isEmpty { v4 = lastAssignedV4 }
-        let v6 = tunnel.assignedAddrV6() ?? lastAssignedV6
+        let got6 = tunnel.assignedAddrV6()
+        let v6 = got6.isEmpty ? lastAssignedV6 : got6
         return routeSettings(v4: v4, v6: v6, remote: fallbackRemote, profile: profile)
     }
 
