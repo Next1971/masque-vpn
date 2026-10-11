@@ -10,6 +10,7 @@
 		A11A00000000000000000001 /* MasqueApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10F00000000000000000001 /* MasqueApp.swift */; };
 		A11A00000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10F00000000000000000002 /* ContentView.swift */; };
 		A11A00000000000000000003 /* VPNManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10F00000000000000000003 /* VPNManager.swift */; };
+		A11A00000000000000000016 /* QRScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10F00000000000000000006 /* QRScanner.swift */; };
 		A11A00000000000000000004 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10F00000000000000000010 /* AppGroup.swift */; };
 		A11A00000000000000000005 /* ProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10F00000000000000000011 /* ProfileStore.swift */; };
 		A11A00000000000000000006 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10F00000000000000000012 /* Assets.xcassets */; };
@@ -49,6 +50,7 @@
 		A10F00000000000000000001 /* MasqueApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasqueApp.swift; sourceTree = "<group>"; };
 		A10F00000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A10F00000000000000000003 /* VPNManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPNManager.swift; sourceTree = "<group>"; };
+		A10F00000000000000000006 /* QRScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScanner.swift; sourceTree = "<group>"; };
 		A10F00000000000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10F00000000000000000005 /* Masque.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Masque.entitlements; sourceTree = "<group>"; };
 		A10F00000000000000000010 /* AppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroup.swift; sourceTree = "<group>"; };
@@ -99,6 +101,7 @@
 				A10F00000000000000000001 /* MasqueApp.swift */,
 				A10F00000000000000000002 /* ContentView.swift */,
 				A10F00000000000000000003 /* VPNManager.swift */,
+				A10F00000000000000000006 /* QRScanner.swift */,
 				A10F00000000000000000012 /* Assets.xcassets */,
 				A10F00000000000000000004 /* Info.plist */,
 				A10F00000000000000000005 /* Masque.entitlements */,
@@ -246,6 +249,7 @@
 				A11A00000000000000000001 /* MasqueApp.swift in Sources */,
 				A11A00000000000000000002 /* ContentView.swift in Sources */,
 				A11A00000000000000000003 /* VPNManager.swift in Sources */,
+				A11A00000000000000000016 /* QRScanner.swift in Sources */,
 				A11A00000000000000000004 /* AppGroup.swift in Sources */,
 				A11A00000000000000000005 /* ProfileStore.swift in Sources */,
 			);
@@ -333,7 +337,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.7.0;
+				MARKETING_VERSION = 2.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.next1971.masque;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -364,7 +368,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.7.0;
+				MARKETING_VERSION = 2.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.next1971.masque;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -396,7 +400,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7.0;
+				MARKETING_VERSION = 2.1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -432,7 +436,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.7.0;
+				MARKETING_VERSION = 2.1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",

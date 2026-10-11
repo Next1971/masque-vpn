@@ -4,7 +4,11 @@ Windows helper that SSHes to a VPS as root and can install MASQUE or issue `prof
 
 This is a **test / experimental** helper, not a finished product. It can change the VPS (packages, firewall, systemd). Compromised client CNs can be **revoked** (append to `/opt/masque/blocked_cns` and restart `masque.service`). Use only on a machine you can rebuild.
 
-**v1.5.6 limits:** one UDP listen port; Public host is IPv4 or DNS (no IPv6 address in that field). The server binary from this release already listens dual-stack (`[::]:port`). For a second port or an IPv6 dial address use `gen-config.sh --alt-port` / `--dial` on the VPS, not this wizard.
+**v2.1 wizard (this tree):** one listen port for UDP and TCP, plus an optional second port. The second port is redirected to the listen port for both protocols and written into profiles as `alt_port`. UFW, when installed, allows UDP and TCP on each chosen port. If UDP or TCP is already listening, Confirm asks whether to continue or pick another port. An existing CA, `config.server.toml`, or `masque.service` stops the install; certificates, `/opt/masque/clients`, and `blocked_cns` are not replaced. Public host is still IPv4 or DNS (no IPv6 literal; use `gen-config.sh --dial` for that).
+
+After **Issue next bundle** or **Save bootstrap profile**, the wizard also shows a QR of that `profile.masque`. The Android phone app and iOS scan it. Android TV and the Windows client still use the file. The code contains the client private key.
+
+The published `masque-setup.exe` before this build is still the one-port v1.5.6 wizard.
 
 ## Layout (required)
 

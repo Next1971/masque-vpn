@@ -19,7 +19,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// TunnelMTU is the fixed v2.0 tunnel MTU. The client has no MTU control.
+// TunnelMTU is the default client tunnel MTU. Settings may choose 1280–1500.
 const TunnelMTU = 1340
 
 // Profile is the client server profile. The same set of parameters
@@ -47,6 +47,10 @@ type Profile struct {
 	TUNName string   `toml:"tun_name"` // interface name (Linux/Windows), e.g. "masque0"
 	MTU     int      `toml:"mtu"`      // tunnel MTU, e.g. 1400
 	DNS     []string `toml:"dns"`      // DNS servers for the tunnel (full-route), default ["1.1.1.1"]
+
+	// Transport is an app setting, not a profile field. "auto" (empty) probes
+	// UDP and falls back to TCP. "udp" never opens TCP. "tcp" never opens UDP.
+	Transport string `toml:"-"`
 }
 
 // tomlProfile is an intermediate struct for TOML sections.
@@ -117,9 +121,10 @@ func (p *Profile) Validate() error {
 	if err := validateAltPort(p.Server, p.AltPort); err != nil {
 		return err
 	}
-	// v2.0 base from the phone sweep: UDP is up through 1340 and dead at 1365.
-	// The profile may still say 1369. There is no MTU control in the client.
-	p.MTU = TunnelMTU
+	// 0 or outside 1280–1500 becomes the default. A value inside the range is
+	// kept. Callers that want the default must set 1340 or 0 first: a profile
+	// file may still say 1369, which is inside the range and would otherwise stick.
+	p.MTU = ClampMTU(p.MTU)
 	if p.TUNName == "" {
 		p.TUNName = "masque0"
 	}

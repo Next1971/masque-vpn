@@ -12,7 +12,6 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
@@ -32,6 +31,7 @@ class TvMainActivity : ComponentActivity() {
 
     private lateinit var statusView: TextView
     private lateinit var pingView: TextView
+    private lateinit var trafficView: TextView
     private lateinit var connectBtn: Button
     private var connected = false
 
@@ -42,6 +42,7 @@ class TvMainActivity : ComponentActivity() {
             connected = VpnStatus.applyConnected(connected, msg)
             connectBtn.text = if (connected) "Disconnect" else "Connect"
             pingView.text = VpnStatus.pingLabel(msg) ?: if (connected) pingView.text else "Ping: —"
+            trafficView.text = ProfileStore.trafficLabel(this@TvMainActivity)
         }
     }
 
@@ -65,6 +66,7 @@ class TvMainActivity : ComponentActivity() {
 
         statusView = findViewById(R.id.tvStatus)
         pingView = findViewById(R.id.tvPing)
+        trafficView = findViewById(R.id.tvTraffic)
         connectBtn = findViewById(R.id.tvBtnConnect)
         findViewById<TextView>(R.id.tvVersion).text = appVersionLabel()
 
@@ -78,12 +80,9 @@ class TvMainActivity : ComponentActivity() {
         setupTvFocusAnimation(clipboardBtn)
         setupTvFocusAnimation(connectBtn)
 
-        val killSwitch = findViewById<CheckBox>(R.id.tvChkKillSwitch)
-        killSwitch.isChecked = ProfileStore.killSwitch(this)
-        killSwitch.setOnCheckedChangeListener { _, checked ->
-            ProfileStore.setKillSwitch(this, checked)
-        }
-        setupTvFocusAnimation(killSwitch)
+        val settingsBtn = findViewById<Button>(R.id.tvBtnSettings)
+        settingsBtn.setOnClickListener { ClientSettings.show(this) }
+        setupTvFocusAnimation(settingsBtn)
 
         connectBtn.setOnClickListener {
             if (connected) {
@@ -196,6 +195,7 @@ class TvMainActivity : ComponentActivity() {
     }
 
     private fun refreshUi() {
+        trafficView.text = ProfileStore.trafficLabel(this)
         if (MasqueVpnService.isRunning) {
             connected = true
             statusView.text = "Status: VPN active"

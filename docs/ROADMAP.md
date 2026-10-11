@@ -1,6 +1,6 @@
 # Roadmap
 
-> Status snapshot: last updated 2026-10-04. See [CHANGELOG.md](../CHANGELOG.md) for release history.
+> Status snapshot: last updated 2026-10-11. See [CHANGELOG.md](../CHANGELOG.md) for release history.
 
 ## Current status
 
@@ -12,9 +12,9 @@ Client/installer **design work can happen in any branch** and is not gated on a 
 |---|---|---|
 | Server | Stable | Still the 1.5.x binary on the VPS. **v1.5.6** optional dual-stack `[::]` + IPv6 QUIC |
 | Windows client | Stable | **v1.7.1** Latest MSI, `connect-ip-go` v0.4.0, still speaks to a 1.5.x server |
-| Windows VPS installer | **Experimental** | `masque-setup.exe`. One UDP port, IPv4/DNS host |
+| Windows VPS installer | **Experimental** | Source matches 2.0 (UDP+TCP, optional second port). The EXE itself ships with **v2.1** |
 | Android client | Stable | **v1.7.1** Latest APK. Connected only after the tunnel echo succeeds |
-| iOS client | **TestFlight (v1.7)** | Public link [join/x52N41V1](https://testflight.apple.com/join/x52N41V1); Apple build **20**. Expires **4 December 2026**; then a new 90-day build. No GitHub IPA |
+| iOS client | **Source matches 2.0** | TestFlight binary is still v1.7 (Apple build **20**, [join/x52N41V1](https://testflight.apple.com/join/x52N41V1), expires **4 December 2026**). The tree dials `alt_port`, AAAA, and TCP. Next archive is **v2.1**. No GitHub IPA |
 
 This is experimental software and has not received an independent security audit.
 
@@ -28,7 +28,7 @@ This is experimental software and has not received an independent security audit
 | **(after v1.5.5)** | Android AGP/Gradle bump | Reopen deferred Dependabot [#75](https://github.com/Next1971/masque-vpn/pull/75): AGP **9.4.0** + Gradle wrapper **9.6.0**. Soak on main; **no GitHub pre-release**. |
 | **v1.5.6** | Optional: QUIC to the server over IPv6 | Full GitHub release, **not** Latest. AAAA + host-route. Windows Disconnect fix. Skip if 1.5.3 already works. |
 | **v1.7** | iOS TestFlight (shipped) | Public link; Apple build 20. No GitHub IPA. Latest stays v1.5.3. |
-| **v1.8** | Phone QR profile import | Installer shows a QR; **phone** clients scan it. TV and Windows stay on file/paste. |
+| **v1.8** | Phone QR profile import | Done in the tree. Installer shows a QR; phone and iOS scan it. Ships with **v2.1**. |
 
 ## Completed (v1.0)
 
@@ -128,7 +128,7 @@ This is experimental software and has not received an independent security audit
 
 ## Planned for v1.8
 
-- [ ] Phone QR instead of (or in addition to) a profile file: after Issue, `masque-setup.exe` shows a QR of the bundle. **Android phone** and **iOS** (TestFlight) scan it in-app. Not for Android TV or Windows (no camera / not the path). File save remains. Payload is the existing `profile.masque` (private key in the QR — treat like the file). Compact encoding if a raw TOML QR is too dense.
+- [x] Phone QR instead of (or in addition to) a profile file: after Issue or saving the bootstrap profile, `masque-setup.exe` shows a QR of that `profile.masque` (private key included; the file is still saved). **Android phone** and **iOS** scan it in-app. Not for Android TV or the Windows client. The binary ships with **v2.1**.
 
 Visual refresh of clients and `masque-setup.exe` can merge whenever it is ready. **App stores after that UI**, not before.
 
@@ -144,11 +144,34 @@ Phone sweep on 2026-10-11: UDP is up at MTU 1280 and 1340, already slow at 1359,
 - No TCP/UDP switch. UDP is the normal path. TCP HTTP/2 CONNECT-IP opens only when UDP does not answer.
 - The Android build `1.8.0-tcp` (manual switch and MTU field) is a lab APK, not the 2.0 UI.
 - Published as GitHub pre-release **v2.0.0** (full file set). **Latest stays v1.7.1.**
+- `masque-setup.exe` was not in that release. The wizard in the tree now matches this server; the binary is part of **v2.1**.
+
+## Planned for v2.1
+
+- [x] On-screen ping during a TCP session. The tunnel already worked, but the UI stayed on "Ping: —" because only QUIC smoothed RTT was read. TCP now samples HTTP/2 PING and shows the same ping on Android, Windows, and iOS. Put this in the v2.1 release notes.
+- [x] `masque-setup.exe` catches up to the 2.0 server. The listen port is UDP and TCP. An optional second port is redirected to it (UDP and TCP) and written as `alt_port`. UFW opens both protocols on both ports. If UDP or TCP is already taken, the wizard asks whether to continue or pick another port. An existing CA, server config, or `masque.service` is left in place (no new CA, no deleted clients, no deleted denylist).
+- [x] Profile QR in `masque-setup.exe` after Issue and after saving the bootstrap profile. Android phone and iOS scan it. Android TV and the Windows client keep file import. Put this in the v2.1 release notes.
+- [x] Settings on Android phone, Android TV, Windows, and iOS. Transport is Automatic (UDP, then TCP) by default, or UDP only, or TCP only. Kill switch is in Settings on all of them (default off). On iOS it blocks traffic if the tunnel drops, until MASQUE reconnects or the user disconnects. A connect that never came up does not leave that block on. No in-tunnel IPv6 default route. MTU is there too (default 1340, range 1280–1500) and applies on the next connect. Put this in the v2.1 release notes.
+- [x] Main screen traffic: bytes up and down since local midnight, and since the first of the month, in MB. Counted in the shared pump and kept across reconnects and process restarts. Put this in the v2.1 release notes.
+- [x] iOS source catches up to the 2.0 client. It tries the profile UDP port, then `alt_port`, then TCP on both. A hostname with AAAA is dialed over IPv6 (IPv6 is preferred when both exist). The published TestFlight build is still 1.7 until the next archive. In-tunnel IPv6 default route stays off: adding one made iOS drop the UDP session. Put the dial changes in the v2.1 release notes.
+- [ ] IPv6 literal in the Public host field is still manual (`MASQUE_DIAL` / `gen-config.sh --dial`). The wizard accepts IPv4 or a DNS name.
+
+## Future option: TCP 443 next to Caddy
+
+Not scheduled. Recorded 2026-10-11. Caddy already owns TCP 443: one cover site plus camouflage copies on their own names (masque, trust, naive). MASQUE does not bind that port. An HTTP reverse proxy in front of MASQUE does not work: the client does its own TLS, the server asks for a client certificate, and the tunnel is HTTP/2 CONNECT-IP (`:protocol connect-ip`, path `/vpn`).
+
+If this is built later, the server certificate everyone sees is Let's Encrypt. It is sent before the client certificate, so a public certificate only for strangers is impossible. A valid profile trusts that Let's Encrypt chain. The client key stays issued by the private CA. That CA is how the server recognizes its own client. A valid client certificate opens the CONNECT-IP tunnel.
+
+Today `RequireAndVerifyClientCert` closes the handshake when the client certificate is missing or wrong, so no page can be served. The handshake would have to accept the connection and decide only afterwards.
+
+- **Option A.** Any other client gets the camouflage site for the masque name. The page can be served locally or proxied to that vhost. Caddy stops terminating TLS on this name. MASQUE reads the Let's Encrypt files.
+- **Option B.** Any other client is switched to the main cover site, not the masque camouflage copy.
+
+UDP 443 stays a separate socket. This does not share it with Caddy HTTP/3 or TrustTunnel.
 
 ## Planned for future releases (no committed dates)
 
 - [ ] Expanded troubleshooting and platform-specific FAQ.
-- [ ] Session byte counters in the clients (bytes up and down for the current Connect, reset on Disconnect). Count tunnel IP packets in the shared pump. No server or protocol change. Show next to ping on Android (phone and TV), Windows, and iOS.
 - [ ] Android phone: user-selected apps excluded from the tunnel (`VpnService.Builder.addDisallowedApplication`). The Masque package itself stays excluded. The list applies on the next Connect. Not for Android TV. Excluded apps leave the tunnel, so they are outside the kill switch.
 
 ## Explicitly out of scope for now

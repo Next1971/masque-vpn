@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.zx2c4.com/wireguard/tun"
@@ -23,6 +24,7 @@ type Pump struct {
 	sess   *Session
 	dev    tun.Device
 	tunErr error
+	bytes  atomic.Int64
 }
 
 func NewPump(sess *Session, dev tun.Device) *Pump {
@@ -30,6 +32,20 @@ func NewPump(sess *Session, dev tun.Device) *Pump {
 		sess.AttachTUN(dev)
 	}
 	return &Pump{sess: sess, dev: dev}
+}
+
+// Bytes is tunnel IP traffic since this pump started, both directions.
+func (p *Pump) Bytes() int64 {
+	if p == nil {
+		return 0
+	}
+	return p.bytes.Load()
+}
+
+func (p *Pump) addBytes(n int) {
+	if n > 0 {
+		p.bytes.Add(int64(n))
+	}
 }
 
 // Run forwards until ctx is cancelled or the TUN device fails.
@@ -101,7 +117,7 @@ func (p *Pump) session() *Session {
 	return p.sess
 }
 
-// RTT is the live session's smoothed QUIC RTT, or zero.
+// RTT is the live session's smoothed path RTT, or zero.
 func (p *Pump) RTT() time.Duration {
 	return p.session().RTT()
 }
@@ -170,6 +186,7 @@ func (p *Pump) readConn(ctx context.Context, sess *Session) error {
 			p.setTunErr(err)
 			return fmt.Errorf("tun write: %w", err)
 		}
+		p.addBytes(n)
 	}
 }
 
@@ -216,6 +233,7 @@ func (p *Pump) readTUN(ctx context.Context) {
 			if _, err := sess.ipconn.WritePacket(pkt); err != nil {
 				break
 			}
+			p.addBytes(len(pkt))
 		}
 	}
 }

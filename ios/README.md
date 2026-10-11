@@ -2,7 +2,7 @@
 
 Minimal iPhone client on the same Go core (`clientcore`) as Android and Windows. Swift supplies the UI and a **Packet Tunnel** Network Extension; gomobile produces `Mobile.xcframework`. The App Store binary is **iPhone-only** (iPad can still run it in compatibility mode).
 
-This is the iOS client (marketing version **1.7.0**). The simulator cannot exercise the VPN path. **No IPA is attached to GitHub Releases.** External TestFlight is live: [https://testflight.apple.com/join/x52N41V1](https://testflight.apple.com/join/x52N41V1) (Apple build **20**). This build **expires in 80 days, on 4 December 2026**; after that a new TestFlight build will be published for **90 days**.
+The source is the **2.1.0** client: profile UDP port, then `alt_port`, then TCP on both; AAAA is dialed when the name has one. Settings has transport, MTU, and a kill switch. The simulator cannot exercise the VPN path. **No IPA is attached to GitHub Releases.** The TestFlight build that was live before this archive is **1.7** ([join/x52N41V1](https://testflight.apple.com/join/x52N41V1), Apple build **20**, expires **4 December 2026**). The 2.1.0 archive is the next upload.
 
 ## Layout
 
@@ -148,10 +148,14 @@ When it succeeds: App Store Connect → **TestFlight** (not the store listing). 
 1. Install [TestFlight](https://apps.apple.com/app/testflight/id899247664), then open [https://testflight.apple.com/join/x52N41V1](https://testflight.apple.com/join/x52N41V1) on the iPhone.
 2. Import a real `profile.masque` (the sample in the app bundle is format-only).
 3. Allow VPN when iOS asks.
-4. Connect. Ping is QUIC RTT to the MASQUE server.
+4. Connect. Ping is the RTT to the MASQUE server (QUIC, or HTTP/2 PING when the session is TCP).
+
+A profile with `alt_port` is tried on that UDP port when the profile port does not answer. If both UDP ports fail and transport is Automatic, the extension opens TCP on those same ports. A hostname is resolved to AAAA and A; IPv6 is tried first. The in-tunnel IPv6 default route stays off.
+
+Settings has transport, MTU (default 1340), and a kill switch (default off). The kill switch blocks internet if the tunnel drops, until the app reconnects or you disconnect. A connect that never comes up does not leave the block on. If the VPN is turned off in iOS Settings, open MASQUE once so it can restore internet.
 
 ## Notes
 
 - Go lives in the **extension**, not the host app. The profile is stored in the App Group so the extension can read certificates.
-- There is no Android-style `protect(fd)`. The tunnel excludes the server IPv4 from the default route so QUIC does not loop into itself.
+- There is no Android-style `protect(fd)`. The tunnel excludes the server address (IPv4 or IPv6) from the default route so the session does not loop into itself.
 - `APPLICATION_EXTENSION_API_ONLY` is off for the extension because the Go runtime is not app-extension-safe. This is the usual gomobile VPN compromise.

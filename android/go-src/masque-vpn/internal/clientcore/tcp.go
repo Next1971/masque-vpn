@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	connectip "github.com/quic-go/connect-ip-go"
@@ -22,22 +23,25 @@ const tcpHandshakeTimeout = 20 * time.Second
 
 // tcpIP is the HTTP/2 CONNECT-IP packet pipe used when the app selects TCP.
 type tcpIP struct {
-	body      io.ReadCloser
-	pw        *io.PipeWriter
-	bw        *bufio.Writer
-	tcp       *net.TCPConn
-	mu        sync.Mutex
-	wmu       sync.Mutex
-	pkts      chan []byte
-	done      chan struct{}
-	ready     chan struct{}
-	readyOnce sync.Once
-	closeOnce sync.Once
-	err       error
-	gotAssign bool
-	gotRoutes bool
-	assigned  []netip.Prefix
-	routes    []connectip.IPRoute
+	body       io.ReadCloser
+	pw         *io.PipeWriter
+	bw         *bufio.Writer
+	tcp        *net.TCPConn
+	mu         sync.Mutex
+	wmu        sync.Mutex
+	pkts       chan []byte
+	done       chan struct{}
+	ready      chan struct{}
+	readyOnce  sync.Once
+	closeOnce  sync.Once
+	err        error
+	gotAssign  bool
+	gotRoutes  bool
+	assigned   []netip.Prefix
+	routes     []connectip.IPRoute
+	h2         *http2.ClientConn
+	rttNS      atomic.Int64
+	pingLogged atomic.Bool
 }
 
 // connectTCP opens HTTP/2 CONNECT-IP on the same host and ports as UDP
@@ -129,6 +133,7 @@ func connectTCPAddr(ctx context.Context, p *Profile, dev tun.Device, dialAddr st
 		pw:    pw,
 		bw:    bufio.NewWriter(pw),
 		tcp:   tcp,
+		h2:    h2conn,
 		pkts:  make(chan []byte, 32),
 		done:  make(chan struct{}),
 		ready: make(chan struct{}),
@@ -160,6 +165,7 @@ func connectTCPAddr(ctx context.Context, p *Profile, dev tun.Device, dialAddr st
 		return nil, fmt.Errorf("tcp connect-ip: server assigned no prefixes")
 	}
 	log.Printf("CONNECT-IP session established via tcp %s, prefixes %v", dialAddr, assigned)
+	go ip.loopRTT()
 
 	return &Session{
 		tcpConn:          tcp,
@@ -287,4 +293,74 @@ func (c *tcpIP) Close() error {
 		}
 	})
 	return nil
+}
+
+const tcpRTTInterval = 2 * time.Second
+
+// loopRTT samples HTTP/2 PING so the UI can show a ping while QUIC stats
+// are absent. It stops when the session closes.
+func (c *tcpIP) loopRTT() {
+	c.sampleRTT()
+	tick := time.NewTicker(tcpRTTInterval)
+	defer tick.Stop()
+	for {
+		select {
+		case <-c.done:
+			return
+		case <-tick.C:
+			c.sampleRTT()
+		}
+	}
+}
+
+func (c *tcpIP) sampleRTT() {
+	if c.h2 == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	go func() {
+		select {
+		case <-c.done:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	start := time.Now()
+	if err := c.h2.Ping(ctx); err != nil {
+		if c.pingLogged.CompareAndSwap(false, true) {
+			log.Printf("tcp ping: %v", err)
+		}
+		return
+	}
+	c.noteRTT(time.Since(start))
+}
+
+func (c *tcpIP) noteRTT(sample time.Duration) {
+	if sample < time.Millisecond {
+		sample = time.Millisecond
+	}
+	for {
+		prev := c.rttNS.Load()
+		next := int64(sample)
+		if prev > 0 {
+			next = (7*prev + int64(sample)) / 8
+			if next < int64(time.Millisecond) {
+				next = int64(time.Millisecond)
+			}
+		}
+		if c.rttNS.CompareAndSwap(prev, next) {
+			if prev == 0 {
+				log.Printf("tcp rtt %d ms", time.Duration(next).Milliseconds())
+			}
+			return
+		}
+	}
+}
+
+func (c *tcpIP) rtt() time.Duration {
+	if c == nil {
+		return 0
+	}
+	return time.Duration(c.rttNS.Load())
 }

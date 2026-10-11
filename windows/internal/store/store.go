@@ -8,14 +8,29 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"masque-client/internal/clientcore"
 )
 
 type Settings struct {
-	Autoconnect bool `json:"autoconnect"`
-	KillSwitch  bool `json:"kill_switch"`
+	Autoconnect bool   `json:"autoconnect"`
+	KillSwitch  bool   `json:"kill_switch"`
+	Transport   string `json:"transport,omitempty"`
+	MTU         int    `json:"mtu,omitempty"`
+}
+
+func (s Settings) EffectiveTransport() string {
+	return clientcore.TransportMode(s.Transport)
+}
+
+func (s Settings) EffectiveMTU() int {
+	if s.MTU == 0 {
+		return clientcore.TunnelMTU
+	}
+	return clientcore.ClampMTU(s.MTU)
 }
 
 func Dir() string {
@@ -28,6 +43,7 @@ func Dir() string {
 
 func profilePath() string  { return filepath.Join(Dir(), "profile.toml") }
 func settingsPath() string { return filepath.Join(Dir(), "settings.json") }
+func trafficPath() string  { return filepath.Join(Dir(), "traffic.json") }
 func certsDir() string     { return filepath.Join(Dir(), "certs") }
 
 func Configured() bool {
@@ -74,6 +90,76 @@ func SetAutoconnect(v bool) error {
 	return SaveSettings(s)
 }
 
+func SetTransport(v string) error {
+	s := LoadSettings()
+	mode := clientcore.TransportMode(v)
+	if mode == "auto" {
+		s.Transport = ""
+	} else {
+		s.Transport = mode
+	}
+	return SaveSettings(s)
+}
+
+func SetMTU(v int) error {
+	s := LoadSettings()
+	s.MTU = clientcore.ClampMTU(v)
+	return SaveSettings(s)
+}
+
+var trafficMu sync.Mutex
+
+type trafficFile struct {
+	DayKey     string `json:"day"`
+	MonthKey   string `json:"month"`
+	DayBytes   int64  `json:"day_bytes"`
+	MonthBytes int64  `json:"month_bytes"`
+	Applied    int64  `json:"applied"`
+}
+
+// ObserveTraffic folds the pump total into the local day and month counters.
+// total is monotonic for the current process and may drop to zero after a restart.
+func ObserveTraffic(total int64) (dayBytes, monthBytes int64) {
+	trafficMu.Lock()
+	defer trafficMu.Unlock()
+	prev := loadTraffic()
+	next := clientcore.NoteTraffic(clientcore.TrafficAccount{
+		DayKey: prev.DayKey, MonthKey: prev.MonthKey,
+		DayBytes: prev.DayBytes, MonthBytes: prev.MonthBytes, Applied: prev.Applied,
+	}, total, time.Now())
+	updated := trafficFile{
+		DayKey: next.DayKey, MonthKey: next.MonthKey,
+		DayBytes: next.DayBytes, MonthBytes: next.MonthBytes, Applied: next.Applied,
+	}
+	if updated != prev {
+		_ = saveTraffic(updated)
+	}
+	return next.DayBytes, next.MonthBytes
+}
+
+func loadTraffic() trafficFile {
+	b, err := os.ReadFile(trafficPath())
+	if err != nil {
+		return trafficFile{}
+	}
+	var f trafficFile
+	if json.Unmarshal(b, &f) != nil {
+		return trafficFile{}
+	}
+	return f
+}
+
+func saveTraffic(f trafficFile) error {
+	if err := os.MkdirAll(Dir(), 0700); err != nil {
+		return err
+	}
+	b, err := json.MarshalIndent(f, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(trafficPath(), b, 0600)
+}
+
 // Import writes a profile into ProgramData. text is the file contents;
 // extra PEM blobs fill path-based toml that does not inline certificates.
 func Import(text, filename, extraCA, extraCert, extraKey string) error {
@@ -99,9 +185,8 @@ func Import(text, filename, extraCA, extraCert, extraKey string) error {
 	if p.TUNName == "" {
 		p.TUNName = "masque0"
 	}
-	if p.MTU == 0 {
-		p.MTU = clientcore.TunnelMTU
-	}
+	// The profile file is not the MTU setting. Connect reads settings.json.
+	p.MTU = clientcore.TunnelMTU
 	if len(p.DNS) == 0 {
 		p.DNS = []string{"1.1.1.1"}
 	}

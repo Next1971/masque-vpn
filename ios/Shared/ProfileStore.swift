@@ -44,7 +44,7 @@ enum ProfileStore {
         guard let text = try? String(contentsOf: meta, encoding: .utf8) else { return nil }
         let lines = text.split(whereSeparator: \.isNewline).map(String.init)
         guard lines.count >= 3 else { return nil }
-        let mtu = AppGroup.defaults.object(forKey: AppGroup.defaultsMTU) as? Int ?? 1400
+        let mtu = AppGroup.defaults.object(forKey: AppGroup.defaultsMTU) as? Int ?? 1340
         var alt = 0
         if lines.count >= 4 {
             alt = Int(lines[3].trimmingCharacters(in: .whitespaces)) ?? 0

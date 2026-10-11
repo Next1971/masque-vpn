@@ -2,7 +2,7 @@
 
 This guide is tested on **Ubuntu 22.04**. Any modern systemd Linux with a public IP should work. All commands are run as `root` (or with `sudo`).
 
-From Windows you can use **`masque-setup.exe`** (see [windows/README.md](../windows/README.md)) to SSH in, check the OS, pick a UDP port, open **ufw** if it is installed, and deploy this same layout. The GUI installer only supports **Ubuntu 22.04/24.04/26.04** and **Debian 12**.
+From Windows you can use **`masque-setup.exe`** (see [windows/README.md](../windows/README.md)) to SSH in, check the OS, pick the listen port and an optional second port, open **ufw** for UDP and TCP, and deploy this same layout. The GUI installer only supports **Ubuntu 22.04/24.04/26.04** and **Debian 12**.
 
 The server tunnels IP traffic over QUIC + HTTP/3 CONNECT-IP and authenticates clients with mutual TLS (mTLS). From **v1.3** the server also:
 
@@ -11,9 +11,9 @@ The server tunnels IP traffic over QUIC + HTTP/3 CONNECT-IP and authenticates cl
 
 **v1.4** / **v1.4.1** clients talk to the same v1.3+ server protocol (sticky `/32` after reconnect). **v1.4.1** adds optional **Docker** packaging (`server/docker-compose.yml`) and **graceful shutdown** on `SIGTERM`/`SIGINT`. **v1.5** optionally assigns ULA IPv6 (`fd00:8::/64`) inside the tunnel (sticky `/128`) and NAT66s it to the VPS WAN IPv6. IPv4-only configs without the v6 keys keep working. Old Android APKs sink IPv6 instead of forwarding it. **v1.5.1** adds a CN denylist (`/opt/masque/blocked_cns`) and documents a UDP 443 fallback redirect. New client profiles default TUN MTU **1369**.
 
-The server binary on the VPS stays the 1.5.x build. It binds `[::]:port` (from v1.5.6) so QUIC can arrive over IPv4 or IPv6. A 1.7.1 client still connects to it. `masque-setup.exe` still picks one UDP port and an IPv4/DNS public host; use `gen-config.sh --alt-port` / `--dial` (or `MASQUE_DIAL` on `install.sh`) for a second port or an IPv6 literal.
+The server binary on the VPS stays the 1.5.x build unless you install **v2.0.0**. It binds `[::]:port` (from v1.5.6) so QUIC can arrive over IPv4 or IPv6. A 1.7.1 client still connects to it. An IPv6 dial address is still `gen-config.sh --dial` or `MASQUE_DIAL` on `install.sh`.
 
-**v2.0.0** is a pre-release experiment, not Latest ([release](../../releases/tag/v2.0.0)). That server listens for CONNECT-IP on UDP and TCP on the same port. Client tunnel MTU is **1340**. Older UDP clients still connect. TCP fallback needs this binary. Install with `install.sh` or Docker (image `masque-vpn-server:2.0.0`, archive `masque-docker-2.0.0.zip`). `masque-setup.exe` is not in that release.
+**v2.0.0** is a pre-release experiment, not Latest ([release](../../releases/tag/v2.0.0)). That server listens for CONNECT-IP on UDP and TCP on the same port. Client tunnel MTU is **1340**. Older UDP clients still connect. TCP fallback needs this binary. Install with `install.sh` or Docker (image `masque-vpn-server:2.0.0`, archive `masque-docker-2.0.0.zip`). `install.sh` accepts optional `MASQUE_ALT_PORT`: that port is opened in UFW for UDP and TCP, redirected to `MASQUE_PORT`, and written into profiles as `alt_port`. The script refuses to replace an existing CA, server config, or service. `masque-setup.exe` is not in the 2.0.0 release; the wizard in this tree does the same install and ships with **v2.1**.
 
 > Keep the CA private key, server private key, and client private keys out of Git and distribute client bundles only through a secure channel.
 

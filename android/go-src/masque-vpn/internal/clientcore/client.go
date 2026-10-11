@@ -134,6 +134,11 @@ func ConnectWithPacketConn(ctx context.Context, p *Profile, dev tun.Device, pc n
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
+	mode := TransportMode(p.Transport)
+	if mode == "tcp" {
+		log.Printf("transport tcp; opening TCP")
+		return connectTCP(ctx, p, dev)
+	}
 	addrs, err := resolveDialAddrs(p.Server, p.AltPort)
 	if err != nil {
 		return nil, fmt.Errorf("resolve server %q: %w", p.Server, err)
@@ -145,13 +150,16 @@ func ConnectWithPacketConn(ctx context.Context, p *Profile, dev tun.Device, pc n
 	}
 
 	// iOS supplies one UDP session aimed at the profile port — no second socket.
-	// Android probes UDP itself and opens TCP only when that probe is silent.
+	// Android probes UDP itself. Automatic mode opens TCP when that probe is silent.
 	if pc == nil {
 		up, err := udpReachable(ctx, p)
 		if err != nil {
 			return nil, err
 		}
 		if !up {
+			if mode == "udp" {
+				return nil, fmt.Errorf("UDP %s did not answer", p.Server)
+			}
 			log.Printf("UDP %s did not answer; opening TCP", p.Server)
 			return connectTCP(ctx, p, dev)
 		}
@@ -160,6 +168,10 @@ func ConnectWithPacketConn(ctx context.Context, p *Profile, dev tun.Device, pc n
 		udpAddr := addrs[0]
 		leg := &quicLeg{packetConn: pc, ownUDP: false, addr: udpAddr.String()}
 		if err := leg.dial(ctx, udpAddr, tlsConf); err != nil {
+			if mode == "auto" {
+				log.Printf("UDP dial failed (%v); opening TCP", err)
+				return connectTCP(ctx, p, dev)
+			}
 			return nil, err
 		}
 		return finishCONNECTIP(ctx, p, leg, dev)
@@ -185,12 +197,19 @@ func (s *Session) AttachTUN(dev tun.Device) {
 	s.dev = dev
 }
 
-// RTT is the smoothed QUIC path RTT to the MASQUE server. Zero if unknown.
+// RTT is the smoothed path RTT to the MASQUE server. QUIC uses its
+// connection stats. TCP uses HTTP/2 PING samples. Zero if unknown.
 func (s *Session) RTT() time.Duration {
-	if s == nil || s.qconn == nil {
+	if s == nil {
 		return 0
 	}
-	return s.qconn.ConnectionStats().SmoothedRTT
+	if s.qconn != nil {
+		return s.qconn.ConnectionStats().SmoothedRTT
+	}
+	if ip, ok := s.ipconn.(*tcpIP); ok {
+		return ip.rtt()
+	}
+	return 0
 }
 
 // UDPFd returns the underlying UDP socket fd for VpnService.protect / bindSocket.

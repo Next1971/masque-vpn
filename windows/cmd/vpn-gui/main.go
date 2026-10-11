@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,22 +32,19 @@ func main() {
 	a.SetIcon(icon)
 	w := a.NewWindow("MASQUE VPN")
 	w.SetIcon(icon)
-	w.Resize(fyne.NewSize(480, 400))
+	w.Resize(fyne.NewSize(480, 440))
 
 	status := widget.NewLabel("Checking service…")
 	status.Wrapping = fyne.TextWrapWord
 	detail := widget.NewLabel("")
 	detail.Wrapping = fyne.TextWrapWord
 	ping := widget.NewLabel("Ping: —")
+	traffic := widget.NewLabel("Today: 0.0 MB\nMonth: 0.0 MB")
 
-	var auto, ks *widget.Check
+	var auto *widget.Check
 	auto = widget.NewCheck("Connect automatically when the service starts", func(v bool) {
 		_, _ = ipc.RoundTrip(ipc.Request{Cmd: ipc.CmdSetAutoconnect, Autoconnect: &v})
-		refresh(status, detail, ping, auto, ks)
-	})
-	ks = widget.NewCheck("Kill switch (block internet if the tunnel drops)", func(v bool) {
-		_, _ = ipc.RoundTrip(ipc.Request{Cmd: ipc.CmdSetKillSwitch, KillSwitch: &v})
-		refresh(status, detail, ping, auto, ks)
+		refresh(status, detail, ping, traffic, auto)
 	})
 
 	connectBtn := widget.NewButton("Connect", func() {
@@ -54,14 +52,14 @@ func main() {
 		if err != nil {
 			dialog.ShowError(err, w)
 		}
-		refresh(status, detail, ping, auto, ks)
+		refresh(status, detail, ping, traffic, auto)
 	})
 	disconnectBtn := widget.NewButton("Disconnect", func() {
 		_, err := ipc.RoundTrip(ipc.Request{Cmd: ipc.CmdDisconnect})
 		if err != nil {
 			dialog.ShowError(err, w)
 		}
-		refresh(status, detail, ping, auto, ks)
+		refresh(status, detail, ping, traffic, auto)
 	})
 	importBtn := widget.NewButton("Import profile", func() {
 		d := dialog.NewFileOpen(func(rc fyne.URIReadCloser, err error) {
@@ -92,21 +90,25 @@ func main() {
 				dialog.ShowError(ierr, w)
 				return
 			}
-			refresh(status, detail, ping, auto, ks)
+			refresh(status, detail, ping, traffic, auto)
 		}, w)
 		d.Show()
+	})
+	settingsBtn := widget.NewButton("Settings", func() {
+		showSettings(w)
 	})
 
 	w.SetContent(container.NewPadded(container.NewVBox(
 		widget.NewRichTextFromMarkdown("## MASQUE VPN"),
 		status,
 		ping,
+		traffic,
 		detail,
 		layout.NewSpacer(),
 		importBtn,
 		container.NewGridWithColumns(2, connectBtn, disconnectBtn),
+		settingsBtn,
 		auto,
-		ks,
 		widget.NewLabel("The tunnel runs in a Windows service. Closing this window does not disconnect."),
 	)))
 
@@ -122,7 +124,7 @@ func main() {
 
 	go func() {
 		for {
-			refresh(status, detail, ping, auto, ks)
+			refresh(status, detail, ping, traffic, auto)
 			time.Sleep(2 * time.Second)
 		}
 	}()
@@ -130,12 +132,13 @@ func main() {
 	w.ShowAndRun()
 }
 
-func refresh(status, detail, ping *widget.Label, auto, ks *widget.Check) {
+func refresh(status, detail, ping, traffic *widget.Label, auto *widget.Check) {
 	resp, err := ipc.RoundTrip(ipc.Request{Cmd: ipc.CmdStatus})
 	if err != nil {
 		status.SetText("Service unavailable")
 		detail.SetText(err.Error() + "\nInstall the MSI and ensure the MASQUE VPN service is running.")
 		ping.SetText("Ping: —")
+		traffic.SetText("Today: —\nMonth: —")
 		return
 	}
 	line := "State: " + resp.State
@@ -147,15 +150,92 @@ func refresh(status, detail, ping *widget.Label, auto, ks *widget.Check) {
 	}
 	status.SetText(line)
 	if resp.State == ipc.StateConnected && resp.RTTMs > 0 {
-		ping.SetText(fmt.Sprintf("Ping: %d ms  (QUIC to server)", resp.RTTMs))
+		via := "QUIC to server"
+		if strings.Contains(resp.Detail, "via tcp") {
+			via = "TCP to server"
+		}
+		ping.SetText(fmt.Sprintf("Ping: %d ms  (%s)", resp.RTTMs, via))
 	} else {
 		ping.SetText("Ping: —")
 	}
+	traffic.SetText(fmt.Sprintf("Today: %s\nMonth: %s", formatMB(resp.DayBytes), formatMB(resp.MonthBytes)))
 	detail.SetText(resp.Detail)
 	auto.SetChecked(resp.Autoconnect)
-	if ks != nil {
-		ks.SetChecked(resp.KillSwitch)
+}
+
+func showSettings(w fyne.Window) {
+	resp, err := ipc.RoundTrip(ipc.Request{Cmd: ipc.CmdStatus})
+	if err != nil {
+		dialog.ShowError(err, w)
+		return
 	}
+	radio := widget.NewRadioGroup([]string{
+		"Automatic (UDP, then TCP)",
+		"UDP only",
+		"TCP only",
+	}, nil)
+	switch resp.Transport {
+	case "udp":
+		radio.SetSelected("UDP only")
+	case "tcp":
+		radio.SetSelected("TCP only")
+	default:
+		radio.SetSelected("Automatic (UDP, then TCP)")
+	}
+	ks := widget.NewCheck("Kill switch (block internet if the tunnel drops)", nil)
+	ks.SetChecked(resp.KillSwitch)
+	mtu := widget.NewEntry()
+	if resp.MTU > 0 {
+		mtu.SetText(strconv.Itoa(resp.MTU))
+	} else {
+		mtu.SetText("1340")
+	}
+	note := widget.NewLabel("Applies on the next connect. MTU 1280–1500, default 1340.")
+	note.Wrapping = fyne.TextWrapWord
+	d := dialog.NewCustomConfirm("Settings", "Save", "Cancel", container.NewVBox(
+		widget.NewLabel("Transport"),
+		radio,
+		ks,
+		widget.NewLabel("MTU"),
+		mtu,
+		note,
+	), func(ok bool) {
+		if !ok {
+			return
+		}
+		mode := "auto"
+		switch radio.Selected {
+		case "UDP only":
+			mode = "udp"
+		case "TCP only":
+			mode = "tcp"
+		}
+		if _, err := ipc.RoundTrip(ipc.Request{Cmd: ipc.CmdSetTransport, Transport: mode}); err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		on := ks.Checked
+		if _, err := ipc.RoundTrip(ipc.Request{Cmd: ipc.CmdSetKillSwitch, KillSwitch: &on}); err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		n, convErr := strconv.Atoi(strings.TrimSpace(mtu.Text))
+		if convErr != nil || n == 0 {
+			n = 1340
+		}
+		if _, err := ipc.RoundTrip(ipc.Request{Cmd: ipc.CmdSetMTU, MTU: n}); err != nil {
+			dialog.ShowError(err, w)
+		}
+	}, w)
+	d.Resize(fyne.NewSize(420, 380))
+	d.Show()
+}
+
+func formatMB(n int64) string {
+	if n < 0 {
+		n = 0
+	}
+	return fmt.Sprintf("%.1f MB", float64(n)/1_000_000)
 }
 
 func companionPEMs(path, text string) (ca, cert, key string) {

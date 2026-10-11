@@ -37,3 +37,21 @@ func ValidateUDPPort(p int) error {
 	}
 	return nil
 }
+
+// ValidatePortPair checks the listen port and an optional second port.
+// alt 0 means a single listen port.
+func ValidatePortPair(listen, alt int) error {
+	if err := ValidateUDPPort(listen); err != nil {
+		return err
+	}
+	if alt == 0 {
+		return nil
+	}
+	if err := ValidateUDPPort(alt); err != nil {
+		return fmt.Errorf("second port: %w", err)
+	}
+	if alt == listen {
+		return fmt.Errorf("second port must differ from the listen port")
+	}
+	return nil
+}

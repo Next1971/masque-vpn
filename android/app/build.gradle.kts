@@ -28,8 +28,8 @@ android {
         applicationId = "com.next1971.masque"
         minSdk = 24          // Android 7.0 — CreateUnmonitoredTUNFromFD and VpnService are available
         targetSdk = 34
-        versionCode = 25
-        versionName = "2.0.0"
+        versionCode = 26
+        versionName = "2.1.0"
     }
 
     // Two form factors from one codebase:
@@ -93,4 +93,6 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.8.0")
     // Android TV (leanback) — used only by the tv flavor UI.
     "tvImplementation"("androidx.leanback:leanback:1.0.0")
+    // Phone QR import. TV stays on paste. Not pulled into the TV APK.
+    "phoneImplementation"("com.journeyapps:zxing-android-embedded:4.3.0")
 }

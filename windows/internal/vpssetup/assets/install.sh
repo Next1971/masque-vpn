@@ -1,7 +1,11 @@
 #!/bin/bash
 # MASQUE VPN server install (systemd + certs + NAT).
 # Required env: MASQUE_PORT MASQUE_HOST
-# Optional: MASQUE_BIN GEN_CONFIG MASQUE_RELEASE MASQUE_REPO
+# Optional: MASQUE_ALT_PORT MASQUE_BIN GEN_CONFIG MASQUE_RELEASE MASQUE_REPO MASQUE_DIAL
+# MASQUE_ALT_PORT is redirected (UDP and TCP) to MASQUE_PORT and written into
+# client profiles as alt_port. The script refuses to replace an existing CA,
+# server config, or service. It does not delete /opt/masque/clients,
+# /opt/masque/blocked_cns, or state/next_index.
 # If MASQUE_BIN / GEN_CONFIG are not already on disk (masque-setup.exe uploads
 # them), the script downloads vpn-server-linux-* and gen-config.sh from the
 # GitHub Release and checks SHA256SUMS.
@@ -15,7 +19,7 @@ fi
 : "${MASQUE_PORT:?set MASQUE_PORT (UDP listen port)}"
 : "${MASQUE_HOST:?set MASQUE_HOST (public hostname or IP)}"
 
-MASQUE_RELEASE="${MASQUE_RELEASE:-v1.5.6}"
+MASQUE_RELEASE="${MASQUE_RELEASE:-v2.0.0}"
 MASQUE_REPO="${MASQUE_REPO:-Next1971/masque-vpn}"
 
 if [[ ! "$MASQUE_PORT" =~ ^[1-9][0-9]{0,4}$ ]] || (( MASQUE_PORT > 65535 )); then
@@ -23,8 +27,29 @@ if [[ ! "$MASQUE_PORT" =~ ^[1-9][0-9]{0,4}$ ]] || (( MASQUE_PORT > 65535 )); the
   exit 1
 fi
 
+if [[ -n "${MASQUE_ALT_PORT:-}" ]]; then
+  if [[ ! "$MASQUE_ALT_PORT" =~ ^[1-9][0-9]{0,4}$ ]] || (( MASQUE_ALT_PORT > 65535 )); then
+    echo "ERROR: invalid MASQUE_ALT_PORT" >&2
+    exit 1
+  fi
+  if [[ "$MASQUE_ALT_PORT" == "$MASQUE_PORT" || "$MASQUE_ALT_PORT" == "22" ]]; then
+    echo "ERROR: MASQUE_ALT_PORT must be a different port, and not 22" >&2
+    exit 1
+  fi
+fi
+
 if systemctl is-active --quiet masque 2>/dev/null; then
-  echo "ERROR: masque.service is already running. Stop it before reinstalling." >&2
+  echo "ERROR: masque.service is already running. Refusing to reinstall." >&2
+  exit 1
+fi
+# Fresh install only. A stopped service, an existing CA, or a server config
+# means certificates and client bundles are already in use.
+if [[ -f /opt/masque/ca/ca.key || -f /opt/masque/config.server.toml ]]; then
+  echo "ERROR: /opt/masque already has a CA or server config. Refusing to replace certificates, config, clients, or blocked_cns." >&2
+  exit 1
+fi
+if { [[ -f /opt/masque/vpn-server || -x /opt/masque/bin/poc-server ]]; } && { [[ -f /etc/systemd/system/masque.service || -f /lib/systemd/system/masque.service ]]; }; then
+  echo "ERROR: masque.service is already installed. Refusing to replace the unit or binary." >&2
   exit 1
 fi
 
@@ -113,6 +138,9 @@ fi
 if [[ -n "${MASQUE_DIAL:-}" ]]; then
   GEN_ARGS+=(--dial "$MASQUE_DIAL")
 fi
+if [[ -n "${MASQUE_ALT_PORT:-}" ]]; then
+  GEN_ARGS+=(--alt-port "$MASQUE_ALT_PORT")
+fi
 bash "$GEN_CONFIG" "${GEN_ARGS[@]}"
 
 install -d -m 0755 /opt/masque/state /opt/masque/clients
@@ -120,6 +148,10 @@ install -d -m 0755 /opt/masque/state /opt/masque/clients
 # unnumbered masque-client from this install) stay untouched.
 if [[ ! -f /opt/masque/state/next_index ]]; then
   echo 9 > /opt/masque/state/next_index
+fi
+if [[ -n "${MASQUE_ALT_PORT:-}" ]]; then
+  printf '%s\n' "$MASQUE_ALT_PORT" > /opt/masque/state/alt_port
+  chmod 0644 /opt/masque/state/alt_port
 fi
 install -m 0755 "$GEN_CONFIG" /opt/masque/gen-config.sh
 
@@ -136,9 +168,18 @@ net.core.wmem_max = 67108864
 EOF
 sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-masque-udp.conf >/dev/null
 
+ALT_PRE=""
+if [[ -n "${MASQUE_ALT_PORT:-}" ]]; then
+  ALT_PRE="ExecStartPre=/bin/sh -c 'iptables -t nat -C PREROUTING -p udp --dport ${MASQUE_ALT_PORT} -j REDIRECT --to-ports ${MASQUE_PORT} 2>/dev/null || iptables -t nat -A PREROUTING -p udp --dport ${MASQUE_ALT_PORT} -j REDIRECT --to-ports ${MASQUE_PORT}'
+ExecStartPre=/bin/sh -c 'iptables -t nat -C PREROUTING -p tcp --dport ${MASQUE_ALT_PORT} -j REDIRECT --to-ports ${MASQUE_PORT} 2>/dev/null || iptables -t nat -A PREROUTING -p tcp --dport ${MASQUE_ALT_PORT} -j REDIRECT --to-ports ${MASQUE_PORT}'
+ExecStartPre=/bin/sh -c 'ip6tables -t nat -C PREROUTING -p udp --dport ${MASQUE_ALT_PORT} -j REDIRECT --to-ports ${MASQUE_PORT} 2>/dev/null || ip6tables -t nat -A PREROUTING -p udp --dport ${MASQUE_ALT_PORT} -j REDIRECT --to-ports ${MASQUE_PORT} || true'
+ExecStartPre=/bin/sh -c 'ip6tables -t nat -C PREROUTING -p tcp --dport ${MASQUE_ALT_PORT} -j REDIRECT --to-ports ${MASQUE_PORT} 2>/dev/null || ip6tables -t nat -A PREROUTING -p tcp --dport ${MASQUE_ALT_PORT} -j REDIRECT --to-ports ${MASQUE_PORT} || true'
+"
+fi
+
 cat > /etc/systemd/system/masque.service << EOF
 [Unit]
-Description=MASQUE VPN server (CONNECT-IP/QUIC, mTLS)
+Description=MASQUE VPN server (CONNECT-IP, UDP and TCP, mTLS)
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=60
@@ -158,7 +199,7 @@ ExecStartPre=/bin/sh -c 'iptables -C FORWARD -i masque0 -o ${WAN_IF} -j ACCEPT 2
 ExecStartPre=/bin/sh -c 'iptables -C FORWARD -i ${WAN_IF} -o masque0 -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || iptables -I FORWARD 2 -i ${WAN_IF} -o masque0 -m state --state RELATED,ESTABLISHED -j ACCEPT'
 ExecStartPre=/bin/sh -c 'ip6tables -C FORWARD -i masque0 -o ${WAN_IF} -j ACCEPT 2>/dev/null || ip6tables -I FORWARD 1 -i masque0 -o ${WAN_IF} -j ACCEPT || true'
 ExecStartPre=/bin/sh -c 'ip6tables -C FORWARD -i ${WAN_IF} -o masque0 -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || ip6tables -I FORWARD 2 -i ${WAN_IF} -o masque0 -m state --state RELATED,ESTABLISHED -j ACCEPT || true'
-ExecStart=/opt/masque/vpn-server -config /opt/masque/config.server.toml
+${ALT_PRE}ExecStart=/opt/masque/vpn-server -config /opt/masque/config.server.toml
 User=root
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 DeviceAllow=/dev/net/tun rw
@@ -174,10 +215,15 @@ EOF
 if command -v ufw >/dev/null 2>&1; then
   ufw allow "${MASQUE_PORT}/udp" comment 'MASQUE VPN' || true
   ufw allow "${MASQUE_PORT}/tcp" comment 'MASQUE VPN' || true
+  echo "UFW: allowed UDP and TCP ${MASQUE_PORT}"
+  if [[ -n "${MASQUE_ALT_PORT:-}" ]]; then
+    ufw allow "${MASQUE_ALT_PORT}/udp" comment 'MASQUE VPN alt' || true
+    ufw allow "${MASQUE_ALT_PORT}/tcp" comment 'MASQUE VPN alt' || true
+    echo "UFW: allowed UDP and TCP ${MASQUE_ALT_PORT}"
+  fi
   if ufw status 2>/dev/null | grep -qi 'Status: active'; then
     ufw reload || true
   fi
-  echo "UFW: allowed UDP and TCP ${MASQUE_PORT}"
 else
   echo "UFW: not installed (skipped)"
 fi
@@ -192,5 +238,27 @@ if ! systemctl is-active --quiet masque; then
 fi
 
 echo "WAN_IF=${WAN_IF}"
+udp_line=$(ss -H -ulnp 2>/dev/null | grep -E ":${MASQUE_PORT}([[:space:]]|$)" || true)
+tcp_line=$(ss -H -tlnp 2>/dev/null | grep -E ":${MASQUE_PORT}([[:space:]]|$)" || true)
+if [[ "$udp_line" == *vpn-server* ]]; then
+  echo "UDP_LISTEN_OK ${MASQUE_PORT}"
+else
+  echo "WARNING: MASQUE is not listening on UDP ${MASQUE_PORT} (${udp_line:-nothing bound})"
+fi
+if [[ "$tcp_line" == *vpn-server* ]]; then
+  echo "TCP_LISTEN_OK ${MASQUE_PORT}"
+else
+  echo "WARNING: MASQUE is not listening on TCP ${MASQUE_PORT} (${tcp_line:-nothing bound}). UDP may still work."
+fi
+if [[ -n "${MASQUE_ALT_PORT:-}" ]]; then
+  if ! iptables -t nat -C PREROUTING -p udp --dport "${MASQUE_ALT_PORT}" -j REDIRECT --to-ports "${MASQUE_PORT}"; then
+    echo "ERROR: UDP redirect ${MASQUE_ALT_PORT} -> ${MASQUE_PORT} is missing" >&2
+    exit 1
+  fi
+  if ! iptables -t nat -C PREROUTING -p tcp --dport "${MASQUE_ALT_PORT}" -j REDIRECT --to-ports "${MASQUE_PORT}"; then
+    echo "ERROR: TCP redirect ${MASQUE_ALT_PORT} -> ${MASQUE_PORT} is missing" >&2
+    exit 1
+  fi
+  echo "ALT_REDIRECT_OK ${MASQUE_ALT_PORT} -> ${MASQUE_PORT}"
+fi
 echo "LISTEN_OK"
-ss -H -uln | grep -E ":${MASQUE_PORT}([[:space:]]|$)" || ss -ulnp | grep -E ":${MASQUE_PORT}\\b" || true
