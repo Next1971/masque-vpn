@@ -16,6 +16,7 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 ## Release status
 
 - **Latest:** [v1.7.1](../../releases/tag/v1.7.1) — Android APK and Windows MSI on `connect-ip-go` v0.4.0. They connect to the 1.5.x server already running. No new server binary in this drop.
+- **v2.0.0 (experiment, not Latest):** [v2.0.0](../../releases/tag/v2.0.0) — phone APK, TV APK, Windows MSI, Linux server, `install.sh`, and Docker sources (`masque-docker-2.0.0.zip`). Tunnel MTU **1340**. UDP is the normal path; TCP HTTP/2 CONNECT-IP opens only when UDP does not answer, on the same host and ports. Profiles and certificates do not change. A 1.7.1 client still reaches this server over UDP. `masque-setup.exe` is not attached (that wizard still opens UDP only). iOS stays TestFlight **v1.7**.
 - **v1.7 (iOS TestFlight):** [v1.7](../../releases/tag/v1.7) — public TestFlight [join link](https://testflight.apple.com/join/x52N41V1), Apple build **20**. Expires **4 December 2026**. No APK/MSI/server on this tag.
 - **v1.5.6 (optional):** [v1.5.6](../../releases/tag/v1.5.6) — QUIC to the server over IPv6, Windows Disconnect fix, dual-stack server bind, `install.sh`. Previous 1.5.x clients and servers stay compatible over IPv4. **If your setup already works, you do not need to install 1.5.6.**
 - **v1.5.4 (pre-release):** `connect-ip-go` v0.3.0 + optional `alt_port` dual-port. New Linux server binary.
@@ -50,6 +51,7 @@ Do not use it if you:
 | Goal | Start here |
 |---|---|
 | Download Latest (v1.7.1) | [GitHub Release](../../releases/latest) |
+| Download v2.0.0 (experiment) | [v2.0.0](../../releases/tag/v2.0.0) |
 | Install iOS (TestFlight v1.7) | [Public TestFlight link](https://testflight.apple.com/join/x52N41V1) |
 | Download v1.5.6 (optional IPv6 QUIC) | [v1.5.6](../../releases/tag/v1.5.6) |
 | Download v1.5.4 pre-release | [v1.5.4](../../releases/tag/v1.5.4) |

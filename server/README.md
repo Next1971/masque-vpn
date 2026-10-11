@@ -13,6 +13,8 @@ The server tunnels IP traffic over QUIC + HTTP/3 CONNECT-IP and authenticates cl
 
 The server binary on the VPS stays the 1.5.x build. It binds `[::]:port` (from v1.5.6) so QUIC can arrive over IPv4 or IPv6. A 1.7.1 client still connects to it. `masque-setup.exe` still picks one UDP port and an IPv4/DNS public host; use `gen-config.sh --alt-port` / `--dial` (or `MASQUE_DIAL` on `install.sh`) for a second port or an IPv6 literal.
 
+**v2.0.0** is a pre-release experiment, not Latest ([release](../../releases/tag/v2.0.0)). That server listens for CONNECT-IP on UDP and TCP on the same port. Client tunnel MTU is **1340**. Older UDP clients still connect. TCP fallback needs this binary. Install with `install.sh` or Docker (image `masque-vpn-server:2.0.0`, archive `masque-docker-2.0.0.zip`). `masque-setup.exe` is not in that release.
+
 > Keep the CA private key, server private key, and client private keys out of Git and distribute client bundles only through a secure channel.
 
 ## 1. Prerequisites
