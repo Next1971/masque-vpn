@@ -6,7 +6,7 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [v2.0.0] - 2026-10-11
 
-**GitHub pre-release. Latest stays [v1.7.1](https://github.com/Next1971/masque-vpn/releases/tag/v1.7.1).** Full experimental drop: phone APK, TV APK, Windows MSI, `masque-setup.exe`, Linux server, `install.sh`, and Docker sources. Profiles and certificates are unchanged.
+**GitHub pre-release. Latest stays [v1.7.1](https://github.com/Next1971/masque-vpn/releases/tag/v1.7.1).** Full experimental drop: phone APK, TV APK, Windows MSI, Linux server, `install.sh`, and Docker sources. `masque-setup.exe` is not attached. Profiles and certificates are unchanged.
 
 ### Added
 
