@@ -4,7 +4,7 @@
 
 ## Current status
 
-MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** (server, Windows, Android). **v1.0** shipped **14 August 2026**. **v1.7.1** is GitHub **Latest**: Android and Windows clients on `connect-ip-go` v0.4.0 that still talk to the 1.5.x server. The server binary is not replaced. **v1.7** is iOS TestFlight only. **v1.5.3** was the previous Latest. **v1.5.6** is the optional IPv6-QUIC release.
+MASQUE VPN has been operational and tested end-to-end since **July 15, 2026** (server, Windows, Android). **v1.0** shipped **14 August 2026**. **v1.7.1** is GitHub **Latest**: Android and Windows clients on `connect-ip-go` v0.4.0 that still talk to the 1.5.x server. The server binary is not replaced. **v1.7** is iOS TestFlight only.
 
 Client/installer **design work can happen in any branch** and is not gated on a version number. **Store listings** (Play / F-Droid) start **after** that visual snapshot, not in 1.5.x.
 
@@ -28,7 +28,6 @@ This is experimental software and has not received an independent security audit
 | **(after v1.5.5)** | Android AGP/Gradle bump | Reopen deferred Dependabot [#75](https://github.com/Next1971/masque-vpn/pull/75): AGP **9.4.0** + Gradle wrapper **9.6.0**. Soak on main; **no GitHub pre-release**. |
 | **v1.5.6** | Optional: QUIC to the server over IPv6 | Full GitHub release, **not** Latest. AAAA + host-route. Windows Disconnect fix. Skip if 1.5.3 already works. |
 | **v1.7** | iOS TestFlight (shipped) | Public link; Apple build 20. No GitHub IPA. Latest stays v1.5.3. |
-| **v1.8** | Phone QR profile import | Installer shows a QR; **phone** clients scan it. TV and Windows stay on file/paste. |
 
 ## Completed (v1.0)
 
@@ -96,18 +95,6 @@ This is experimental software and has not received an independent security audit
 - [x] `connect-ip-go` **v0.3.0** on server and clients (`quic-go` remains v0.62.0).
 - [x] Dual-port QUIC dial via optional `[server].alt_port` (any second UDP port; first handshake wins).
 
-## Known limitations (all platforms)
-
-- Connecting to the VPN server on **Latest (v1.5.3)** is still **IPv4 QUIC**. **v1.5.6** adds AAAA / UDP 443 on IPv6 (optional). Do not publish AAAA for names still used by pre-1.5.6 clients.
-- Some networks drop outbound **UDP 443**. Use an alternate UDP port with VPS DNAT (see [server README](../server/README.md#udp-443-blocked-on-the-client-path)). **v1.5.4** clients race the profile port and optional `alt_port`.
-- In-tunnel DNS is plaintext UDP:53 — hidden from the local ISP but visible to the server operator. DoH/DoT is **not planned**: the project targets a **VPS you operate**, so that visibility is not treated as a product hole.
-- Kill switch (v1.5.2+) does not survive a killed VPN process. On Android, system Always-on VPN / “Block connections without VPN” is the extra layer.
-- Single server/profile per client — no profile list or automatic failover.
-- No independent security audit yet.
-- Some OEM battery savers ignore the exemption dialog; a killed process still needs a manual Connect.
-- NAT64/DNS64 is not included: AAAA destinations need WAN IPv6 on the VPS.
-- CN denylist is not a CRL/OCSP PKI: it is a server-side name list reloaded on process start.
-
 ## Completed (v1.5.5)
 
 - [x] Server `install.sh`, SHA256SUMS, Sigstore attestations (shipped in the **v1.5.6** GitHub release; no separate v1.5.5 tag).
@@ -126,11 +113,6 @@ This is experimental software and has not received an independent security audit
 
 - [x] Android toolchain: AGP **9.3.2 → 9.4.1**. Gradle wrapper is **9.8.0** (already past 9.6.0). Shipped in **v1.7.1**.
 
-## Planned for v1.8
-
-- [ ] Phone QR instead of (or in addition to) a profile file: after Issue, `masque-setup.exe` shows a QR of the bundle. **Android phone** and **iOS** (TestFlight) scan it in-app. Not for Android TV or Windows (no camera / not the path). File save remains. Payload is the existing `profile.masque` (private key in the QR — treat like the file). Compact encoding if a raw TOML QR is too dense.
-
-Visual refresh of clients and `masque-setup.exe` can merge whenever it is ready. **App stores after that UI**, not before.
 
 ## Dependency notes
 
@@ -150,6 +132,7 @@ Phone sweep on 2026-10-11: UDP is up at MTU 1280 and 1340, already slow at 1359,
 - [ ] Expanded troubleshooting and platform-specific FAQ.
 - [ ] Session byte counters in the clients (bytes up and down for the current Connect, reset on Disconnect). Count tunnel IP packets in the shared pump. No server or protocol change. Show next to ping on Android (phone and TV), Windows, and iOS.
 - [ ] Android phone: user-selected apps excluded from the tunnel (`VpnService.Builder.addDisallowedApplication`). The Masque package itself stays excluded. The list applies on the next Connect. Not for Android TV. Excluded apps leave the tunnel, so they are outside the kill switch.
+- [ ] | Phone QR profile import | Installer shows a QR; **phone** clients scan it. TV and Windows stay on file/paste. |
 
 ## Explicitly out of scope for now
 
