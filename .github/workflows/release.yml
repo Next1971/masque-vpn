@@ -69,13 +69,13 @@ jobs:
           NOTES="release/${TAG}/RELEASE-NOTES.md"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/vpn-server-linux-amd64 dist/vpn-server-linux-arm64 \
-              dist/install.sh dist/gen-config.sh dist/SHA256SUMS --clobber
+              dist/install.sh dist/gen-config.sh --clobber
           elif [ -f "$NOTES" ]; then
             gh release create "$TAG" dist/vpn-server-linux-amd64 dist/vpn-server-linux-arm64 \
-              dist/install.sh dist/gen-config.sh dist/SHA256SUMS \
+              dist/install.sh dist/gen-config.sh \
               --prerelease --title "$TAG (pre-release)" --notes-file "$NOTES"
           else
             gh release create "$TAG" dist/vpn-server-linux-amd64 dist/vpn-server-linux-arm64 \
-              dist/install.sh dist/gen-config.sh dist/SHA256SUMS \
+              dist/install.sh dist/gen-config.sh \
               --prerelease --title "$TAG (pre-release)" --notes "Linux server packaging for $TAG."
           fi
