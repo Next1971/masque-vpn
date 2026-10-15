@@ -1,8 +1,8 @@
 # MASQUE VPN
 
-**Self-hosted VPN:** you run the server on your VPS and issue configs only to your own devices. The default transport is IETF [MASQUE](https://datatracker.ietf.org/doc/html/rfc9484) CONNECT-IP over **HTTP/3 (QUIC)**. The experimental **v2.0.0** release also supports CONNECT-IP over **HTTP/2 (TCP)**, used automatically when the UDP probe receives no reply. Clients authenticate with **mutual TLS** — the server accepts only certificates you signed.
+**Self-hosted VPN:** you run the server on your VPS and issue configs only to your own devices. The normal tunnel is IETF [MASQUE](https://datatracker.ietf.org/doc/html/rfc9484) CONNECT-IP over **HTTP/3 (QUIC)**. **Latest v2.1.0** also speaks CONNECT-IP over **HTTP/2 (TCP)** on the same port. A valid client certificate opens the VPN. A browser, a probe, or a wrong certificate gets a website. That page is new: older published servers closed the TCP handshake instead.
 
-Clients today: **Android**, **Android TV**, and **Windows** (tray app, no UAC for daily use). **iOS** is on TestFlight ([public link](https://testflight.apple.com/join/x52N41V1), **v1.7**); no IPA is attached to GitHub Releases.
+Clients today: **Android**, **Android TV**, and **Windows** (tray app, no UAC for daily use). **iOS 2.0** is on TestFlight ([public link](https://testflight.apple.com/join/x52N41V1)); no IPA is attached to GitHub Releases.
 
 This is not a commercial VPN brand and not an audited enterprise client. It is a working personal or family server with open source. Treat it as **experimental**: GitHub Actions compile and test the tree; that is not a third-party penetration test.
 
@@ -15,14 +15,13 @@ This is not a commercial VPN brand and not an audited enterprise client. It is a
 
 ## Release status
 
-- **Latest:** [v1.7.1](../../releases/tag/v1.7.1) — Android APK and Windows MSI on `connect-ip-go` v0.4.0. They connect to the 1.5.x server already running. No new server binary in this drop.
-- **v2.0.0 (experiment, not Latest):** [v2.0.0](../../releases/tag/v2.0.0) — phone APK, TV APK, Windows MSI, Linux server, `install.sh`, and Docker sources (`masque-docker-2.0.0.zip`). Client tunnel MTU **1340**, with no MTU field or TCP/UDP switch. UDP is the normal path; TCP HTTP/2 CONNECT-IP opens only when the UDP probe receives no reply, on the same host and ports. Profiles and certificates do not change. `masque-setup.exe` is not attached (that wizard still opens UDP only). iOS stays TestFlight **v1.7**.
-- **v1.7 (iOS TestFlight):** [v1.7](../../releases/tag/v1.7) — public TestFlight [join link](https://testflight.apple.com/join/x52N41V1), Apple build **20**. Expires **4 December 2026**. No APK/MSI/server on this tag.
+- **Latest:** [v2.1.0](../../releases/tag/v2.1.0) — phone APK, TV APK, Windows MSI, `masque-setup.exe`, Linux server, `install.sh`, and Docker sources. UDP stays the normal tunnel. TCP on the same port opens the VPN for a valid client certificate and serves a website to everyone else. [iOS 2.0](https://testflight.apple.com/join/x52N41V1) is the TestFlight client for this server. No IPA.
+- **v2.0.0 (experiment):** [v2.0.0](../../releases/tag/v2.0.0) — first lab build with a TCP listener. It still required a client certificate, so it did not serve a site. Not Latest.
+- **v1.7.1 (previous Latest):** [v1.7.1](../../releases/tag/v1.7.1) — Android and Windows only, UDP only. No server binary in that drop.
+- **v1.7 (older iOS TestFlight):** [v1.7](../../releases/tag/v1.7) — Apple build **20**, UDP only. The current iOS client is [iOS 2.0](https://testflight.apple.com/join/x52N41V1).
 - **v1.5.6 (optional earlier release):** [v1.5.6](../../releases/tag/v1.5.6) — QUIC to the server over IPv6, Windows Disconnect fix, dual-stack server bind, and `install.sh`. Previous 1.5.x clients and servers stay compatible over IPv4.
 
-**If your current VPN works, you do not need to install v2.0.0.** Latest remains v1.7.1.
-
-**TCP fallback requires a v2.0.0 server.** A v2.0.0 client can still use an older server over UDP, but cannot use TCP fallback with it. Older UDP clients, including v1.7.1, can connect to a v2.0.0 server over UDP.
+A 1.7.1 client still reaches a 2.1.0 server over UDP. TCP needs a 2.0.0 or 2.1.0 server. Profiles do not change.
 
 See the [changelog](CHANGELOG.md) for earlier releases and the [roadmap](docs/ROADMAP.md) for future work.
 
@@ -32,34 +31,33 @@ Use MASQUE VPN if you:
 - want to run a VPN server on a VPS you control;
 - need Android, Android TV or Windows clients;
 - are comfortable creating and managing client credentials;
-- want an experimental HTTP/3/QUIC CONNECT-IP implementation, with optional testing of HTTP/2/TCP fallback in v2.0.0.
+- want an HTTP/3/QUIC CONNECT-IP tunnel, with TCP on the same port and a website for everyone who is not a client.
 
 Do not use it if you:
 - need a commercial VPN service or public shared endpoints;
 - need anonymous access or a security-audited product;
-- need an App Store iOS client (TestFlight is [here](https://testflight.apple.com/join/x52N41V1); no IPA on GitHub), router or browser-extension support.
+- need an App Store iOS client ([iOS 2.0 on TestFlight](https://testflight.apple.com/join/x52N41V1); no IPA on GitHub), router or browser-extension support.
 
 ## Choose your installation path
 
 | Path | Recommended for | Stability / limitations | Documentation |
 |---|---|---|---|
-| Manual SSH install | Users who want to inspect every server-side command | Recommended installation path; use the v2.0.0 `install.sh` when testing TCP fallback | [Server guide](server/README.md) |
-| Docker Compose | Users familiar with Docker on a dedicated Linux VPS | Experimental; v2.0.0 Docker sources are available in that release | [Docker guide](server/README.md#docker) |
-| Windows VPS Setup Helper | Testers using a disposable VPS | Experimental; Ubuntu 22.04, 24.04, or 26.04, or Debian 12. UDP-only setup; not suitable for deploying v2.0.0 TCP fallback | [masque-setup.exe](windows/README.md#install-the-server-from-windows-masque-setupexe) |
+| Manual SSH install | Users who want to inspect every server-side command | Recommended. `install.sh` from [v2.1.0](../../releases/tag/v2.1.0) | [Server guide](server/README.md) |
+| Docker Compose | Users familiar with Docker on a dedicated Linux VPS | Experimental. Image tag `masque-vpn-server:2.1.0` | [Docker guide](server/README.md#docker) |
+| Windows VPS Setup Helper | Testers using a disposable VPS | Experimental. Ubuntu 22.04, 24.04, or 26.04, or Debian 12. `masque-setup.exe` in v2.1.0 installs UDP and TCP | [masque-setup.exe](windows/README.md#install-the-server-from-windows-masque-setupexe) |
 
 ## Quick start
 
 | Goal | Start here |
 |---|---|
-| Download Latest (v1.7.1) | [GitHub Release](../../releases/latest) |
-| Test v2.0.0 (new server required for TCP fallback) | [v2.0.0 files and deployment notes](../../releases/tag/v2.0.0) |
-| Install iOS (TestFlight v1.7) | [Public TestFlight link](https://testflight.apple.com/join/x52N41V1) |
+| Download Latest (v2.1.0) | [GitHub Release](../../releases/latest) |
+| Install iOS 2.0 (TestFlight) | [Public TestFlight link](https://testflight.apple.com/join/x52N41V1) |
 | Download v1.5.6 (optional earlier IPv6 QUIC release) | [v1.5.6](../../releases/tag/v1.5.6) |
 | Deploy a Linux server | [Detailed server guide](server/README.md) |
 | Connect from Android | [Android guide](android/README.md) |
 | Connect from iOS (source / TestFlight) | [iOS guide](ios/README.md) |
 | Connect from Windows | [Windows guide](windows/README.md) |
-| Install a UDP-only server from Windows (experimental) | [masque-setup.exe](windows/README.md#install-the-server-from-windows-masque-setupexe) |
+| Install the server from Windows | [masque-setup.exe](windows/README.md#install-the-server-from-windows-masque-setupexe) |
 | See what's done and what's next | [Roadmap](docs/ROADMAP.md) |
 | Report a bug or feature request | [Open an issue](../../issues/new/choose) |
 | Report a security issue | [Security policy](SECURITY.md) |
@@ -75,13 +73,13 @@ Do not use it if you:
 
 The Go source for the server and the shared client core lives under `android/go-src/masque-vpn/` (module `github.com/Next1971/masque-vpn`).
 
-> **Security model.** A single internal Certificate Authority (CA) signs the server certificate and every client certificate. The server only accepts clients whose certificate is signed by that CA, and each client only trusts a server whose certificate is signed by the same CA. **Never commit or publish any `*.key` file** (CA key, server key, client keys).
+> **Security model.** A single internal Certificate Authority (CA) signs the server certificate and every client certificate. Each client only trusts a server whose certificate is signed by that CA. On UDP the server still accepts only those client certificates. On TCP it opens the tunnel only when the certificate is valid; everyone else receives a small website. **Never commit or publish any `*.key` file** (CA key, server key, client keys).
 
 ## 1. Server installation (HOWTO)
 
 The complete, copyable server setup is maintained in [server/README.md](server/README.md). It covers Ubuntu 22.04 prerequisites, a prebuilt Linux binary or a source build, **optional Docker Compose**, certificates and profiles, **64 MiB UDP socket buffers** (required for QUIC), systemd/NAT, verification, and the configuration reference.
 
-For the v2.0.0 experiment, use its [release files and deployment notes](../../releases/tag/v2.0.0). Install the new server with `install.sh` or build the Docker sources from that tag. The Windows VPS Setup Helper is not the installation path for TCP fallback.
+Install the current server from [v2.1.0](../../releases/tag/v2.1.0): `install.sh`, Docker sources (`masque-docker-2.1.0.zip`), or `masque-setup.exe` with the Linux binary beside it.
 
 ---
 
@@ -112,9 +110,10 @@ See [`android/README.md`](android/README.md) for full details. In short:
 
 ## 5. Protocol / stack
 
-- **QUIC + HTTP/3** default transport (`quic-go`).
-- **CONNECT-IP** (RFC 9484) via `connect-ip-go` for IP-level tunneling on the QUIC path.
-- **HTTP/2 + TCP** CONNECT-IP capsule transport in experimental v2.0.0, used when the UDP probe receives no reply. Requires the v2.0.0 server; iOS TestFlight v1.7 remains UDP-only.
+- **QUIC + HTTP/3** on UDP (`quic-go`). This is the normal path.
+- **HTTP/2 CONNECT-IP** on the same TCP port. A valid client certificate opens the tunnel. Everyone else gets an HTML page.
+- **CONNECT-IP** (RFC 9484) via `connect-ip-go` for IP-level tunneling.
+- **iOS 2.0** on TestFlight uses the private CA and works with this server over UDP and TCP.
 - **Wintun** TUN driver on Windows; Android `VpnService` file descriptor on Android; native TUN on Linux.
 - **mTLS** with an internal EC (P-256) CA for mutual authentication.
 
