@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
 	"log"
@@ -24,6 +25,7 @@ const (
 // as the QUIC listener.
 type tcpConnect struct {
 	blocked        map[string]struct{}
+	clientCAs      *x509.CertPool
 	pool, poolV6   *IPPool
 	assign         netip.Prefix
 	route, routeV6 netip.Prefix
@@ -34,27 +36,15 @@ type tcpConnect struct {
 }
 
 func (h tcpConnect) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodConnect || r.Header.Get(":protocol") != h2ConnectProtocol || r.URL.Path != h2RequestPath {
-		http.Error(w, "connect-ip required", http.StatusNotImplemented)
-		return
-	}
-	if r.Header.Get(h2CapsuleHeader) != h2CapsuleValue {
-		http.Error(w, "Capsule-Protocol: ?1 required", http.StatusBadRequest)
-		return
-	}
-
-	cn := ""
-	if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
-		cn = r.TLS.PeerCertificates[0].Subject.CommonName
-		log.Printf("TCP client authenticated via mTLS: CN=%s", cn)
-	}
-	if cn != "" {
-		if _, deny := h.blocked[cn]; deny {
-			log.Printf("rejected blocked CN=%s", cn)
-			w.WriteHeader(http.StatusForbidden)
-			return
+	cn, ok := h.allowTunnel(r)
+	if !ok || !tunnelRequest(r) {
+		if tunnelRequest(r) {
+			log.Printf("TCP site instead of tunnel from %s", r.RemoteAddr)
 		}
+		serveCover(w)
+		return
 	}
+	log.Printf("TCP client authenticated via mTLS: CN=%s", cn)
 
 	w.Header().Set(h2CapsuleHeader, h2CapsuleValue)
 	w.WriteHeader(http.StatusOK)
@@ -120,9 +110,65 @@ func (h tcpConnect) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// tunnelRequest is the MASQUE HTTP/2 CONNECT-IP call. Anything else is a
+// site visit or a probe and is answered with the cover page.
+func tunnelRequest(r *http.Request) bool {
+	return r.Method == http.MethodConnect &&
+		r.Header.Get(":protocol") == h2ConnectProtocol &&
+		r.URL.Path == h2RequestPath &&
+		r.Header.Get(h2CapsuleHeader) == h2CapsuleValue
+}
+
+// allowTunnel reports whether this connection may open a VPN session.
+// With a client CA, the certificate is checked here so a missing or foreign
+// certificate can still receive the site. Without a CA, TLS policy stands.
+func (h tcpConnect) allowTunnel(r *http.Request) (string, bool) {
+	if h.clientCAs != nil {
+		cn, ok := verifyClientCert(r, h.clientCAs)
+		if !ok {
+			return "", false
+		}
+		if _, deny := h.blocked[cn]; deny {
+			log.Printf("rejected blocked CN=%s", cn)
+			return "", false
+		}
+		return cn, true
+	}
+	cn := ""
+	if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+		cn = r.TLS.PeerCertificates[0].Subject.CommonName
+	}
+	if cn != "" {
+		if _, deny := h.blocked[cn]; deny {
+			log.Printf("rejected blocked CN=%s", cn)
+			return "", false
+		}
+	}
+	return cn, true
+}
+
+func verifyClientCert(r *http.Request, roots *x509.CertPool) (string, bool) {
+	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+		return "", false
+	}
+	leaf := r.TLS.PeerCertificates[0]
+	inter := x509.NewCertPool()
+	for _, cert := range r.TLS.PeerCertificates[1:] {
+		inter.AddCert(cert)
+	}
+	if _, err := leaf.Verify(x509.VerifyOptions{
+		Roots:         roots,
+		Intermediates: inter,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}); err != nil {
+		return "", false
+	}
+	return leaf.Subject.CommonName, true
+}
+
 func serveTCP(ctx context.Context, ln net.Listener, base *tls.Config, h http.Handler) error {
 	tlsConf := base.Clone()
-	tlsConf.NextProtos = []string{"h2"}
+	tlsConf.NextProtos = []string{"h2", "http/1.1"}
 	srv := &http.Server{
 		Handler:           h,
 		TLSConfig:         tlsConf,

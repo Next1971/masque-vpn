@@ -338,27 +338,34 @@ func run(cfg serverConfig) error {
 
 	tlsConf := &tls.Config{Certificates: []tls.Certificate{cert}}
 
-	// mTLS: require and verify the client certificate if client-ca is set.
+	// UDP still requires a client certificate. TCP asks for one and checks it
+	// after the handshake, so a browser or a probe can still receive the site.
+	var caPool *x509.CertPool
 	if clientCA != "" {
 		caPEM, err := os.ReadFile(clientCA)
 		if err != nil {
 			return fmt.Errorf("read client CA: %w", err)
 		}
-		caPool := x509.NewCertPool()
+		caPool = x509.NewCertPool()
 		if !caPool.AppendCertsFromPEM(caPEM) {
 			return fmt.Errorf("failed to parse client CA %q", clientCA)
 		}
 		tlsConf.ClientCAs = caPool
 		tlsConf.ClientAuth = tls.RequireAndVerifyClientCert
-		log.Printf("mTLS ENABLED: requiring client cert signed by %s", clientCA)
+		log.Printf("UDP mTLS ENABLED: requiring client cert signed by %s", clientCA)
 	}
 
 	// URI template used by the client to access the proxy (RFC 9484 §3).
 	template := uritemplate.MustNew(fmt.Sprintf("https://%s/vpn", serverName))
 
-	// Clone before HTTP/3 adjusts NextProtos. TCP uses the same certificate
-	// and the same client CA on the same port number.
+	// Clone before HTTP/3 adjusts NextProtos. TCP keeps the same certificate.
+	// A missing or foreign client certificate stays on the connection and is
+	// answered with the site instead of a tunnel.
 	tcpTLS := tlsConf.Clone()
+	if caPool != nil {
+		tcpTLS.ClientAuth = tls.RequestClientCert
+		log.Printf("TCP client certificate is optional; tunnel requires %s", clientCA)
+	}
 
 	ln, err := quic.ListenEarly(
 		udpConn,
@@ -477,8 +484,8 @@ func run(cfg serverConfig) error {
 		log.Printf("TCP HTTP/2 CONNECT-IP listening on %s", tcpLn.Addr())
 		go func() {
 			err := serveTCP(ctx, tcpLn, tcpTLS, tcpConnect{
-				blocked: blocked,
-				pool:    pool, poolV6: poolV6,
+				blocked: blocked, clientCAs: caPool,
+				pool: pool, poolV6: poolV6,
 				assign: assign, route: route, routeV6: cfg.routeV6,
 				tunDev: tunDev, router: router, mtu: cfg.mtu, live: live,
 			})

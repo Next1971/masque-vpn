@@ -2,7 +2,7 @@
 
 Minimal iPhone client on the same Go core (`clientcore`) as Android and Windows. Swift supplies the UI and a **Packet Tunnel** Network Extension; gomobile produces `Mobile.xcframework`. The App Store binary is **iPhone-only** (iPad can still run it in compatibility mode).
 
-The source is the **2.1.0** client: profile UDP port, then `alt_port`, then TCP on both; AAAA is dialed when the name has one. Settings has transport, MTU, and a kill switch. The simulator cannot exercise the VPN path. **No IPA is attached to GitHub Releases.** The TestFlight build that was live before this archive is **1.7** ([join/x52N41V1](https://testflight.apple.com/join/x52N41V1), Apple build **20**, expires **4 December 2026**). The 2.1.0 archive is the next upload.
+**iOS 2.0** is the public TestFlight client: [join/x52N41V1](https://testflight.apple.com/join/x52N41V1). It uses the private CA from the profile and works with the **v2.1.0** server over UDP and TCP. **No IPA is attached to GitHub Releases.** The older TestFlight **1.7** (Apple build **20**) is UDP-only.
 
 ## Layout
 

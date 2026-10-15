@@ -19,7 +19,7 @@ fi
 : "${MASQUE_PORT:?set MASQUE_PORT (UDP listen port)}"
 : "${MASQUE_HOST:?set MASQUE_HOST (public hostname or IP)}"
 
-MASQUE_RELEASE="${MASQUE_RELEASE:-v2.0.0}"
+MASQUE_RELEASE="${MASQUE_RELEASE:-v2.1.0}"
 MASQUE_REPO="${MASQUE_REPO:-Next1971/masque-vpn}"
 
 if [[ ! "$MASQUE_PORT" =~ ^[1-9][0-9]{0,4}$ ]] || (( MASQUE_PORT > 65535 )); then
