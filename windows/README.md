@@ -1,162 +1,99 @@
 # MASQUE VPN — Windows client
 
-A Windows VPN client on the shared Go core (`clientcore`). It speaks **QUIC + HTTP/3 CONNECT-IP (MASQUE, RFC 9484)** with mutual TLS, and tunnels traffic through a **Wintun** adapter.
+The published v2.1.0 Windows client supports HTTP/3 CONNECT-IP over QUIC/UDP and HTTP/2 CONNECT-IP over TLS/TCP, with private-CA client authentication and a Wintun adapter.
 
-From **v1.3.1** the normal install is a per-machine **MSI**: a **LocalSystem** service runs the tunnel, and a **Fyne GUI** (Start menu, no UAC) imports a profile and connects. Closing the window does not tear down the tunnel. The console `vpn-client.exe` remains for debug. **v1.4** adds the app icon (tray, window, Start menu, MSI, EXE) and **Ping** on the GUI (smoothed QUIC RTT to the server). **v1.5.0** adds IPv6 on the tunnel when the server assigns it (GUI and console). **v1.5.1** uses TUN MTU **1369** and adds **certificate revoke** in `masque-setup.exe`. **v1.5.2** adds an optional kill switch (default off). **v1.5.3** is the previous Latest (same Windows client as 1.5.2, product version bump). **v1.5.4** (pre-release) bumps `connect-ip-go` and races optional `alt_port`. **v1.5.6** adds QUIC over IPv6 and makes **Disconnect** close the session immediately. **v2.1.0** is GitHub **Latest** ([release](../../releases/latest)): product **2.1.0**. Settings choose Automatic (UDP, then TCP), UDP only, or TCP only. MTU default is **1340**. Status text says `connected via udp` or `connected via tcp`. Day and month traffic are on the main screen.
+A LocalSystem service owns the tunnel; the Fyne GUI imports profiles and sends commands over a named pipe. Installation requires elevation, but normal GUI use does not. Closing the window leaves the tunnel running.
 
----
+## Install from a release
 
-## Install from a release (recommended)
+1. Download masque-2.1.0.msi from [v2.1.0](../../releases/tag/v2.1.0).
+2. Run it and approve the installation UAC prompt. The installation includes MasqueVpn, wintun.dll, masque-gui.exe, and the debug console client under C:\Program Files\MASQUE.
+3. Open MASQUE VPN from the Start menu as a normal user.
+4. Import a device-specific profile.masque. See [issuing client configurations](../docs/CLIENTS.md).
+5. Select Automatic, UDP only, or TCP only. Start with MTU 1340, then connect and verify the VPS exit address.
 
-1. Download `masque-2.1.0.msi` from [v2.1.0](../../releases/tag/v2.1.0) ([Latest](../../releases/latest)).
-2. Run the installer (one UAC prompt). It installs `MasqueVpn` (auto-start), `wintun.dll`, `masque-gui.exe`, and `vpn-client.exe` under `C:\Program Files\MASQUE`.
-3. Open **MASQUE VPN** from the Start menu (no admin).
-4. **Import profile**: `profile.masque` (same single-file bundle as Android).
+The kill switch is off by default. v2.1.0 provides day/month traffic statistics and ping on TCP sessions. On QUIC, ping is smoothed QUIC RTT; TCP ping must not be described as QUIC RTT. Automatic is not a fastest-transport benchmark.
 
-   A second, older form still works: `profile.client.toml` together with its `certs/` folder (`ca.crt`, `client.crt`, `client.key`). It will be removed in the next release — use `profile.masque`.
-5. Click **Connect**. While connected, the GUI shows **Ping** to the server. Optional: **Connect automatically when the service starts**.
+Use Disconnect to stop the tunnel; hiding/closing the GUI is not Disconnect. Profiles are stored under %ProgramData%\MASQUE\ rather than beside the EXE. Tray controls talk to the same service.
 
-Each device needs its own bundle. See [Issuing client configs](../docs/CLIENTS.md).
+Prefer the single-file profile.masque format. The older TOML-plus-certs format remains documented for console debugging below; no unverified removal date is promised here.
 
-The imported profile is stored under `%ProgramData%\MASQUE\` (not next to the EXE). The GUI talks to the service over a named pipe; the tray **Show / Connect / Disconnect** items do the same. Closing or hiding the window leaves the tunnel up — use **Disconnect**. From **v1.5.6**, Disconnect closes the QUIC session right away (the adapter and routes come down with it). On **v1.5.4** and earlier the GUI could stay on Connected until a packet arrived; workaround there is Services → **MASQUE VPN** → Stop (`sc stop MasqueVpn`).
+### Compatibility
 
----
+Existing profiles and certificates remain unchanged. A v2.1.0 client can use an older server over UDP. TCP requires a v2.0.0 or v2.1.0 server; the HTML response to unauthenticated TCP connections belongs to v2.1.0. Older UDP clients can still reach the current server over UDP.
 
-## Install the server from Windows (`masque-setup.exe`)
+## Install the server from Windows (masque-setup.exe)
 
-**Experimental.** This talks to the VPS as **root**, can change firewall and systemd, and can **revoke** a client CN (denylist, not a PKI CRL). Prefer the [manual server guide](../server/README.md) if you need a known-good install. Do not run it against a VPS you cannot rebuild.
+Experimental: the helper connects as root and changes systemd, firewall rules, and credentials. Prefer the [manual server guide](../server/README.md) when you need to review each deployment step. Use a VPS you can recover or rebuild.
 
-This is a separate app from the VPN client (not in the MSI). It SSHes to a **root** VPS and runs the same layout as [server/README.md](../server/README.md).
+Download masque-setup.exe and the matching vpn-server-linux-amd64 or vpn-server-linux-arm64 from v2.1.0. Put them in the same folder, or select the binary in the UI. The installer does not embed the Linux server and is separate from the VPN-client MSI.
 
-**Put the Linux server binary next to the EXE:** `vpn-server-linux-amd64` or `vpn-server-linux-arm64` from [v2.1.0](../../releases/tag/v2.1.0) (or pick the file in the UI). The installer does not contain the server. Public host is **IPv4 or DNS** (no IPv6 literal; `gen-config.sh --dial` still does that).
+Supported targets: Ubuntu 22.04/24.04/26.04 or Debian 12, with systemd, apt, and /dev/net/tun.
 
-`masque-setup.exe` in **v2.1.0** installs the current server: the listen port is **UDP and TCP**, an optional second port is redirected to it and stored as `alt_port`, and UFW opens both protocols. TCP on that port serves the website unless the client certificate is valid. If a UDP or TCP port is already taken, Confirm asks whether to continue or pick another. The published exe from [v1.5.6](../../releases/tag/v1.5.6) is the older one-port wizard.
+1. Enter SSH host and root credentials, then connect and check the OS. Verify the host identity before trusting a new SSH key.
+2. On a fresh VPS, choose the primary port and optional second port, then install. The v2.1.0 helper deploys UDP and TCP. Also allow both protocols in the cloud security group.
+3. Save the generated device profile; the helper also displays a profile QR code. QR display alone does not establish scanner support on every client.
+4. For an existing installation, preserve its CA and configuration. Use the issuance/revocation actions rather than reinstalling to add a device.
+5. Issue next bundle saves masque-client-N.profile.masque. Bootstrap profile.masque uses the original bootstrap identity. Keep all profiles private.
+6. Revoke certificate adds the selected CN to /opt/masque/blocked_cns and restarts the service. This is a server denylist, not a PKI CRL; existing sessions are interrupted and certificate files remain on disk.
 
-**Supported OS:** Ubuntu **22.04**, **24.04**, or **26.04**, or Debian **12**, with systemd, `apt`, and `/dev/net/tun`. Anything else is refused.
+The helper reserves test identities #1–8 and issues numbered bundles from #9. Do not equate issuance numbering with a benchmarked concurrent-session limit. ca.key stays on the VPS; back it up securely. SSH host keys are recorded under %AppData%\MASQUE\setup_known_hosts (trust on first use).
 
-1. Download `masque-setup.exe` from [v2.1.0](../../releases/tag/v2.1.0) and put `vpn-server-linux-amd64` or `vpn-server-linux-arm64` from that same release in the same folder. The [v1.5.6](../../releases/tag/v1.5.6) exe is the older one-port wizard. Use the [v2.1.0 MSI](../../releases/tag/v2.1.0) for the VPN client.
-2. Enter SSH host, root password or key, and **Connect and check OS**. If MASQUE is **already installed**, the app **does not reinstall** (no new CA, no new `server.crt`). Port pick / Install are disabled; use **Issue next bundle**.
-3. Pick a listen port (443, 2053, 8443, 41234) and an optional second port (default is the next candidate; `(none)` keeps a single port). **Confirm** — only when installing onto a blank VPS. If UDP or TCP on a chosen port is already listening, the app asks whether to continue or pick another port.
-4. **Install**. If `ufw` exists, UDP and TCP are allowed for the listen port and the second port. The second port is redirected to the listen port, so one process receives both. **Reachability** is a UDP reply and a TCP connection from this PC after the service is listening. ICMP ping is not used. A timeout usually means the **cloud security group** still blocks that protocol. An existing CA, server config, or `masque.service` is not replaced.
-5. **Issue next bundle (#9+)** saves `masque-client-N.profile.masque` and shows a QR of that same file. **Save bootstrap profile.masque** does the same for the unnumbered cert from install (`CN=masque-client`). Scan the QR in the Android phone app or iOS. Android TV and the Windows client still import the file. The QR contains the private key. `ca.key` stays at `/opt/masque/ca`.
-6. **Revoke certificate**: enter the issued number (the `N` in `masque-client-N`), confirm, and the app appends that CN to `/opt/masque/blocked_cns` then restarts `masque.service`. The PEM files stay on disk; the server refuses that CN after restart.
+A helper reachability result does not replace authenticated UDP/TCP tests from the target device. After connection, check the exit address and actual traffic.
 
-**Test certificates #1–8.** Existing bundles whose client CN is `masque-client-1` … `masque-client-8` (the first test pool) are **left alone** on issue. The app never issues those numbers, does not replace `server.crt`, and does not create a new CA — so those devices keep working unless you revoke them. They do not consume the app counter. The counter is **app-issued from #9**, shown as `N/253` (the tunnel IP pool size). Numbers 1–8 are reserved whether or not those files still exist on the VPS.
+## Source layout
 
-SSH host keys are stored under `%AppData%\MASQUE\setup_known_hosts` (TOFU).
-
-Verify the exit IP:
-
-```bat
-curl -4 http://ifconfig.me/ip
-```
-
-It should show the **server’s** IP, not your ISP’s.
-
-### TLS troubleshooting
-
-Server certificate checks are **on by default**. If a self-signed CA or hostname mismatch blocks the handshake, you can skip verification only while debugging:
-
-- Console: `-insecure`
-- Profile: `insecure = true` under `[tls]`
-
-Do not leave this enabled for daily use.
-
----
-
-## Repository layout
-
-```
-windows/
-├─ cmd/
-│  ├─ vpn-service/          # LocalSystem service → dist\masque-svc.exe
-│  ├─ vpn-gui/              # Fyne GUI → dist\masque-gui.exe
-│  ├─ vpn-setup/            # Fyne VPS installer → dist\masque-setup.exe
-│  └─ vpn-client/           # console + -svc-* CLI → dist\vpn-client.exe
-├─ internal/
-│  ├─ clientcore/           # QUIC, mTLS, CONNECT-IP, forwarding
-│  ├─ engine/               # service tunnel lifecycle
-│  ├─ ipc/                  # named-pipe protocol (GUI ↔ service)
-│  ├─ store/                # ProgramData profile + certs
-│  ├─ vpssetup/             # SSH install helper used by masque-setup
-│  └─ winnet/               # Wintun, routes, DNS
-├─ installer/               # WiX per-machine MSI + masque.ico
-├─ scripts/
-│  ├─ build.bat / build.ps1
-│  ├─ build-msi.ps1
-│  ├─ install-service.ps1   # copy dist\ into Program Files without MSI
-│  └─ fetch-wintun.ps1
-├─ certs/README.md
-├─ profile.client.toml.example
-└─ README.md
-```
-
----
-
-## Prerequisites (build from source)
-
-| Tool | Version |
+| Directory | Purpose |
 |---|---|
-| **Go** | **1.25.5 or later** (`windows/go.mod`). CI builds with **1.26.1**. |
-| OS | Windows 10/11 **x64** |
-| **MinGW gcc** | Required only for `masque-gui.exe` (Fyne + CGO). Service and console are `CGO_ENABLED=0`. |
-| **WiX** | Optional; for `masque.msi` (`dotnet tool install --global wix`, v7 as in CI). |
+| cmd/vpn-service/ | Windows tunnel service |
+| cmd/vpn-gui/ | Fyne GUI |
+| cmd/vpn-setup/ | VPS installer |
+| cmd/vpn-client/ | Console/debug client and service commands |
+| internal/clientcore/ | Tunnel connectivity and forwarding |
+| internal/engine/, ipc/, store/, winnet/ | Lifecycle, named pipe, profile storage, Wintun/routes/DNS |
+| internal/vpssetup/ | SSH deployment helper |
+| installer/ | WiX MSI packaging |
+| scripts/ | Build and installation scripts |
 
-Install MinGW if the GUI build cannot find `gcc`:
+## Build from source
 
-```bat
+Use Windows 10/11 x64, Go 1.25.5 or later, and MinGW gcc for the Fyne GUI/CGO build. The service and console can use CGO_ENABLED=0. MSI packaging needs WiX; use the version selected by the checked-out workflow.
+
+Install the compiler through an MSYS2 MINGW64 shell if needed:
+
+```bash
 pacman -S --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-pkg-config
 ```
 
-(from an **MSYS2 MINGW64** shell; `gcc` typically lives in `C:\msys64\mingw64\bin`).
-
-Administrator rights are needed to **install** the service or MSI, not to **build**, and not to use the GUI after install.
-
----
-
-## Build
-
-From `windows\`:
+Put the MinGW bin directory on PATH. From windows/:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\build.ps1
-```
-
-or `scripts\build.bat`. Output in `dist\`:
-
-- `masque-svc.exe`
-- `masque-gui.exe`
-- `vpn-client.exe`
-- `wintun.dll` (fetched if missing)
-
-MSI:
-
-```powershell
 powershell -ExecutionPolicy Bypass -File scripts\build-msi.ps1
 ```
 
-Without an MSI, from an **elevated** PowerShell:
+The client build produces dist/masque-svc.exe, masque-gui.exe, vpn-client.exe, and wintun.dll. Use the appropriate setup build/workflow for the separate VPS helper. A main-branch build is not automatically the published v2.1.0 binary; use the matching tag for release reproduction.
+
+Without MSI, install the service from elevated PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1
 ```
 
-That copies `dist\*` to `C:\Program Files\MASQUE` and creates/starts `MasqueVpn`. Then run `masque-gui.exe` as a normal user.
+Then run the GUI as a normal user.
 
----
+## Console debugging
 
-## Console debug (Administrator)
-
-Standalone mode does **not** use the service. Run an elevated terminal:
+Standalone mode requires an elevated terminal and does not use the service:
 
 ```bat
 cd dist
 vpn-client.exe -profile profile.client.toml -full-route -timeout 0
 ```
 
-Use a copy of `profile.client.toml.example` plus `certs\` next to the EXE (paths in the TOML are relative to the working directory).
+Use profile.client.toml.example and its certs directory. Relative certificate paths are resolved from the working directory. -full-route enables the full tunnel; -timeout 0 runs until interruption. -insecure skips server verification and must not be used for normal operation.
 
-Talk to an **already installed** service (no extra admin if the pipe is available):
+Commands for an already installed service:
 
 ```bat
 vpn-client.exe -svc-status
@@ -165,54 +102,30 @@ vpn-client.exe -svc-connect
 vpn-client.exe -svc-disconnect
 ```
 
-### Command-line flags
-
-| Flag | Default | Meaning |
-|---|---|---|
-| `-profile` | (standalone req.) | Path to client TOML |
-| `-full-route` | false | Route all traffic via the tunnel |
-| `-timeout` | 25s | Overall timeout; `0` runs until Ctrl+C |
-| `-insecure` | false | Skip server certificate verification |
-| `-svc-status` / `-svc-connect` / `-svc-disconnect` | | Named-pipe commands to the service |
-| `-svc-import` | | Import a profile file via the service |
-| `-test` | true | Test mode: only `-test-dst` via TUN |
-| `-test-dst` | 1.1.1.1 | Test-mode destination |
-| `-ping` | 3 | Test-mode ICMP echo count |
-
-For a real VPN in console mode you only need `-profile` and `-full-route` (with a long `-timeout`, e.g. `0` or `24h`). `-full-route` already installs a default route; `-test` only applies when full-route is off.
-
----
-
-## How it works
-
-- `internal/clientcore` dials QUIC, does mTLS, opens CONNECT-IP, and forwards packets. It does not edit the OS routing table.
-- `masque-svc.exe` owns Wintun, routes (`0.0.0.0/0` plus a host route to the server via the original gateway so QUIC does not loop), DNS on `masque0`, and reconnect. Keepalives match the server (15s / 3 min idle, **v1.3**).
-- `masque-gui.exe` sends import / connect / disconnect / autoconnect / kill switch over IPC and shows status, assigned IP, and ping.
-
----
+The service owns Wintun, routes, DNS, and reconnect. It keeps the underlying server connection outside the VPN route. The GUI only controls/displays service state.
 
 ## Troubleshooting
 
-- **Service unavailable** in the GUI — install the MSI (or `install-service.ps1`) and confirm `MasqueVpn` is running in `services.msc`. Log: `%ProgramData%\MASQUE\masque-svc.log`.
-- **Disconnect does nothing (pre-1.5.6)** — the session stayed up until a packet arrived. Stop the service (`sc stop MasqueVpn`) or install **v1.5.6**, which closes QUIC on Disconnect.
-- **wintun.dll not found** — it must sit next to `masque-svc.exe` (the MSI does this).
-- **Access is denied** in console mode — elevate the terminal; the GUI path does not need UAC after install.
-- **No traffic** — check `server` / `server_name` vs the certificate SAN, and that the bundle matches this server’s CA. One bundle per device.
-- **GUI build fails (gcc)** — put MinGW `gcc` on `PATH` as in Prerequisites.
-- **`go` too old** — need **1.25.5+**, not 1.21.
+| Symptom | Checks |
+|---|---|
+| Service unavailable | Install MSI, check MasqueVpn in services.msc; log is %ProgramData%\MASQUE\masque-svc.log |
+| wintun.dll missing | It must be beside masque-svc.exe; repair the installation |
+| Access denied in standalone mode | Elevate the console; normal GUI use does not require elevation |
+| UDP fails but TCP works | Compare selected mode, firewall protocols, port and network path |
+| Certificate error | Check CA, profile, server_name/SAN, certificate dates and clock; keep insecure = false |
+| TCP page but no tunnel | Page access is not VPN authentication; verify the device certificate and blocked CN list |
+| Connected but no traffic | Routes, forwarding/NAT, DNS, MTU, and one unique bundle per device |
+| GUI build cannot find gcc | Check MinGW installation and PATH |
 
----
+Disconnect session closure was fixed in v1.5.6; do not use older release workarounds as the current installation instructions.
 
-## Security
+## Security and limitations
 
-- Never commit real `*.crt` / `*.key` or a filled-in profile. `.gitignore` already excludes them.
-- Treat `%ProgramData%\MASQUE\certs\` as secrets.
-- `insecure` / `-insecure` authenticates only the client to the server; the client no longer authenticates the server.
+- Real profiles and client keys are secrets. Protect %ProgramData%\MASQUE\ and never commit credentials.
+- insecure / -insecure removes the client's authentication of the server. A browser warning on the private-CA TCP page is not a reason to enable it.
+- The optional kill switch depends on the service lifecycle. Stopping/killing the service is not guaranteed to preserve blocking; test the required failure cases.
+- In-tunnel DNS is plaintext UDP:53 and is visible at the VPS.
+- One current server/profile per machine. IPv6 reachability and IPv6 inside the tunnel must be verified separately.
+- Experimental software; no independent security audit or guaranteed filtering bypass.
 
-## Limitations
-
-- In-tunnel DNS is plaintext UDP:53 (hidden from the local ISP, visible at the server).
-- Kill switch (v1.5.2+, optional) blackholes traffic while the MASQUE service is running and Connect has been requested. Stopping the service or killing the process restores the normal default route.
-- Single server/profile per machine.
-
-Other platform limits are listed in the [roadmap](../docs/ROADMAP.md).
+See [server guide](../server/README.md), [security policy](../SECURITY.md), and [roadmap](../docs/ROADMAP.md).

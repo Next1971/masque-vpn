@@ -1,54 +1,58 @@
 # MASQUE VPN — iOS client (TestFlight)
 
-Minimal iPhone client on the same Go core (`clientcore`) as Android and Windows. Swift supplies the UI and a **Packet Tunnel** Network Extension; gomobile produces `Mobile.xcframework`. The App Store binary is **iPhone-only** (iPad can still run it in compatibility mode).
+The current published iOS client is iOS 2.0, available through [public TestFlight](https://testflight.apple.com/join/x52N41V1). It uses the private CA and connects to the v2.1.0 server over UDP and TCP. No IPA is attached to GitHub Releases. This is not an App Store availability announcement.
 
-**iOS 2.0** is the public TestFlight client: [join/x52N41V1](https://testflight.apple.com/join/x52N41V1). It uses the private CA from the profile and works with the **v2.1.0** server over UDP and TCP. **No IPA is attached to GitHub Releases.** The older TestFlight **1.7** (Apple build **20**) is UDP-only.
+The older iOS 1.7 / Apple build 20 was UDP-only. Its 4 December 2026 expiry is historical and must not be used as the current iOS 2.0 expiry. Check the installed build number and actual expiration in TestFlight; this guide does not assert an unverified current build number or date.
 
-## Layout
+Swift provides the host app and Packet Tunnel Network Extension; gomobile builds Mobile.xcframework from the shared Go core. The simulator can compile UI/code but cannot validate the real VPN path; use a physical device. The project targets iPhone; check current device availability in TestFlight.
 
-```
-ios/
-├─ Masque.xcodeproj/
-├─ Masque/                 # host app (import profile, start/stop VPN)
-├─ PacketTunnel/           # NEPacketTunnelProvider + Go bridge
-├─ Shared/                 # App Group + .masque parser
-├─ Frameworks/             # Mobile.xcframework (built locally, not in git)
-├─ scripts/build-xcframework.sh
-└─ README.md
-```
+## Use
 
-Bundle IDs:
+1. Install Apple's TestFlight and open the [public join link](https://testflight.apple.com/join/x52N41V1).
+2. Install the current iOS 2.0 build.
+3. Import a real profile.masque issued for this device; the sample is format-only. Do not reuse an active profile from another device.
+4. Allow VPN configuration when iOS asks, then connect.
+5. Verify the VPS exit address, DNS, and application traffic.
 
-| Target | ID |
+Existing profiles and certificates remain unchanged. TCP requires a v2.0.0 or v2.1.0 server; use v2.1.0 for the documented TCP website behavior. Older servers can still be used over UDP. UDP/TCP support does not imply identical UI controls to Android or Windows.
+
+On QUIC, ping means smoothed QUIC RTT. Do not describe a TCP measurement as QUIC RTT or infer an iOS measurement implementation from another platform.
+
+## Layout and identifiers
+
+| Path | Purpose |
 |---|---|
-| App | `com.next1971.masque` |
-| Packet Tunnel | `com.next1971.masque.packet-tunnel` |
-| App Group | `group.com.next1971.masque` |
+| Masque/ | Host app and VPN controls |
+| PacketTunnel/ | NEPacketTunnelProvider and Go bridge |
+| Shared/ | App Group and profile parsing |
+| Frameworks/ | Locally built Mobile.xcframework |
+| scripts/build-xcframework.sh | Go framework build |
 
-Use the same `profile.masque` as Android/Windows. **One bundle per device** — do not import a profile that is already connected on another OS.
+| Target | Identifier |
+|---|---|
+| App | com.next1971.masque |
+| Packet Tunnel | com.next1971.masque.packet-tunnel |
+| App Group | group.com.next1971.masque |
 
-## Apple Developer (once)
+The Go core runs inside the extension, not the host app. The App Group makes the profile available to the extension. Underlying transport routing must avoid looping through the VPN.
 
-1. Identifiers → App IDs: `com.next1971.masque` with **Network Extensions** (Packet Tunnel) and **App Groups**.
-2. App ID `com.next1971.masque.packet-tunnel` with the same capabilities.
-3. App Group `group.com.next1971.masque` on both IDs.
-4. App Store Connect → new iOS app with bundle ID `com.next1971.masque`.
-5. In Xcode: select your **Team** on both targets (Signing & Capabilities). Xcode should pick up the entitlements already in the repo.
+## Apple Developer setup
+
+Use a paid Apple Developer team for signed device/TestFlight distribution. Register both App IDs with Network Extensions / Packet Tunnel and App Groups, assign the shared App Group to both, create the app in App Store Connect, and set the signing team on both Xcode targets.
 
 ## Build on a Mac
 
-Requires **Xcode 16+**, **Go 1.25.5+** (CI uses 1.26.1), and a paid Apple Developer team for a device/TestFlight.
+Use the checked-out project's Xcode requirements and Go 1.25.5 or later. The existing project documentation uses Xcode 16+ as a baseline; the selected CI runner/workflow is authoritative for its build environment. A main-branch build is not automatically the published TestFlight binary.
+
+From the repository root:
 
 ```bash
-# 1. Shared Go core → xcframework (device + simulator)
 chmod +x ios/scripts/build-xcframework.sh
 ./ios/scripts/build-xcframework.sh
-
-# 2. Open the project, set the development team, then archive
 open ios/Masque.xcodeproj
 ```
 
-Or from the CLI (unsigned simulator compile, after the xcframework exists):
+Select the team on both targets, then archive. For an unsigned simulator compile after building the framework:
 
 ```bash
 cd ios
@@ -57,27 +61,21 @@ xcodebuild -project Masque.xcodeproj -scheme Masque \
   -configuration Debug CODE_SIGNING_ALLOWED=NO build
 ```
 
-If Swift cannot see `MobileDial` / `MobileConfig`, gomobile used un-prefixed names (`Dial`, `Config`) in the `Mobile` module — rename the calls in `PacketTunnelProvider.swift`.
+If generated Go symbols differ from Swift call sites, inspect the actual generated Mobile interface and rebuild the framework before changing bridge calls.
 
-## TestFlight via GitHub (no Mac)
+## TestFlight through GitHub Actions
 
-The workflow [.github/workflows/ios-testflight.yml](../.github/workflows/ios-testflight.yml) runs on GitHub’s Mac, signs an App Store IPA, and uploads it to TestFlight. Testers install from the [public link](https://testflight.apple.com/join/x52N41V1) or Internal Testing. You still need a physical iPhone. Do **not** click Submit for Review in App Store Connect (that would be the App Store listing, not TestFlight).
+The [TestFlight workflow](../.github/workflows/ios-testflight.yml) builds on a GitHub macOS runner, signs for App Store distribution, and uploads to TestFlight. Apple processing and external beta approval are separate from workflow success. Submitting an App Store listing for review is not the TestFlight upload step.
 
-Do this once. Keep `dist.key` / `.p12` / `.p8` off git (they are gitignored).
+Keep signing material under the ignored ios/signing-local/ directory or another secure local location, never in Git.
 
-### 1. API key (browser)
+### 1. API key and team
 
-1. [App Store Connect](https://appstoreconnect.apple.com) → **Users and Access** → **Integrations** → **App Store Connect API**.
-2. **Generate API Key**. Name `github-testflight`. Access **Admin** or **App Manager**.
-3. Download the `.p8` (once). Copy **Key ID** and **Issuer ID**.
+Create an App Store Connect API key with appropriate upload permissions. Save the .p8 privately and record Key ID, Issuer ID, and the Apple Team ID.
 
-### 2. Team ID (browser)
+### 2. Distribution certificate
 
-[developer.apple.com/account](https://developer.apple.com/account) → Membership details → **Team ID** (10 characters).
-
-### 3. Distribution certificate (Windows is fine)
-
-Git for Windows includes `openssl` (Git Bash).
+From the repository root (Git Bash/OpenSSL can be used on Windows):
 
 ```bash
 mkdir -p ios/signing-local
@@ -86,76 +84,48 @@ openssl genrsa -out dist.key 2048
 openssl req -new -key dist.key -out dist.csr -subj "/CN=MASQUE Apple Distribution/C=US"
 ```
 
-Or run `ios/scripts/make-distribution-csr.sh`.
-
-1. [Certificates](https://developer.apple.com/account/resources/certificates/list) → **+** → **Apple Distribution** → upload `dist.csr` → download the `.cer`.
-2. Put the `.cer` in `ios/signing-local` as `distribution.cer`, then:
+Alternatively use scripts/make-distribution-csr.sh from ios/. Upload the CSR when creating an Apple Distribution certificate, download distribution.cer into the same directory, then run there:
 
 ```bash
-cd ios/signing-local
 openssl x509 -in distribution.cer -inform DER -out dist.pem
 openssl pkcs12 -export -out dist.p12 -inkey dist.key -in dist.pem
 ```
 
-If OpenSSL 3 errors on export, add `-legacy`. Choose a password; you will store it as `P12_PASSWORD`.
+Keep the export password for P12_PASSWORD. If your OpenSSL/import combination requires legacy PKCS#12 compatibility, inspect the workflow error before recreating the export.
 
-### 4. Two App Store profiles (browser)
+### 3. Provisioning profiles
 
-[Profiles](https://developer.apple.com/account/resources/profiles/list) → **+** → **App Store Connect** (distribution), for each App ID, select the certificate from step 3:
+Create App Store Connect distribution profiles for both App IDs using that certificate. Save them as app.mobileprovision and tunnel.mobileprovision in ios/signing-local/. Both must carry the required capabilities and matching team.
 
-| Download and rename to | App ID |
-|---|---|
-| `app.mobileprovision` | `com.next1971.masque` |
-| `tunnel.mobileprovision` | `com.next1971.masque.packet-tunnel` |
+### 4. Repository secrets
 
-Put both files in `ios/signing-local`.
-
-### 5. GitHub Secrets
-
-Repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
-
-From the `.p8` file, paste the **entire** PEM (including `BEGIN` / `END` lines) into `APP_STORE_CONNECT_API_KEY`.
-
-Encode the three binaries (PowerShell, from the repo root):
+From the repository root:
 
 ```powershell
 powershell -File ios/scripts/encode-secrets.ps1
 ```
 
-That writes one-line `.txt` files in `ios/signing-local`. Paste each line into the matching secret:
+Configure Actions secrets to match the workflow:
 
 | Secret | Value |
 |---|---|
-| `APP_STORE_CONNECT_KEY_ID` | Key ID from step 1 |
-| `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID from step 1 |
-| `APP_STORE_CONNECT_API_KEY` | Full `.p8` text |
-| `APPLE_TEAM_ID` | Team ID from step 2 |
-| `P12_PASSWORD` | Password from the `pkcs12 -export` step |
-| `BUILD_CERTIFICATE_BASE64` | contents of `BUILD_CERTIFICATE_BASE64.txt` |
-| `BUILD_PROVISION_PROFILE_APP_BASE64` | `BUILD_PROVISION_PROFILE_APP_BASE64.txt` |
-| `BUILD_PROVISION_PROFILE_EXT_BASE64` | `BUILD_PROVISION_PROFILE_EXT_BASE64.txt` |
+| APP_STORE_CONNECT_KEY_ID | API Key ID |
+| APP_STORE_CONNECT_ISSUER_ID | API Issuer ID |
+| APP_STORE_CONNECT_API_KEY | Complete private .p8 PEM |
+| APPLE_TEAM_ID | Developer Team ID |
+| P12_PASSWORD | Certificate export password |
+| BUILD_CERTIFICATE_BASE64 | Encoded dist.p12 |
+| BUILD_PROVISION_PROFILE_APP_BASE64 | Encoded app profile |
+| BUILD_PROVISION_PROFILE_EXT_BASE64 | Encoded extension profile |
 
-### 6. Run the workflow
+Run Actions → TestFlight → Run workflow on the intended branch. Check signing/upload logs, then App Store Connect → TestFlight for processing and distribution status. Record the actual published build and expiry there. Never attach secret values to an issue.
 
-GitHub → **Actions** → **TestFlight** → **Run workflow** → branch `main`.
+## Security and limitations
 
-The first run often takes 20–40 minutes (gomobile). If it fails, open the log: missing secret, wrong profile type (must be App Store, not Development), or OpenSSL/p12 password.
+- profile.masque includes a client private key. Import and transfer it privately.
+- Keep insecure = false. A private-CA browser warning on the server's TCP page is not a reason to disable VPN server verification.
+- The TCP page does not grant VPN access. A valid certificate and CONNECT-IP request are still required.
+- IPv4/IPv6 transport and IPv4/IPv6 inside the tunnel are separate; validate the actual device path rather than assuming platform parity.
+- The extension's APPLICATION_EXTENSION_API_ONLY setting and Go runtime integration require ongoing review; successful compilation is not an independent security audit.
 
-When it succeeds: App Store Connect → **TestFlight** (not the store listing). After Apple processes the build (sometimes 10+ minutes), it can go to Internal Testing and, after Beta App Review, External Testing / the public link.
-
-## Use
-
-1. Install [TestFlight](https://apps.apple.com/app/testflight/id899247664), then open [https://testflight.apple.com/join/x52N41V1](https://testflight.apple.com/join/x52N41V1) on the iPhone.
-2. Import a real `profile.masque` (the sample in the app bundle is format-only).
-3. Allow VPN when iOS asks.
-4. Connect. Ping is the RTT to the MASQUE server (QUIC, or HTTP/2 PING when the session is TCP).
-
-A profile with `alt_port` is tried on that UDP port when the profile port does not answer. If both UDP ports fail and transport is Automatic, the extension opens TCP on those same ports. A hostname is resolved to AAAA and A; IPv6 is tried first. The in-tunnel IPv6 default route stays off.
-
-Settings has transport, MTU (default 1340), and a kill switch (default off). The kill switch blocks internet if the tunnel drops, until the app reconnects or you disconnect. A connect that never comes up does not leave the block on. If the VPN is turned off in iOS Settings, open MASQUE once so it can restore internet.
-
-## Notes
-
-- Go lives in the **extension**, not the host app. The profile is stored in the App Group so the extension can read certificates.
-- There is no Android-style `protect(fd)`. The tunnel excludes the server address (IPv4 or IPv6) from the default route so the session does not loop into itself.
-- `APPLICATION_EXTENSION_API_ONLY` is off for the extension because the Go runtime is not app-extension-safe. This is the usual gomobile VPN compromise.
+See [server guide](../server/README.md), [client profiles](../docs/CLIENTS.md), [security policy](../SECURITY.md), and [roadmap](../docs/ROADMAP.md).
