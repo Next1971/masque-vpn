@@ -1,155 +1,92 @@
-# MASQUE VPN — Android client
+# MASQUE VPN — Android and Android TV
 
-A minimal Android VPN client on the same Go core (`clientcore`) as Windows/Linux: shared profile format and shared QUIC / HTTP/3 CONNECT-IP (MASQUE) logic.
+Android clients use Kotlin, VpnService, and a shared Go core packaged as masque.aar through gomobile. The published v2.1.0 clients support HTTP/3 CONNECT-IP over QUIC/UDP and HTTP/2 CONNECT-IP over TLS/TCP.
 
-The core is an `.aar` from **gomobile**. Kotlin supplies `VpnService`, a small UI, and profile import.
+## Install a published APK
 
-**v1.3** added QUIC keepalives, a battery-exemption prompt, reconnect without tearing the TUN, and Wi-Fi → LTE recovery (sticky `/32` on the server). **v1.3.1** added **Paste config from clipboard** on Android TV. **v1.4** added the app icon and on-screen **Ping**. **v1.4.1** bumps the Android toolchain (AGP 9 / Gradle 9), shows the **version** in the UI, sinks IPv6 so apps cannot bypass the VPN, and uses TUN `/24` on-link. **v1.5.0** forwards IPv6 through the tunnel when the server assigns a ULA address. **v1.5.1** sets TUN MTU to **1369** from path MTU tests. **v1.5.2** adds an optional **kill switch** (default off). **v1.5.3** fixed the TV Connect crash. **v1.5.4** (pre-release) races the profile port and optional `alt_port`. **v1.5.6** is optional: QUIC to the server over IPv6. **v1.7.1** is GitHub **Latest**: phone and TV APKs on `connect-ip-go` v0.4.0. They still connect to a 1.5.x server. **v2.0.0** is a pre-release experiment ([release](../../releases/tag/v2.0.0)): TUN MTU **1340**, no TCP/UDP switch. UDP is normal; TCP opens on the same ports only when UDP does not answer. `versionCode` **25**.
+1. Download masque-phone-2.1.0.apk or masque-tv-2.1.0.apk from [v2.1.0](../../releases/tag/v2.1.0).
+2. Allow installation from the source used to open the APK, then install the correct flavor.
+3. Import a real profile.masque issued for this device. The bundled sample is a format example, not working credentials.
+4. Grant VPN permission. On phones, allow the battery-optimization exemption if requested.
+5. Choose Automatic, UDP only, or TCP only; leave MTU at the default 1340 initially. Connect.
+6. Check that the public exit address is your VPS address. Disconnect using the app.
 
-Use a **release APK** if you only want to connect. The rest of this file is for building from source.
+The kill switch is optional and off by default. v2.1.0 also provides day/month traffic statistics and ping during TCP sessions. QUIC ping is the smoothed QUIC RTT; TCP ping is not QUIC RTT. Automatic is not a fastest-transport benchmark.
 
----
-
-## Contents
-
-```
-android/
-├─ app/
-│  ├─ src/main/             # shared: VpnService, ProfileStore, BatteryExemption
-│  ├─ src/phone/            # handset UI (file import)
-│  ├─ src/tv/               # leanback UI (clipboard + paste-text)
-│  ├─ src/main/assets/sample-profile.masque   # format sample, not a real secret
-│  └─ libs/                 # place masque.aar here (build step)
-├─ go-src/masque-vpn/   # Go module (core + gomobile `mobile/` + server)
-├─ scripts/build-aar.bat
-└─ README.md
-```
-
-Product flavors (side by side):
-
-| Flavor | Application ID | Import |
-|---|---|---|
-| **phone** | `com.next1971.masque` | **Import Profile** (file picker) |
-| **tv** | `com.next1971.masque.tv` | **Paste config from clipboard** (preferred) or **Import profile (paste text)** |
-
-Each device needs its own `profile.masque`. See [Issuing client configs](../docs/CLIENTS.md).
-
----
-
-## Toolchain (must match the build)
-
-These are the versions in `go.mod`, the Android project files, and GitHub Actions — not the older “Go 1.21 / SDK 34 only” wording.
-
-| Piece | Version |
-|---|---|
-| **Go** | **1.25.5 or later** (`android/go-src/masque-vpn/go.mod`). CI uses **1.26.1**. |
-| **JDK** | **17** (`sourceCompatibility` / `jvmTarget`; CI Temurin 17) |
-| **Gradle** | **9.5.0** (wrapper; required by AGP 9.3+) |
-| **Android Gradle Plugin** | **9.3.2** (built-in Kotlin; no separate `kotlin-android` plugin) |
-| **compileSdk** | **36** |
-| **targetSdk** | **34** (set explicitly; AGP 9 would otherwise default to compileSdk) |
-| **minSdk** | **24** (Android 7.0; same as `gomobile bind -androidapi 24`) |
-| **NDK** | **29.0.13599879** (r29 side-by-side), pinned as `ndkVersion` and in CI. Not the obsolete NDK package. |
-
-In Android Studio, install via SDK Manager:
-
-- Android SDK Platform **36** (compile) and platform tools
-- **NDK (Side by side)** matching **29.0.13599879** (or set `ANDROID_NDK_HOME` to that folder)
-- CMake if Studio offers it with the NDK
-
----
-
-## Use a release APK
-
-1. Download `masque-phone-1.7.1.apk` or `masque-tv-1.7.1.apk` from [v1.7.1](../../releases/tag/v1.7.1) ([Latest](../../releases/latest)). A 1.5.x server still accepts this client. The experiment is [v2.0.0](../../releases/tag/v2.0.0): `masque-phone-2.0.0.apk` and `masque-tv-2.0.0.apk`.
-2. Install the phone or TV APK (allow installation from unknown sources).
-3. Import a real `profile.masque` from the server generator. The APK also ships a non-production `sample-profile.masque` in assets so you can see the expected format — do not use it to connect.
-4. Grant **VPN** permission. On Connect the app may ask to **ignore battery optimizations** — allow it so keepalives can run with the screen off.
-5. Connect. A MASQUE icon in the status bar means the VPN is up. The screen shows **Ping** (QUIC RTT to the server) and the app **version**.
-6. Check `https://ifconfig.me` — you should see the **server** address.
-
-Disconnect with **Disconnect** in the app.
+Use one profile per device. Existing profiles and certificates remain unchanged. Older servers remain usable over UDP; TCP requires a v2.0.0 or v2.1.0 server. Prefer the current v2.1.0 server for the documented TCP website behavior.
 
 ### Phone
 
-Transfer `profile.masque` to the device → **Import Profile** → pick the file → **Connect**.
+Transfer profile.masque privately, open Import Profile, select it, and connect.
 
 ### Android TV
 
-Many TVs have no file manager and a broken IME paste. Prefer:
+Use Paste config from clipboard while the app is in the foreground, or Import profile (paste text). Transfer the complete TV-specific profile privately; do not reuse the phone's active profile. Clipboard contents include credentials, so clear them after import where possible.
 
-1. On a phone or PC, copy the **entire** contents of that TV’s `profile.masque`.
-2. Get the text onto the TV clipboard (USB / nearby share / a TV browser — whatever works on that box).
-3. In **MASQUE VPN (TV)** choose **Paste config from clipboard** (one remote click; the app must be in the foreground).
-4. If the clipboard is empty or unreadable, use **Import profile (paste text)** and paste into the dialog.
-5. **Connect** (VPN permission, then battery exemption if shown).
+## Source tree and build versions
 
-Do not reuse one bundle on the phone and the TV at the same time.
+| Path | Purpose |
+|---|---|
+| app/src/main/ | Shared service, profile storage, and lifecycle |
+| app/src/phone/ | Phone UI |
+| app/src/tv/ | TV UI and paste import |
+| app/libs/masque.aar | Locally built Go bridge |
+| go-src/masque-vpn/ | Shared Go module and server |
 
----
+Phone package: com.next1971.masque. TV package: com.next1971.masque.tv; both can be installed side by side.
+
+These are the checked main-branch settings, not an assertion that every published APK was built with identical settings:
+
+| Component | Setting |
+|---|---|
+| Go | 1.25.5 or later |
+| JDK / JVM target | 17 |
+| Android Gradle Plugin | 9.4.1 |
+| Gradle wrapper | 9.8.1 |
+| compileSdk / targetSdk / minSdk | 36 / 34 / 24 |
+| NDK | 29.0.13599879 |
+
+At this documentation update, main still declares versionName 2.0.0 and versionCode 25 in app/build.gradle.kts. That is separate from the published v2.1.0 assets. For release reproduction, inspect the v2.1.0 tag and its workflow rather than assuming main is the release tree.
 
 ## Build from source
 
-### 1. Build `masque.aar`
+Install Android SDK Platform 36, JDK 17, and the pinned side-by-side NDK. Set ANDROID_HOME and ANDROID_NDK_HOME.
 
-Set:
-
-- `ANDROID_HOME` — SDK, e.g. `%LOCALAPPDATA%\Android\Sdk`
-- `ANDROID_NDK_HOME` — NDK, e.g. `%LOCALAPPDATA%\Android\Sdk\ndk\29.0.13599879`
-
-**Windows** (from `android\`):
+From android/ on Windows:
 
 ```bat
 scripts\build-aar.bat
 ```
 
-**Manual / Linux** (same as CI):
+Manual AAR build from android/:
 
 ```bash
 go install golang.org/x/mobile/cmd/gomobile@latest
 go install golang.org/x/mobile/cmd/gobind@latest
 export PATH="$(go env GOPATH)/bin:$PATH"
 gomobile init
-
 cd go-src/masque-vpn
 gomobile bind -target=android -androidapi 24 -o ../../app/libs/masque.aar ./mobile
 ```
 
-Success: `app/libs/masque.aar` (native `.so` for arm64 / armeabi-v7a / x86_64).
+Open android/ in Android Studio, select phone or tv, and build the APK. Outputs are under app/build/outputs/apk/. Rebuild the AAR whenever the Go core changes.
 
-If `gomobile bind` complains about the NDK, check `ANDROID_NDK_HOME` points at **29.0.13599879**, not “NDK (obsolete)”.
-
-### 2. APK in Android Studio
-
-1. **File → Open** the `android/` directory. Accept `local.properties` / `sdk.dir` if asked.
-2. Confirm `app/libs/masque.aar` exists (`implementation(files("libs/masque.aar"))`).
-3. **Build → Build Bundle(s) / APK(s) → Build APK(s)** (uses the selected flavor), or **Generate Signed Bundle / APK** with your keystore.
-
-Outputs land under `app/build/outputs/apk/` (e.g. `phone/debug/app-phone-debug.apk`, `tv/debug/app-tv-debug.apk`). Without `keystore.properties` a release APK is unsigned (sideload only). Rebuild `masque.aar` after Go-core changes (including ping) or the UI will not see them.
-
----
+For a distributable release, configure keystore.properties with storeFile, storePassword, keyAlias, and keyPassword. Without a signing configuration the release output is unsigned; sign it before installation or distribution. Never commit the keystore or its passwords.
 
 ## How it works
 
-- **VpnService** creates TUN with the **server-assigned** `/32` (two-phase: Dial → read address → `establish` → `StartWithFD`), `0.0.0.0/0`, and DNS from the profile. It tracks the underlying network (`NetworkCallback`, `setUnderlyingNetworks`, `protect` / `bindSocket` on the QUIC UDP fd) so Wi-Fi → LTE does not leave the socket on a dead path.
-- The **Go core** wraps the TUN `fd` and forwards packets. If QUIC dies, the same TUN stays up and a new session is dialed. Keepalives: 15s period, 3 min idle.
-- Certificates live in app-private `files/certs/`.
-- After sleep, the UI stays on **Disconnect** if the VPN is still running (it does not show a false “profile ready / Connect”).
+VpnService establishes the VPN interface using the server-assigned address. The Go core forwards packets between that interface and CONNECT-IP. Platform integration keeps the underlying transport outside the VPN route. Android reconnect handling can retain the TUN while rebuilding a session after a network change.
 
----
+Certificates are kept in app-private storage. A real profile contains the client private key.
 
-## Security
+## Limitations and troubleshooting
 
-- A real `profile.masque` contains the **client private key**. Distribute out-of-band; do not commit it. The asset `sample-profile.masque` is a non-production format example.
-- `.gitignore` excludes `app/libs/masque.aar`.
+- One current server/profile; phone and TV use separate APKs.
+- DNS inside the tunnel is plaintext UDP:53, visible at the VPS. This is not built-in DoH/DoT.
+- The application kill switch depends on the service remaining alive. Use Android Always-on VPN / Block connections without VPN when OS-level blocking is required, and test it on the device.
+- OEM battery restrictions can stop the service despite an exemption.
+- Test UDP only and TCP only separately when diagnosing reachability. The VPS firewall and cloud security group must allow the corresponding protocol.
+- A TCP website is not proof that VPN authentication or routing works. The private-CA browser warning is not a reason to disable client server-verification.
+- IPv6 transport to the VPS and IPv6 packets inside the tunnel are different capabilities; verify both when needed.
 
-## Known limitations
-
-- One server/profile (no list). UI is intentionally small.
-- Tunnel DNS is plaintext UDP:53 (hidden from the local ISP, visible on the server).
-- Kill switch (v1.5.2+) only lasts while the VPN app/service is running. Enable Android **Always-on VPN** / **Block connections without VPN** if a killed process must stay blocked.
-- Some OEM battery savers ignore the exemption dialog; if the process is killed, Connect again.
-- Phone and TV are separate APKs (build the **phone** or **tv** flavor in Studio).
-- **v1.5.4+** races `[server].address` and optional `alt_port` (any second UDP port on the same host). Omit `alt_port` for a single port. If the path drops UDP 443, use the [VPS redirect](../server/README.md#udp-443-blocked-on-the-client-path) and set `alt_port` to the DNAT port.
-
-Android stability tests for this line are complete (including **8 hours** of airplane mode, after which the tunnel came back cleanly). Other platform limits are listed in the [roadmap](../docs/ROADMAP.md).
+See [server deployment](../server/README.md), [client profiles](../docs/CLIENTS.md), [security policy](../SECURITY.md), and [roadmap](../docs/ROADMAP.md). Earlier test results describe their tested builds and paths, not a blanket stability guarantee for every release.

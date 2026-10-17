@@ -1,104 +1,69 @@
 # MASQUE VPN server installation
 
-This guide is tested on **Ubuntu 22.04**. Any modern systemd Linux with a public IP should work. All commands are run as `root` (or with `sudo`).
+This guide describes the v2.1.0 server. HTTP/3 CONNECT-IP over QUIC/UDP is the normal tunnel; HTTP/2 CONNECT-IP over TLS/TCP uses the same port number. VPN access requires a valid client certificate.
 
-From Windows you can use **`masque-setup.exe`** (see [windows/README.md](../windows/README.md)) to SSH in, check the OS, pick a UDP port, open **ufw** if it is installed, and deploy this same layout. The GUI installer only supports **Ubuntu 22.04/24.04/26.04** and **Debian 12**.
+On TCP, a valid client certificate plus an HTTP/2 CONNECT-IP request opens the VPN. Browsers and connections without a valid client certificate receive an HTML page, not tunnel access. The server certificate is signed by the private CA, so a browser shows a certificate warning. UDP does not serve a website.
 
-The server tunnels IP traffic over QUIC + HTTP/3 CONNECT-IP and authenticates clients with mutual TLS (mTLS). From **v1.3** the server also:
+Experimental software; no independent security audit. Review privileged commands before use.
 
-- sends QUIC keepalives (`KeepAlivePeriod` 15s, `MaxIdleTimeout` 3 minutes);
-- pins each client certificate CN to a stable tunnel `/32` so Android can reconnect without rebuilding the TUN.
+## Choose a deployment path
 
-**v1.4** / **v1.4.1** clients talk to the same v1.3+ server protocol (sticky `/32` after reconnect). **v1.4.1** adds optional **Docker** packaging (`server/docker-compose.yml`) and **graceful shutdown** on `SIGTERM`/`SIGINT`. **v1.5** optionally assigns ULA IPv6 (`fd00:8::/64`) inside the tunnel (sticky `/128`) and NAT66s it to the VPS WAN IPv6. IPv4-only configs without the v6 keys keep working. Old Android APKs sink IPv6 instead of forwarding it. **v1.5.1** adds a CN denylist (`/opt/masque/blocked_cns`) and documents a UDP 443 fallback redirect. New client profiles default TUN MTU **1369**.
+- Manual installation below: Linux VPS with systemd, a public address, and /dev/net/tun. The manual guide was tested on Ubuntu 22.04.
+- install.sh from [v2.1.0](../../releases/tag/v2.1.0): fresh Ubuntu/Debian installation as root, with MASQUE_HOST and MASQUE_PORT. It checks SHA256SUMS and refuses to overwrite an existing CA, configuration, or service. Review the script before running it; it is not an in-place upgrade command.
+- [Windows VPS Setup Helper](../windows/README.md#install-the-server-from-windows-masque-setupexe): experimental; Ubuntu 22.04/24.04/26.04 or Debian 12. The v2.1.0 wizard deploys UDP and TCP, an optional second port, and displays a profile QR.
+- [Docker](#docker): experimental Linux-host deployment.
 
-The server binary on the VPS stays the 1.5.x build. It binds `[::]:port` (from v1.5.6) so QUIC can arrive over IPv4 or IPv6. A 1.7.1 client still connects to it. `masque-setup.exe` still picks one UDP port and an IPv4/DNS public host; use `gen-config.sh --alt-port` / `--dial` (or `MASQUE_DIAL` on `install.sh`) for a second port or an IPv6 literal.
+For an existing installation, preserve the CA, certificates, profiles, and configuration. Inspect the actual systemd ExecStart path before replacing its binary; do not generate a new CA merely to upgrade. A v2.0.0 server can be replaced with v2.1.0 without issuing new profiles. Back up credentials/configuration securely and plan a maintenance window.
 
-**v2.0.0** is a pre-release experiment, not Latest ([release](../../releases/tag/v2.0.0)). That server listens for CONNECT-IP on UDP and TCP on the same port. Client tunnel MTU is **1340**. Older UDP clients still connect. TCP fallback needs this binary. Install with `install.sh` or Docker (image `masque-vpn-server:2.0.0`, archive `masque-docker-2.0.0.zip`). `masque-setup.exe` is not in that release.
+## 1. Prerequisites and network access
 
-> Keep the CA private key, server private key, and client private keys out of Git and distribute client bundles only through a secure channel.
+Run administrative commands as root or with sudo. Install git, build-essential, openssl, and iptables through the distribution package manager. A source build requires Go 1.25.5 or later. Prebuilt binaries do not require a Go compiler.
 
-## 1. Prerequisites
+Allow the configured port separately for UDP and TCP in both the host firewall and cloud security group. This guide uses 4433 as an example; use the actual port from your configuration and profiles.
 
-```bash
-# Go 1.25+ (to build the server binary)
-cd /tmp
-curl -fsSLO https://go.dev/dl/go1.25.5.linux-amd64.tar.gz
-rm -rf /usr/local/go && tar -C /usr/local -xzf go1.25.5.linux-amd64.tar.gz
-export PATH=$PATH:/usr/local/go/bin
-go version
+### UDP socket buffers
 
-# Build tools + openssl + iptables
-apt-get update
-apt-get install -y git build-essential openssl iptables
-```
-
-Open the server's UDP port in your firewall and cloud security group. The default is **UDP 4433**. If you choose another port, change it consistently in the server configuration, client profiles, firewall rules, and service setup. If clients cannot reach **UDP 443**, keep the process bound to 443 and add a VPS redirect — see [UDP 443 blocked on the client path](#udp-443-blocked-on-the-client-path).
-
-### UDP socket buffers (required)
-
-QUIC holds many UDP datagrams in the kernel while the process reads them. Stock Linux `net.core.rmem_max` / `net.core.wmem_max` are about **208 KiB**. Under VPN load the receive queue fills, the kernel **drops datagrams**, and clients see loss, retransmits, and a slow tunnel.
-
-Raise both ceilings to **64 MiB** (`67108864` bytes) — the size used on the reference server:
+From the repository root:
 
 ```bash
 cp server/sysctl/99-masque-udp.conf /etc/sysctl.d/99-masque-udp.conf
 sysctl --system
 sysctl net.core.rmem_max net.core.wmem_max
-# expect: 67108864
+# Reference ceiling for both: 67108864 (64 MiB)
 ```
 
-The systemd unit also applies the same `sysctl -w` values on every start. Keep the `/etc/sysctl.d/` file so the limits survive reboot even if the service is not running yet. You do not need to change `config.server.toml` for this.
+These ceilings help QUIC avoid kernel queue drops under load. The supplied systemd unit also applies them at startup. They are not TCP tuning or a guarantee of throughput.
 
-## 2. Get the code and build the server
+## 2. Obtain the server
 
-You can compile on the VPS, or copy a **prebuilt** `vpn-server-linux-amd64` / `vpn-server-linux-arm64` from GitHub Actions artifacts (and, when a GitHub Release is published, from the release files). The binary contains **no certificates or keys** — you still run `gen-config.sh` on the server (or keep an existing CA).
+Download vpn-server-linux-amd64 or vpn-server-linux-arm64 for the VPS architecture from [v2.1.0](../../releases/tag/v2.1.0), and check the matching SHA256SUMS entry before deployment. The binary contains no certificates or keys.
 
-```bash
-# Example: copy the matching artifact onto the VPS, then:
-install -m 0755 vpn-server-linux-amd64 /opt/masque/vpn-server
-```
-
-To build from source (Go 1.25+):
+To build the tagged release instead:
 
 ```bash
-git clone https://github.com/Next1971/masque-vpn.git
+git clone --branch v2.1.0 --depth 1 https://github.com/Next1971/masque-vpn.git
 cd masque-vpn/android/go-src/masque-vpn
 go build -trimpath -ldflags "-s -w" -o vpn-server ./cmd/poc-server
 ```
 
-The binary is built from `cmd/poc-server`. On the VPS you can name it `vpn-server` or `poc-server`; the systemd unit’s `ExecStart=` must match. Common layouts are `/opt/masque/vpn-server` or `/opt/masque/bin/poc-server`. **v1.3 must replace this binary**; client reconnect is not enough if the server still hands out a new `/32` every session.
-
-## 3. Deploy the binary
+For a fresh manual installation, put the resulting binary at the path used by the supplied unit:
 
 ```bash
 mkdir -p /opt/masque
-cp vpn-server /opt/masque/vpn-server
+install -m 0755 vpn-server /opt/masque/vpn-server
 ```
 
-## 4. Generate certificates and configuration
+For a downloaded binary, substitute its actual filename. Do not overwrite a running binary as an unplanned upgrade; stop the service and preserve a rollback copy first.
 
-The generator creates the CA, the server certificate with the correct SAN, and ready-to-use client bundles for Windows and Android in one step.
+## 3. Generate certificates and configuration
+
+For a fresh installation, from server/scripts/:
 
 ```bash
-cd /path/to/masque-vpn/server/scripts
-
-# Replace the host with YOUR server's public domain or IP.
-# --ip adds an extra IP to the server certificate SAN. Use it when clients may
-# connect by IP even though --host is a domain.
 ./gen-config.sh --host vpn.example.com --ip 203.0.113.10 --clients 1
 ```
 
-This produces `./out/`:
-
-```text
-out/
-├── ca/                     internal CA  (ca.crt, ca.key)  << KEEP ca.key SECRET / BACK IT UP
-├── server/                 server bundle (config.server.toml, server.crt, server.key, ca.crt)
-├── windows/                Windows client bundle (profile.client.toml + certs/)
-└── android/                Android client bundle (profile.masque + certs/)
-```
-
-Install the server bundle:
+Replace the example host and IP. The server identity must match its certificate SAN. The generator produces out/ca/, out/server/, and client bundles. Keep ca.key secret and backed up. Issue a separate bundle for every device; see [client configurations](../docs/CLIENTS.md).
 
 ```bash
 mkdir -p /opt/masque/cert
@@ -107,115 +72,109 @@ cp out/server/config.server.toml /opt/masque/config.server.toml
 chmod 600 /opt/masque/cert/server.key
 ```
 
-Deliver the `windows/` bundle to Windows users and the `android/profile.masque` file to Android users over a secure channel. To add more clients later without invalidating existing ones, reuse the CA:
+Transfer profile.masque privately for Android, Windows, or iOS. To issue additional credentials under the same CA, reuse the original CA rather than regenerating it:
 
 ```bash
 ./gen-config.sh --host vpn.example.com --reuse-ca ./out/ca --clients 1
 ```
 
-## 5. Install the systemd service
+The CA directory must be the original one. Check the generator's output and the client guide before distributing new bundles.
+
+## 4. Install the service
+
+From the repository root, inspect the unit first. Check ExecStart, configuration paths, tunnel settings, and the WAN interface used by its NAT rules. Find the WAN interface with ip route get 1.1.1.1.
 
 ```bash
-# Edit server/systemd/masque.service if your public interface is not "eth0"
-# (iptables and ip6tables -o). Find it with: ip route get 1.1.1.1  → the "dev XXX" name.
 cp server/systemd/masque.service /etc/systemd/system/masque.service
 systemctl daemon-reload
 systemctl enable --now masque.service
 systemctl status masque.service --no-pager
 ```
 
-The unit enables IP forwarding, raises UDP `rmem_max`/`wmem_max` to 64 MiB, and adds an iptables MASQUERADE rule so client traffic is NATed out to the internet.
+The supplied unit configures forwarding, UDP buffer ceilings, and NAT. Graceful shutdown is supported on SIGTERM/SIGINT.
 
-## 5b. Docker (optional)
+## Docker
 
-Prefer a **Linux VPS** with Docker Engine. Host networking + `/dev/net/tun` match the systemd install. Docker Desktop on Windows/macOS is a poor fit for TUN/NAT.
+Use a Linux host with Docker Engine. Host networking, NET_ADMIN, and /dev/net/tun are required. Docker Desktop is not the reference deployment.
+
+The release provides masque-docker-2.1.0.zip with Docker sources, not a prebuilt image tarball. The documented image tag is masque-vpn-server:2.1.0. Build against the matching release tree.
+
+After generating configuration, from the repository root, adjust the source paths below if your out/ directory is under server/scripts/:
 
 ```bash
-# From the repo root, after gen-config.sh:
 mkdir -p server/data/cert
-cp out/server/config.server.toml server/data/
-cp out/server/server.crt out/server/server.key out/server/ca.crt server/data/cert/
-# Edit bind/server_name in config if needed (e.g. 0.0.0.0:443).
-
+cp server/scripts/out/server/config.server.toml server/data/
+cp server/scripts/out/server/server.crt server/scripts/out/server/server.key server/scripts/out/server/ca.crt server/data/cert/
+chmod 600 server/data/cert/server.key
 docker compose -f server/docker-compose.yml up -d --build
 docker logs -f masque
 ```
 
-The image builds `vpn-server` from `android/go-src/masque-vpn`. The entrypoint enables forwarding, 64 MiB UDP buffers, and MASQUERADE on the default WAN interface (`MASQUE_WAN_IF` to override). Mount only config + certs — no secrets are baked into the image.
+The entrypoint configures forwarding, UDP buffers, and NAT on the default WAN interface; MASQUE_WAN_IF overrides the interface. Mount configuration and certificates separately; do not bake credentials into the image.
 
-Graceful shutdown: the process exits on `SIGTERM`/`SIGINT` (Compose `stop`, systemd stop).
+## 5. Verify both transports
 
-## 6. Verify
+For the example port 4433:
 
 ```bash
-# Should show the server listening on UDP 4433
-ss -ulnp | grep 4433
-
-# Follow logs
+ss -ulnp | grep ':4433'
+ss -tlnp | grep ':4433'
 journalctl -u masque -f
 ```
 
-You should see lines similar to `mTLS ENABLED`, `listening on 0.0.0.0:4433`, and `IP pool ... ready`.
+Check the actual configured port, not just the example. Listening locally does not prove the cloud firewall allows traffic. Test an authenticated client over UDP and TCP separately, then verify the exit address, DNS, and application traffic. The TCP page alone is not a VPN test.
 
-## 7. Server configuration reference
-
-`config.server.toml`:
+## 6. Configuration reference
 
 ```toml
 [server]
-bind        = "0.0.0.0:4433"       # UDP listen address:port
-server_name = "vpn.example.com"    # must match the server certificate CN/SAN
+bind = "0.0.0.0:4433" # UDP and TCP port for this example
+server_name = "vpn.example.com"
 
 [tls]
-cert      = "/opt/masque/cert/server.crt"
-key       = "/opt/masque/cert/server.key"
-client_ca = "/opt/masque/cert/ca.crt"   # mTLS: clients verified against this CA
-# Optional extra blocked CNs (v1.5.1). One CN per line is also read from /opt/masque/blocked_cns.
+cert = "/opt/masque/cert/server.crt"
+key = "/opt/masque/cert/server.key"
+client_ca = "/opt/masque/cert/ca.crt"
 # blocked_cns = ["masque-client-7"]
 
 [tun]
 name = "masque0"
-mtu  = 1369
+mtu = 1369
 
 [network]
-tun_addr  = "10.8.0.1/24"    # server address on the tunnel
-pool_cidr = "10.8.0.0/24"    # client address pool
-route     = "0.0.0.0/0"      # route advertised to clients (0.0.0.0/0 = full tunnel)
-# Optional dual-stack (v1.5). Omit all three to stay IPv4-only.
-# tun_addr_v6  = "fd00:8::1/64"
+tun_addr = "10.8.0.1/24"
+pool_cidr = "10.8.0.0/24"
+route = "0.0.0.0/0"
+# Optional IPv6 inside the tunnel:
+# tun_addr_v6 = "fd00:8::1/64"
 # pool_cidr_v6 = "fd00:8::/64"
-# route_v6     = "::/0"
+# route_v6 = "::/0"
 ```
 
-IPv6 in the tunnel needs WAN IPv6 on the VPS, `net.ipv6.conf.all.forwarding=1`, and ip6tables MASQUERADE for `fd00:8::/64` on the public interface (see `masque.service`). Clients still connect over IPv4 QUIC; do not publish an AAAA for the VPN hostname until a host-route bypass exists for that address.
+Server TUN MTU is separate from the v2.1.0 Android/TV/Windows client default of 1340. Preserve the values appropriate for the deployed configuration.
+
+IPv6 transport to the VPS and IPv6 inside the tunnel are separate. QUIC over IPv6 is supported in the newer client line; the old IPv4-only warning is not a blanket restriction on current clients. IPv6 inside the tunnel requires WAN IPv6, IPv6 forwarding, matching client routes, and appropriate NAT66/firewall rules. Account for older clients before publishing AAAA records.
 
 ### UDP 443 blocked on the client path
 
-Some networks (mobile carriers, hotel Wi-Fi, a few VPS providers on the *egress* side) drop **outbound UDP 443** while other UDP ports still work. The MASQUE listener can stay on UDP 443. On the VPS, open an alternate port and redirect it to 443. **2053** is the usual choice.
+First test TCP only with a compatible server. Another option is an alternate external port mapped to the same listener. For example, with the process bound to 443, allow 2053 in both firewalls and redirect both transports if both are needed:
 
 ```bash
-# Cloud security group + host firewall must allow the alternate port.
 ufw allow 2053/udp
 ufw allow 2053/tcp
-
-# Keep the server bound to 443. Redirect inbound 2053 → 443 for both transports.
 iptables -t nat -C PREROUTING -p udp --dport 2053 -j REDIRECT --to-ports 443 2>/dev/null \
   || iptables -t nat -A PREROUTING -p udp --dport 2053 -j REDIRECT --to-ports 443
 iptables -t nat -C PREROUTING -p tcp --dport 2053 -j REDIRECT --to-ports 443 2>/dev/null \
   || iptables -t nat -A PREROUTING -p tcp --dport 2053 -j REDIRECT --to-ports 443
-
-# Persist on Debian/Ubuntu
-apt-get install -y iptables-persistent
-netfilter-persistent save
 ```
 
-Then set the client profile `address` (or `[server].server`) to `your.host:2053`. TLS `server_name` stays the hostname from the certificate. Do **not** change `bind` in `config.server.toml` for this workaround. The TCP redirect uses the same alternate port, so a client that falls back from UDP reaches the same process.
+These iptables commands describe IPv4 redirection. Configure and test IPv6 separately if required. Persist firewall rules using the mechanism appropriate for your VPS. Do not flush unrelated firewall rules.
 
-**v1.5.4** clients race the profile port and optional `[server].alt_port` (first QUIC handshake wins). Older clients ignore `alt_port` and dial **one** port. Generate it with `gen-config.sh --alt-port 2053` (or any port you DNAT/listen on).
+Use the reachable external port in the profile, or generate optional alt_port with gen-config.sh --alt-port 2053. Keep server_name matching the certificate; a port change does not change TLS identity.
 
 ### Revoking a client CN
 
-This is a server-side denylist, not a certificate CRL. Append the mTLS Common Name (for example `masque-client-7`) to `/opt/masque/blocked_cns`, one name per line, then restart:
+The server denylist is not a PKI CRL. Add the exact CN and restart during a maintenance window:
 
 ```bash
 printf '%s\n' 'masque-client-7' >> /opt/masque/blocked_cns
@@ -223,18 +182,17 @@ chmod 0644 /opt/masque/blocked_cns
 systemctl restart masque.service
 ```
 
-`masque-setup.exe` (v1.5.1) does the same from Windows. The process reads the file at **start**; a live session for that CN is dropped on restart. The certificate files are not deleted.
+The process reads the file at startup. Restart interrupts existing sessions. Certificate files are not deleted.
 
 ## Troubleshooting
 
-| Symptom | Checks |
+| Symptom | Check |
 |---|---|
-| No connection | Confirm the UDP port in the **profile** is open in the VPS firewall and cloud firewall; if that port is 443 and packets never arrive, use [UDP 443 blocked on the client path](#udp-443-blocked-on-the-client-path) |
-| HTTP 403 / rejected blocked CN | CN is in `/opt/masque/blocked_cns` or `tls.blocked_cns`; restart after editing the file |
-| Service fails to start | Run `systemctl status masque.service --no-pager` and `journalctl -u masque -f` |
-| Connected but slow / high loss | Confirm `sysctl net.core.rmem_max` and `wmem_max` are **67108864** (64 MiB); see [UDP socket buffers](#udp-socket-buffers-required) |
-| Connected but no internet | Check forwarding, the interface name in `masque.service`, iptables NAT, and routes |
-| TLS/mTLS error | Confirm server name, certificate chain, client certificate, and matching CA |
+| No connection | Configured port, UDP/TCP listener, host and cloud firewall, selected client transport |
+| TCP page but no VPN | Client certificate, CA, CONNECT-IP request, blocked CN; page access is not tunnel authorization |
+| Certificate failure | Server identity/SAN, CA, client credentials, validity dates and clock |
+| Connected but no internet | Forwarding, WAN interface, NAT, routes, DNS |
+| QUIC loss or poor throughput | UDP buffer ceilings, MTU, path conditions; compare TCP separately |
+| Service fails | systemctl status masque.service and journalctl -u masque |
 
-Before sharing logs, remove domains, IP addresses, certificates, tokens, keys, and client-profile secrets.
-<!-- Build status refreshed -->
+Keep insecure = false. Remove credentials and identifying information from shared logs. See [security policy](../SECURITY.md) and [roadmap](../docs/ROADMAP.md).
