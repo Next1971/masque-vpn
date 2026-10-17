@@ -15,6 +15,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
@@ -32,7 +33,7 @@ func main() {
 	a.SetIcon(icon)
 	w := a.NewWindow("MASQUE server setup (experimental)")
 	w.SetIcon(icon)
-	w.Resize(fyne.NewSize(640, 800))
+	w.Resize(fyne.NewSize(680, 920))
 
 	sshHost := widget.NewEntry()
 	sshHost.SetPlaceHolder("VPS IP or hostname")
@@ -57,18 +58,23 @@ func main() {
 	portSelect := widget.NewSelect([]string{}, nil)
 	portSelect.PlaceHolder = "Connect first"
 	customPort := widget.NewEntry()
-	customPort.SetPlaceHolder("or type a UDP port")
+	customPort.SetPlaceHolder("or type a listen port")
+	altSelect := widget.NewSelect([]string{}, nil)
+	altSelect.PlaceHolder = "Connect first"
+	altCustom := widget.NewEntry()
+	altCustom.SetPlaceHolder("or type a second port")
 	probeLabel := widget.NewLabel("Reachability: —")
 	probeLabel.Wrapping = fyne.TextWrapWord
 	issueLabel := widget.NewLabel("Issue status: connect first")
 	issueLabel.Wrapping = fyne.TextWrapWord
 
 	var (
-		cli       *vpssetup.Client
-		pre       vpssetup.Preflight
-		confirmed int
-		busy      bool
-		exeDir    string
+		cli          *vpssetup.Client
+		pre          vpssetup.Preflight
+		confirmed    int
+		confirmedAlt int
+		busy         bool
+		exeDir       string
 	)
 	if p, err := os.Executable(); err == nil {
 		exeDir = filepath.Dir(p)
@@ -150,7 +156,7 @@ func main() {
 								dialog.ShowError(err2, w)
 								return
 							}
-							finishPreflight(c2, w, logf, &cli, &pre, &confirmed, portSelect, publicHost, host, issueLabel, probeLabel, confirmBtn, installBtn)
+							finishPreflight(c2, w, logf, &cli, &pre, &confirmed, &confirmedAlt, portSelect, altSelect, altCustom, publicHost, host, issueLabel, probeLabel, confirmBtn, installBtn)
 						}, w)
 				})
 				return
@@ -159,16 +165,38 @@ func main() {
 				fyne.Do(func() { dialog.ShowError(err, w) })
 				return
 			}
-			finishPreflight(c, w, logf, &cli, &pre, &confirmed, portSelect, publicHost, host, issueLabel, probeLabel, confirmBtn, installBtn)
+			finishPreflight(c, w, logf, &cli, &pre, &confirmed, &confirmedAlt, portSelect, altSelect, altCustom, publicHost, host, issueLabel, probeLabel, confirmBtn, installBtn)
 		}()
 	})
 
-	confirmBtn = widget.NewButton("2. Confirm UDP port", func() {
+	applyPorts := func(listen, alt int, conflicts []string) {
+		confirmed = listen
+		confirmedAlt = alt
+		if alt > 0 {
+			logf("Ports confirmed: UDP/TCP %d, second port %d", listen, alt)
+		} else {
+			logf("Ports confirmed: UDP/TCP %d (no second port)", listen)
+		}
+		for _, line := range conflicts {
+			logf("Warning: %s", line)
+		}
+		probeLabel.SetText("Reachability: — (install first)")
+	}
+	confirmBtn = widget.NewButton("2. Confirm ports", func() {
 		if busy {
 			return
 		}
-		p, err := chosenPort(portSelect, customPort)
+		listen, err := chosenPort(portSelect, customPort)
 		if err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		alt, err := chosenAlt(altSelect, altCustom)
+		if err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		if err := vpssetup.ValidatePortPair(listen, alt); err != nil {
 			dialog.ShowError(err, w)
 			return
 		}
@@ -176,13 +204,20 @@ func main() {
 			dialog.ShowError(fmt.Errorf("connect first"), w)
 			return
 		}
-		if _, taken := pre.Listening[p]; taken {
-			dialog.ShowError(fmt.Errorf("UDP %d is already listening on the VPS", p), w)
+		conflicts := vpssetup.DescribeConflicts(pre.Listening, pre.ListeningTCP, listen, alt)
+		if len(conflicts) == 0 {
+			applyPorts(listen, alt, nil)
 			return
 		}
-		confirmed = p
-		logf("Port confirmed: UDP %d", p)
-		probeLabel.SetText("Reachability: — (install first)")
+		dialog.ShowConfirm("Port already in use",
+			strings.Join(conflicts, "\n\n")+"\n\nContinue with these ports anyway? Choose No to go back and pick another port.",
+			func(yes bool) {
+				if !yes {
+					logf("Ports not confirmed — choose another")
+					return
+				}
+				applyPorts(listen, alt, conflicts)
+			}, w)
 	})
 
 	installBtn = widget.NewButton("3. Install MASQUE server", func() {
@@ -198,7 +233,7 @@ func main() {
 			return
 		}
 		if confirmed == 0 {
-			dialog.ShowError(fmt.Errorf("confirm a UDP port first"), w)
+			dialog.ShowError(fmt.Errorf("confirm ports first"), w)
 			return
 		}
 		pub := strings.TrimSpace(publicHost.Text)
@@ -228,22 +263,24 @@ func main() {
 				msg := fmt.Sprintf(format, args...)
 				fyne.Do(func() { logf("%s", msg) })
 			}
-			if err := vpssetup.Install(cli, pub, confirmed, raw, lg); err != nil {
+			if err := vpssetup.Install(cli, pub, confirmed, confirmedAlt, raw, lg); err != nil {
 				fyne.Do(func() { dialog.ShowError(err, w); probeLabel.SetText("Reachability: not installed") })
 				return
 			}
-			fyne.Do(func() { logf("Service started. Probing QUIC on %s:%d …", pub, confirmed) })
-			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-			defer cancel()
-			perr := vpssetup.ProbeUDPListener(ctx, pub, confirmed)
+			ports := []int{confirmed}
+			if confirmedAlt > 0 {
+				ports = append(ports, confirmedAlt)
+			}
+			fyne.Do(func() { logf("Service started. Probing UDP and TCP from this PC…") })
+			var lines []string
+			for _, p := range ports {
+				lines = append(lines, probeLine(pub, p, "UDP", vpssetup.ProbeUDPListener))
+				lines = append(lines, probeLine(pub, p, "TCP", vpssetup.ProbeTCPListener))
+			}
+			text := "Reachability:\n" + strings.Join(lines, "\n")
 			fyne.Do(func() {
-				if perr != nil {
-					probeLabel.SetText("Reachability: NOT OK — " + perr.Error())
-					logf("NOT OK: %s", perr.Error())
-				} else {
-					probeLabel.SetText(fmt.Sprintf("Reachability: OK — QUIC answered on UDP %d", confirmed))
-					logf("OK: listener is reachable from this PC")
-				}
+				probeLabel.SetText(text)
+				logf("%s", strings.ReplaceAll(text, "\n", " | "))
 			})
 		}()
 	})
@@ -269,10 +306,14 @@ func main() {
 					msg := fmt.Sprintf(format, args...)
 					fyne.Do(func() { logf("%s", msg) })
 				}
-				if err := vpssetup.PullBootstrapProfile(cli, dest, lg); err != nil {
-					fyne.Do(func() { dialog.ShowError(err, w) })
-					return
-				}
+				raw, err := vpssetup.PullBootstrapProfile(cli, dest, lg)
+				fyne.Do(func() {
+					if err != nil {
+						dialog.ShowError(err, w)
+						return
+					}
+					showProfileQR(w, raw)
+				})
 			}()
 		}, w)
 	})
@@ -339,7 +380,7 @@ func main() {
 					msg := fmt.Sprintf(format, args...)
 					fyne.Do(func() { logf("%s", msg) })
 				}
-				idx, err := vpssetup.IssueNextBundle(cli, dest, lg)
+				idx, raw, err := vpssetup.IssueNextBundle(cli, dest, lg)
 				fyne.Do(func() {
 					if err != nil {
 						dialog.ShowError(err, w)
@@ -348,6 +389,7 @@ func main() {
 					logf("Issued #%d — import masque-client-%d.profile.masque (Windows GUI accepts the same file)", idx, idx)
 					st, _ := vpssetup.ReadIssueStatus(cli)
 					issueLabel.SetText(st.Label())
+					showProfileQR(w, raw)
 				})
 			}()
 		}, w)
@@ -386,8 +428,10 @@ func main() {
 			widget.NewFormItem("Linux server binary", container.NewBorder(nil, nil, nil, pickBin, binPath)),
 		),
 		connectBtn,
-		widget.NewLabel("Naive UDP candidates: 443, 2053, 8443, 41234 (not already listening on the VPS)."),
+		widget.NewLabel("Listen port is UDP and TCP together. Candidates: 443, 2053, 8443, 41234. If UDP or TCP is already taken, Confirm asks whether to continue or pick another port."),
 		container.NewGridWithColumns(2, portSelect, customPort),
+		widget.NewLabel("Second port (optional). Redirected to the listen port for UDP and TCP, and written as alt_port. Default is the next candidate. Choose (none) for one port."),
+		container.NewGridWithColumns(2, altSelect, altCustom),
 		confirmBtn,
 		installBtn,
 		probeLabel,
@@ -408,7 +452,7 @@ func main() {
 	}
 }
 
-func finishPreflight(c *vpssetup.Client, w fyne.Window, logf func(string, ...interface{}), cli **vpssetup.Client, pre *vpssetup.Preflight, confirmed *int, portSelect *widget.Select, publicHost *widget.Entry, sshHost string, issueLabel, probeLabel *widget.Label, confirmBtn, installBtn *widget.Button) {
+func finishPreflight(c *vpssetup.Client, w fyne.Window, logf func(string, ...interface{}), cli **vpssetup.Client, pre *vpssetup.Preflight, confirmed, confirmedAlt *int, portSelect, altSelect *widget.Select, altCustom *widget.Entry, publicHost *widget.Entry, sshHost string, issueLabel, probeLabel *widget.Label, confirmBtn, installBtn *widget.Button) {
 	pf, err := vpssetup.CheckOSAndMachine(c, func(format string, args ...interface{}) {
 		fyne.Do(func() { logf(format, args...) })
 	})
@@ -424,19 +468,19 @@ func finishPreflight(c *vpssetup.Client, w fyne.Window, logf func(string, ...int
 	} else {
 		issueText = st.Label()
 	}
-	opts := make([]string, 0, len(pf.Recommended))
-	for _, p := range pf.Recommended {
+	opts := make([]string, 0, len(vpssetup.CandidatePorts))
+	for _, p := range vpssetup.CandidatePorts {
 		opts = append(opts, strconv.Itoa(p))
 	}
+	altOpts := append([]string{altNone}, opts...)
 	fyne.Do(func() {
 		*cli = c
 		*pre = pf
 		portSelect.Options = opts
+		altSelect.Options = altOpts
 		if len(opts) > 0 {
 			portSelect.SetSelected(opts[0])
-		} else {
-			portSelect.PlaceHolder = "all candidates busy — type a port"
-			portSelect.ClearSelected()
+			altSelect.SetSelected(defaultAlt(opts[0]))
 		}
 		if strings.TrimSpace(publicHost.Text) == "" {
 			publicHost.SetText(sshHost)
@@ -445,20 +489,82 @@ func finishPreflight(c *vpssetup.Client, w fyne.Window, logf func(string, ...int
 			confirmBtn.Disable()
 			installBtn.Disable()
 			portSelect.Disable()
+			altSelect.Disable()
+			altCustom.Disable()
 			if pf.Existing.UDPPort > 0 {
 				*confirmed = pf.Existing.UDPPort
 			}
+			*confirmedAlt = pf.Existing.AltPort
 			if pf.Existing.ServerName != "" {
 				publicHost.SetText(pf.Existing.ServerName)
 			}
 			probeLabel.SetText(pf.Existing.Summary() + " Use Issue next bundle.")
 		} else {
+			*confirmed = 0
+			*confirmedAlt = 0
 			confirmBtn.Enable()
 			installBtn.Enable()
 			portSelect.Enable()
+			altSelect.Enable()
+			altCustom.Enable()
 		}
 		issueLabel.SetText(issueText)
 	})
+}
+
+const altNone = "(none)"
+
+func defaultAlt(primary string) string {
+	for _, p := range vpssetup.CandidatePorts {
+		s := strconv.Itoa(p)
+		if s != primary {
+			return s
+		}
+	}
+	return altNone
+}
+
+func chosenAlt(sel *widget.Select, custom *widget.Entry) (int, error) {
+	if s := strings.TrimSpace(custom.Text); s != "" {
+		p, err := strconv.Atoi(s)
+		if err != nil {
+			return 0, fmt.Errorf("invalid second port")
+		}
+		return p, nil
+	}
+	if sel.Selected == "" || sel.Selected == altNone {
+		return 0, nil
+	}
+	p, err := strconv.Atoi(sel.Selected)
+	if err != nil {
+		return 0, fmt.Errorf("invalid second port")
+	}
+	return p, nil
+}
+
+func showProfileQR(w fyne.Window, profile []byte) {
+	img, err := vpssetup.ProfileQR(profile)
+	if err != nil {
+		dialog.ShowError(err, w)
+		return
+	}
+	pic := canvas.NewImageFromImage(img)
+	pic.FillMode = canvas.ImageFillContain
+	pic.SetMinSize(fyne.NewSize(440, 440))
+	note := widget.NewLabel("This code is the profile, including the private key. Scan it in the MASQUE app on an Android phone or iPhone. The file is still saved. Android TV and the Windows client use the file.")
+	note.Wrapping = fyne.TextWrapWord
+	d := dialog.NewCustom("Scan profile", "Close", container.NewVBox(note, pic), w)
+	d.Resize(fyne.NewSize(520, 700))
+	d.Show()
+}
+
+func probeLine(host string, port int, kind string, probe func(context.Context, string, int) error) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	if err := probe(ctx, host, port); err != nil {
+		return fmt.Sprintf("%s %d: NOT OK — %s", kind, port, err.Error())
+	}
+	return fmt.Sprintf("%s %d: OK", kind, port)
 }
 
 func chosenPort(sel *widget.Select, custom *widget.Entry) (int, error) {
@@ -470,7 +576,7 @@ func chosenPort(sel *widget.Select, custom *widget.Entry) (int, error) {
 		return p, vpssetup.ValidateUDPPort(p)
 	}
 	if sel.Selected == "" {
-		return 0, fmt.Errorf("select or type a UDP port")
+		return 0, fmt.Errorf("select or type a listen port")
 	}
 	p, err := strconv.Atoi(sel.Selected)
 	if err != nil {

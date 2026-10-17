@@ -43,6 +43,16 @@
         android:textColor="@color/tv_text_secondary"
         android:textSize="20sp"
         android:gravity="center"
+        android:layout_marginBottom="8dp" />
+
+    <TextView
+        android:id="@+id/tvTraffic"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Today: 0.0 MB\nMonth: 0.0 MB"
+        android:textColor="@color/tv_text_secondary"
+        android:textSize="20sp"
+        android:gravity="center"
         android:layout_marginBottom="40dp" />
 
     <Button
@@ -75,16 +85,16 @@
         android:textSize="22sp"
         android:textStyle="bold"
         android:nextFocusUp="@+id/tvBtnClipboard"
-        android:nextFocusDown="@+id/tvChkKillSwitch"
+        android:nextFocusDown="@+id/tvBtnSettings"
         android:layout_marginBottom="20dp" />
 
-    <CheckBox
-        android:id="@+id/tvChkKillSwitch"
+    <Button
+        android:id="@+id/tvBtnSettings"
+        style="@style/TvButton"
         android:layout_width="520dp"
         android:layout_height="wrap_content"
-        android:text="Kill switch (block internet if the tunnel drops)"
-        android:textColor="@color/tv_text_primary"
-        android:textSize="18sp"
+        android:text="Settings"
+        android:textSize="20sp"
         android:nextFocusUp="@+id/tvBtnConnect" />
 
 </LinearLayout>

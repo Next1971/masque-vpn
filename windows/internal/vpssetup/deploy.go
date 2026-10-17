@@ -31,8 +31,10 @@ type Preflight struct {
 	Pretty       string
 	HasUFW       bool
 	Listening    map[int]struct{}
+	ListeningTCP map[int]struct{}
 	Recommended  []int
 	TakenSuggest []int
+	TakenTCP     []int
 	Existing     ExistingInstall
 }
 
@@ -52,6 +54,8 @@ echo '---UFW---'
 if command -v ufw >/dev/null 2>&1; then echo HASUFW; else echo NOUFW; fi
 echo '---SS---'
 ss -H -uln 2>/dev/null || true
+echo '---SSTCP---'
+ss -H -tln 2>/dev/null || true
 echo '---MASQUE---'
 if [ -f /opt/masque/config.server.toml ]; then echo HASCONFIG; else echo NOCONFIG; fi
 if [ -f /opt/masque/vpn-server ] || [ -x /opt/masque/bin/poc-server ]; then echo HASBIN; else echo NOBIN; fi
@@ -69,6 +73,7 @@ if [ ! -f /opt/masque/ca/ca.key ]; then
   done
 fi
 if [ -f /opt/masque/ca/ca.key ]; then echo HASCA; else echo NOCA; fi
+if [ -f /opt/masque/state/alt_port ]; then echo "ALTPORT $(tr -d '[:space:]' < /opt/masque/state/alt_port)"; else echo NOALT; fi
 echo '---TOML---'
 cat /opt/masque/config.server.toml 2>/dev/null || true
 echo '---ENDTOML---'
@@ -80,7 +85,8 @@ echo '---ENDTOML---'
 	osPart = strings.TrimPrefix(strings.TrimSpace(osPart), "---OS---")
 	archPart, rest, _ := strings.Cut(strings.TrimSpace(rest), "---UFW---")
 	ufwPart, rest, _ := strings.Cut(strings.TrimSpace(rest), "---SS---")
-	ssPart, masquePart, _ := strings.Cut(rest, "---MASQUE---")
+	ssPart, rest, _ := strings.Cut(rest, "---SSTCP---")
+	tcpPart, masquePart, _ := strings.Cut(rest, "---MASQUE---")
 
 	d := ParseOSRelease(osPart)
 	d.Arch = strings.TrimSpace(archPart)
@@ -93,11 +99,15 @@ echo '---ENDTOML---'
 	}
 	hasUFW := strings.Contains(ufwPart, "HASUFW")
 	listening := ParseListeningUDPPorts(ssPart)
-	rec := Recommend(listening)
-	var taken []int
+	listeningTCP := ParseListeningUDPPorts(tcpPart)
+	rec := RecommendFree(listening, listeningTCP)
+	var taken, takenTCP []int
 	for _, p := range CandidatePorts {
 		if _, ok := listening[p]; ok {
 			taken = append(taken, p)
+		}
+		if _, ok := listeningTCP[p]; ok {
+			takenTCP = append(takenTCP, p)
 		}
 	}
 	z = Preflight{
@@ -106,20 +116,25 @@ echo '---ENDTOML---'
 		Pretty:       d.PrettyName,
 		HasUFW:       hasUFW,
 		Listening:    listening,
+		ListeningTCP: listeningTCP,
 		Recommended:  rec,
 		TakenSuggest: taken,
+		TakenTCP:     takenTCP,
 		Existing:     parseMasqueProbe(masquePart),
 	}
 	if log != nil {
 		log("OS: %s (%s)", d.PrettyName, goarch)
 		if hasUFW {
-			log("ufw: present")
+			log("ufw: present (will allow UDP and TCP)")
 		} else {
 			log("ufw: not installed (will skip firewall rules)")
 		}
-		log("Suggested UDP ports (not listening locally): %s", formatPortList(rec))
+		log("Candidates free on both UDP and TCP: %s", formatPortList(rec))
 		if len(taken) > 0 {
-			log("Already in use (skipped): %s", formatPortList(taken))
+			log("UDP already listening: %s", formatPortList(taken))
+		}
+		if len(takenTCP) > 0 {
+			log("TCP already listening: %s", formatPortList(takenTCP))
 		}
 		if z.Existing.Present {
 			log("%s", z.Existing.Summary())
@@ -155,11 +170,13 @@ func FindLinuxBinary(goarch, userPath string, searchDirs []string) (string, erro
 }
 
 // Install uploads the Linux server binary and runs the remote install script.
-func Install(c *Client, publicHost string, udpPort int, linuxBin []byte, log Logf) error {
+// altPort 0 installs a single listen port. A positive altPort is redirected
+// to udpPort for UDP and TCP and stored for later profile issuance.
+func Install(c *Client, publicHost string, udpPort, altPort int, linuxBin []byte, log Logf) error {
 	if err := ValidateHost(publicHost); err != nil {
 		return err
 	}
-	if err := ValidateUDPPort(udpPort); err != nil {
+	if err := ValidatePortPair(udpPort, altPort); err != nil {
 		return err
 	}
 	if ex, err := detectExisting(c); err != nil {
@@ -171,6 +188,11 @@ func Install(c *Client, publicHost string, udpPort int, linuxBin []byte, log Log
 		return fmt.Errorf("server binary looks empty")
 	}
 	if log != nil {
+		if altPort > 0 {
+			log("Listen UDP/TCP %d, second port %d (redirect and alt_port)", udpPort, altPort)
+		} else {
+			log("Listen UDP/TCP %d, no second port", udpPort)
+		}
 		log("Uploading server binary (%d bytes)…", len(linuxBin))
 	}
 	if err := c.Upload(remoteBin, linuxBin, 0o755); err != nil {
@@ -185,8 +207,13 @@ func Install(c *Client, publicHost string, udpPort int, linuxBin []byte, log Log
 	if err := c.Upload(remoteInstall, installScript, 0o755); err != nil {
 		return err
 	}
-	cmd := fmt.Sprintf("MASQUE_PORT=%d MASQUE_HOST=%s MASQUE_BIN=%s GEN_CONFIG=%s bash %s",
+	altEnv := ""
+	if altPort > 0 {
+		altEnv = fmt.Sprintf(" MASQUE_ALT_PORT=%d", altPort)
+	}
+	cmd := fmt.Sprintf("MASQUE_PORT=%d%s MASQUE_HOST=%s MASQUE_BIN=%s GEN_CONFIG=%s bash %s",
 		udpPort,
+		altEnv,
 		shellSingleQuote(publicHost),
 		shellSingleQuote(remoteBin),
 		shellSingleQuote(remoteGenConfig),
@@ -218,6 +245,7 @@ if [ -f /opt/masque/vpn-server ] || [ -x /opt/masque/bin/poc-server ]; then echo
 if [ -f /etc/systemd/system/masque.service ] || [ -f /lib/systemd/system/masque.service ]; then echo HASSVC; else echo NOSVC; fi
 if systemctl is-active --quiet masque 2>/dev/null; then echo ACTIVE; else echo INACTIVE; fi
 if [ -f /opt/masque/ca/ca.key ]; then echo HASCA; else echo NOCA; fi
+if [ -f /opt/masque/state/alt_port ]; then echo "ALTPORT $(tr -d '[:space:]' < /opt/masque/state/alt_port)"; else echo NOALT; fi
 echo '---TOML---'
 cat /opt/masque/config.server.toml 2>/dev/null || true
 echo '---ENDTOML---'

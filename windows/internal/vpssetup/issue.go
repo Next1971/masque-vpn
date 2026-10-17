@@ -81,32 +81,33 @@ cat /opt/masque/state/next_index
 }
 
 // IssueNextBundle creates masque-client-N (N>=9), increments the counter, writes profile.masque to destDir.
-func IssueNextBundle(c *Client, destDir string, log Logf) (int, error) {
+// The returned bytes are the same file, for the on-screen QR.
+func IssueNextBundle(c *Client, destDir string, log Logf) (int, []byte, error) {
 	st, err := ReadIssueStatus(c)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if !st.Ready {
-		return 0, fmt.Errorf("%s", st.Detail)
+		return 0, nil, fmt.Errorf("%s", st.Detail)
 	}
 	if st.NextIndex > LastAppIndex {
-		return 0, fmt.Errorf("app bundle slots full (%d issued from #%d)", PoolSlots, FirstAppIndex)
+		return 0, nil, fmt.Errorf("app bundle slots full (%d issued from #%d)", PoolSlots, FirstAppIndex)
 	}
 	if log != nil {
 		log("Uploading issuer scripts…")
 	}
 	if err := c.Upload(remoteGen, genConfigScript, 0o755); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if err := c.Upload(remoteIssue, issueClientScript, 0o755); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if log != nil {
 		log("Issuing masque-client-%d (server cert unchanged)…", st.NextIndex)
 	}
 	out, err := c.Run(2*time.Minute, "bash "+shellSingleQuote(remoteIssue), nil)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if log != nil && out != "" {
 		for _, line := range strings.Split(out, "\n") {
@@ -129,39 +130,40 @@ func IssueNextBundle(c *Client, destDir string, log Logf) (int, error) {
 	}
 	raw, err := c.RunBytes(30*time.Second, "cat "+shellSingleQuote(fmt.Sprintf("/opt/masque/clients/%d/profile.masque", idx)), nil)
 	if err != nil {
-		return idx, fmt.Errorf("download profile: %w", err)
+		return idx, nil, fmt.Errorf("download profile: %w", err)
 	}
 	if err := os.MkdirAll(destDir, 0o700); err != nil {
-		return idx, err
+		return idx, nil, err
 	}
 	name := filepath.Join(destDir, fmt.Sprintf("masque-client-%d.profile.masque", idx))
 	if err := os.WriteFile(name, raw, 0o600); err != nil {
-		return idx, err
+		return idx, nil, err
 	}
 	if log != nil {
 		log("Wrote %s", name)
 	}
-	return idx, nil
+	return idx, raw, nil
 }
 
 // PullBootstrapProfile copies the install-time profile.masque (CN masque-client, not #9+).
-func PullBootstrapProfile(c *Client, destDir string, log Logf) error {
+// The returned bytes are the same file, for the on-screen QR.
+func PullBootstrapProfile(c *Client, destDir string, log Logf) ([]byte, error) {
 	if log != nil {
 		log("Downloading bootstrap profile.masque…")
 	}
 	raw, err := c.RunBytes(30*time.Second, "cat /opt/masque/generated/android/profile.masque", nil)
 	if err != nil {
-		return fmt.Errorf("download bootstrap profile: %w", err)
+		return nil, fmt.Errorf("download bootstrap profile: %w", err)
 	}
 	if err := os.MkdirAll(destDir, 0o700); err != nil {
-		return err
+		return nil, err
 	}
 	path := filepath.Join(destDir, "profile.masque")
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
-		return err
+		return nil, err
 	}
 	if log != nil {
 		log("Wrote %s (bootstrap CN masque-client; CA key stays on the VPS)", path)
 	}
-	return nil
+	return raw, nil
 }

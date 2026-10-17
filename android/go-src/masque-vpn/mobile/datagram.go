@@ -38,10 +38,14 @@ func NewDatagramPipe(w DatagramWriter, host string, port int) (*DatagramPipe, er
 	if err != nil {
 		return nil, fmt.Errorf("remote addr: %w", err)
 	}
+	localIP := net.IPv4zero
+	if remote.IP.To4() == nil {
+		localIP = net.IPv6unspecified
+	}
 	c := &bridgePacketConn{
 		writer:   w,
 		remote:   remote,
-		local:    &net.UDPAddr{IP: net.IPv4zero, Port: 0},
+		local:    &net.UDPAddr{IP: localIP, Port: 0},
 		incoming: make(chan *[]byte, datagramQueue),
 		closed:   make(chan struct{}),
 		poke:     make(chan struct{}, 1),

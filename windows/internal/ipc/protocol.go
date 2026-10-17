@@ -9,6 +9,8 @@ const (
 	CmdStatus         = "status"
 	CmdSetAutoconnect = "set_autoconnect"
 	CmdSetKillSwitch  = "set_kill_switch"
+	CmdSetTransport   = "set_transport"
+	CmdSetMTU         = "set_mtu"
 
 	StateDisconnected = "disconnected"
 	StateConnecting   = "connecting"
@@ -29,6 +31,8 @@ type Request struct {
 	Key         string `json:"key,omitempty"`
 	Autoconnect *bool  `json:"autoconnect,omitempty"`
 	KillSwitch  *bool  `json:"kill_switch,omitempty"`
+	Transport   string `json:"transport,omitempty"`
+	MTU         int    `json:"mtu,omitempty"`
 }
 
 type Response struct {
@@ -43,4 +47,8 @@ type Response struct {
 	KillSwitch  bool   `json:"kill_switch"`
 	AssignedIP  string `json:"assigned_ip,omitempty"`
 	RTTMs       int64  `json:"rtt_ms,omitempty"`
+	Transport   string `json:"transport,omitempty"`
+	MTU         int    `json:"mtu,omitempty"`
+	DayBytes    int64  `json:"day_bytes,omitempty"`
+	MonthBytes  int64  `json:"month_bytes,omitempty"`
 }

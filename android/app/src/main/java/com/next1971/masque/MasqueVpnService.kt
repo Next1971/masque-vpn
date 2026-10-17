@@ -52,7 +52,6 @@ class MasqueVpnService : VpnService() {
         // drops them and DNS never reaches 1.1.1.1.
         const val TUN_PREFIX = 24
         const val TUN_PREFIX_V6 = 64
-        const val TUN_MTU = 1340
     }
 
     private var tunnel: Tunnel? = null
@@ -70,6 +69,10 @@ class MasqueVpnService : VpnService() {
                 t.rttMillis()
             } catch (_: Exception) {
                 0L
+            }
+            try {
+                ProfileStore.noteTraffic(this@MasqueVpnService, t.trafficBytes())
+            } catch (_: Exception) {
             }
             val text = if (ms > 0) "VPN active · ping $ms ms" else "VPN active"
             broadcast(text)
@@ -143,7 +146,8 @@ class MasqueVpnService : VpnService() {
             caPath = prof.caPath
             certPath = prof.certPath
             keyPath = prof.keyPath
-            mtu = TUN_MTU.toLong()
+            mtu = ProfileStore.mtu(this@MasqueVpnService).toLong()
+            transport = ProfileStore.transport(this@MasqueVpnService)
             altPort = prof.altPort.toLong()
         }
 
@@ -263,11 +267,12 @@ class MasqueVpnService : VpnService() {
             Log.w(TAG, "server assigned no address; using fallback $TUN_ADDR_FALLBACK")
             addr = TUN_ADDR_FALLBACK
         }
-        Log.i(TAG, "building TUN $addr/$TUN_PREFIX mtu $TUN_MTU (server assigned /${t.assignedPrefixLen()})")
+        val mtu = ProfileStore.mtu(this)
+        Log.i(TAG, "building TUN $addr/$TUN_PREFIX mtu $mtu (server assigned /${t.assignedPrefixLen()})")
 
         val builder = Builder()
             .setSession("MASQUE")
-            .setMtu(TUN_MTU)
+            .setMtu(mtu)
             .setBlocking(ProfileStore.killSwitch(this))
             .addAddress(addr, TUN_PREFIX)
             .addRoute("0.0.0.0", 0)

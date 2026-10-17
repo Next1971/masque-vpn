@@ -9,8 +9,16 @@ final class VPNManager: ObservableObject {
     @Published var pingText = "Ping: —"
     @Published var connected = false
     @Published var busy = false
-    @Published var mtuText = "1400"
+    @Published var mtuText = "1340"
+    @Published var transport = "auto"
+    @Published var killSwitch = false
+    @Published var trafficText = "Today: 0.0 MB\nMonth: 0.0 MB"
     @Published var lastError: String?
+
+    /// User tapped Disconnect or cancel. Stops the kill-switch retry.
+    private var userStop = false
+    private var killSwitchRetryPending = false
+    private var killSwitchRetryAttempt = 0
 
     private var observer: NSObjectProtocol?
     private var pingTimer: Timer?
@@ -66,8 +74,32 @@ final class VPNManager: ObservableObject {
         } else {
             statusText = "Status: profile not configured"
         }
-        let stored = AppGroup.defaults.object(forKey: AppGroup.defaultsMTU) as? Int ?? 1400
-        mtuText = String(stored)
+        let stored = AppGroup.defaults.object(forKey: AppGroup.defaultsMTU) as? Int ?? 1340
+        mtuText = String(clampMTU(stored))
+        let mode = AppGroup.defaults.string(forKey: AppGroup.defaultsTransport) ?? "auto"
+        transport = (mode == "udp" || mode == "tcp") ? mode : "auto"
+        killSwitch = AppGroup.defaults.bool(forKey: AppGroup.defaultsKillSwitch)
+        trafficText = TrafficAccount.label()
+    }
+
+    func saveSettings(transport: String, killSwitch: Bool, mtuText: String) {
+        let mode = (transport == "udp" || transport == "tcp") ? transport : "auto"
+        let mtu = clampMTU(Int(mtuText) ?? 1340)
+        self.transport = mode
+        self.killSwitch = killSwitch
+        self.mtuText = String(mtu)
+        ProfileStore.saveMTU(mtu)
+        AppGroup.defaults.set(mode, forKey: AppGroup.defaultsTransport)
+        AppGroup.defaults.set(killSwitch, forKey: AppGroup.defaultsKillSwitch)
+        // Off while already disconnected: drop any block left from the last session.
+        // Off while connected: the current session stays armed until Disconnect.
+        if !killSwitch && !connected {
+            AppGroup.defaults.set(false, forKey: AppGroup.defaultsKillSwitchArmed)
+            AppGroup.defaults.set(false, forKey: AppGroup.defaultsSessionUp)
+            prefs.async { [weak self] in
+                self?.releaseSystemKillSwitch()
+            }
+        }
     }
 
     func importFile(url: URL) {
@@ -85,6 +117,16 @@ final class VPNManager: ObservableObject {
         }
     }
 
+    func importText(_ text: String) {
+        lastError = nil
+        do {
+            try ProfileStore.importText(text)
+            refreshProfileStatus()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     func toggle() {
         lastError = nil
         // A stuck busy flag used to make the button do nothing at all, so a tap
@@ -92,26 +134,14 @@ final class VPNManager: ObservableObject {
         if busy {
             busy = false
             statusText = "Status: cancelling"
-            prefs.async { [weak self] in
-                self?.reloadManager { mgr in
-                    mgr?.connection.stopVPNTunnel()
-                    DispatchQueue.main.async { self?.refreshProfileStatus() }
-                }
-            }
+            beginUserStop()
             return
         }
 
         if connected {
             busy = true
             statusText = "Status: disconnecting"
-            prefs.async { [weak self] in
-                self?.reloadManager { mgr in
-                    mgr?.connection.stopVPNTunnel()
-                    DispatchQueue.main.async {
-                        self?.busy = false
-                    }
-                }
-            }
+            beginUserStop()
             return
         }
 
@@ -119,15 +149,34 @@ final class VPNManager: ObservableObject {
             lastError = "Import a profile first"
             return
         }
-        let mtu = clampMTU(Int(mtuText) ?? 1400)
+        let mtu = clampMTU(Int(mtuText) ?? 1340)
         mtuText = String(mtu)
         ProfileStore.saveMTU(mtu)
 
+        userStop = false
         busy = true
         statusText = "Status: starting…"
+        let arm = AppGroup.defaults.bool(forKey: AppGroup.defaultsKillSwitch)
+        AppGroup.defaults.set(arm, forKey: AppGroup.defaultsKillSwitchArmed)
+        if !arm {
+            AppGroup.defaults.set(false, forKey: AppGroup.defaultsSessionUp)
+        }
 
         prefs.async { [weak self] in
             self?.startTunnel(server: profile.server, attempt: 0)
+        }
+    }
+
+    /// Disconnect clears the system block before stop, or a stopped profile
+    /// with includeAllNetworks still set leaves the phone with no internet.
+    private func beginUserStop() {
+        userStop = true
+        killSwitchRetryPending = false
+        killSwitchRetryAttempt = 0
+        AppGroup.defaults.set(false, forKey: AppGroup.defaultsKillSwitchArmed)
+        AppGroup.defaults.set(false, forKey: AppGroup.defaultsSessionUp)
+        prefs.async { [weak self] in
+            self?.stopReleasingKillSwitch()
         }
     }
 
@@ -253,6 +302,15 @@ final class VPNManager: ObservableObject {
                     let proto = NETunnelProviderProtocol()
                     proto.providerBundleIdentifier = VPNManager.providerBundleID
                     proto.serverAddress = server
+                    // Armed only for this connect. Disconnect clears it again
+                    // before stopVPNTunnel, so a stopped profile does not keep
+                    // blocking the phone. No IPv6 default route is added.
+                    let armed = AppGroup.defaults.bool(forKey: AppGroup.defaultsKillSwitchArmed)
+                    proto.includeAllNetworks = armed
+                    if #available(iOS 16.4, *) {
+                        proto.excludeAPNs = armed
+                        proto.excludeCellularServices = armed
+                    }
                     mgr.protocolConfiguration = proto
                     mgr.localizedDescription = "MASQUE"
                     mgr.isEnabled = true
@@ -318,6 +376,9 @@ final class VPNManager: ObservableObject {
         switch status {
         case .connected:
             connected = true
+            userStop = false
+            killSwitchRetryAttempt = 0
+            killSwitchRetryPending = false
             let stage = AppGroup.defaults.string(forKey: AppGroup.defaultsStatus) ?? ""
             if stage.hasPrefix("VPN active") {
                 setBusy(false)
@@ -336,8 +397,26 @@ final class VPNManager: ObservableObject {
             statusText = "Status: disconnecting"
         default:
             connected = false
-            setBusy(false)
             pingText = "Ping: —"
+            if userStop {
+                userStop = false
+                killSwitchRetryPending = false
+                setBusy(false)
+                refreshProfileStatus()
+                return
+            }
+            setBusy(false)
+            if !AppGroup.defaults.bool(forKey: AppGroup.defaultsKillSwitch) {
+                AppGroup.defaults.set(false, forKey: AppGroup.defaultsKillSwitchArmed)
+                AppGroup.defaults.set(false, forKey: AppGroup.defaultsSessionUp)
+                prefs.async { [weak self] in
+                    self?.releaseSystemKillSwitch()
+                }
+            } else if considerKillSwitchRearm() {
+                return
+            } else {
+                releaseIfNeverUp()
+            }
             let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
             if !tunnelErr.isEmpty {
                 lastError = tunnelErr
@@ -346,8 +425,113 @@ final class VPNManager: ObservableObject {
         }
     }
 
+    /// After a real session, a drop with the kill switch armed reconnects and
+    /// leaves includeAllNetworks set, so traffic stays blocked in the gap.
+    /// Does not release the block; that happens only from a disconnect.
+    private func considerKillSwitchRearm() -> Bool {
+        if userStop { return false }
+        guard AppGroup.defaults.bool(forKey: AppGroup.defaultsKillSwitchArmed),
+              AppGroup.defaults.bool(forKey: AppGroup.defaultsKillSwitch),
+              AppGroup.defaults.bool(forKey: AppGroup.defaultsSessionUp),
+              ProfileStore.isConfigured(),
+              ProfileStore.load() != nil else { return false }
+        if busy || killSwitchRetryPending { return true }
+        killSwitchRetryPending = true
+        busy = true
+        statusText = "Status: Kill switch: traffic blocked, reconnecting"
+        let delay = min(8.0, Double(killSwitchRetryAttempt + 1))
+        killSwitchRetryAttempt += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.killSwitchRetryPending = false
+            guard !self.userStop, !self.connected else { return }
+            guard AppGroup.defaults.bool(forKey: AppGroup.defaultsKillSwitch),
+                  AppGroup.defaults.bool(forKey: AppGroup.defaultsKillSwitchArmed),
+                  AppGroup.defaults.bool(forKey: AppGroup.defaultsSessionUp),
+                  let profile = ProfileStore.load() else {
+                self.busy = false
+                self.refreshProfileStatus()
+                return
+            }
+            self.busy = true
+            self.statusText = "Status: Kill switch: traffic blocked, reconnecting"
+            self.prefs.async {
+                self.startTunnel(server: profile.server, attempt: 0)
+            }
+        }
+        return true
+    }
+
+    /// A failed first connect must not leave includeAllNetworks set.
+    private func releaseIfNeverUp() {
+        guard AppGroup.defaults.bool(forKey: AppGroup.defaultsKillSwitchArmed) else { return }
+        guard !AppGroup.defaults.bool(forKey: AppGroup.defaultsSessionUp) else { return }
+        AppGroup.defaults.set(false, forKey: AppGroup.defaultsKillSwitchArmed)
+        prefs.async { [weak self] in
+            self?.releaseSystemKillSwitch()
+        }
+    }
+
+    private func stopReleasingKillSwitch() {
+        reloadManager { [weak self] mgr in
+            guard let self else { return }
+            guard let mgr else {
+                DispatchQueue.main.async {
+                    self.busy = false
+                    self.refreshProfileStatus()
+                }
+                return
+            }
+            mgr.loadFromPreferences { _ in
+                self.prefs.async {
+                    self.setIncludeAllNetworks(false, on: mgr)
+                    mgr.saveToPreferences { _ in
+                        self.prefs.async {
+                            mgr.loadFromPreferences { _ in
+                                self.prefs.async {
+                                    mgr.connection.stopVPNTunnel()
+                                    DispatchQueue.main.async {
+                                        self.busy = false
+                                        self.refreshProfileStatus()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Clear a leftover system block. No save when the flag is already off.
+    private func releaseSystemKillSwitch() {
+        reloadManager { [weak self] mgr in
+            guard let self, let mgr else { return }
+            mgr.loadFromPreferences { _ in
+                self.prefs.async {
+                    guard let proto = mgr.protocolConfiguration as? NETunnelProviderProtocol,
+                          proto.includeAllNetworks else { return }
+                    self.setIncludeAllNetworks(false, on: mgr)
+                    mgr.saveToPreferences { _ in }
+                }
+            }
+        }
+    }
+
+    private func setIncludeAllNetworks(_ on: Bool, on mgr: NETunnelProviderManager) {
+        guard let proto = mgr.protocolConfiguration as? NETunnelProviderProtocol else { return }
+        proto.includeAllNetworks = on
+        if #available(iOS 16.4, *) {
+            proto.excludeAPNs = on
+            proto.excludeCellularServices = on
+        }
+        mgr.protocolConfiguration = proto
+    }
+
     private func refreshPing() {
+        trafficText = TrafficAccount.label()
         guard connected else {
+            if considerKillSwitchRearm() { return }
             let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
             if !tunnelErr.isEmpty, lastError != tunnelErr {
                 lastError = tunnelErr

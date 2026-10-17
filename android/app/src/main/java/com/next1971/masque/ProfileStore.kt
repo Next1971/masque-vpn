@@ -3,6 +3,8 @@ package com.next1971.masque
 import android.content.Context
 import android.util.Log
 import java.io.File
+import java.util.Calendar
+import java.util.Locale
 
 /**
  * ProfileStore — parses the MASQUE profile and writes certificates to internal
@@ -54,6 +56,13 @@ object ProfileStore {
     private const val PREFS = "masque"
     private const val KEY_CONFIGURED = "configured"
     private const val KEY_KILL_SWITCH = "kill_switch"
+    private const val KEY_TRANSPORT = "transport"
+    private const val KEY_MTU = "mtu"
+    private const val KEY_TR_DAY = "traffic_day"
+    private const val KEY_TR_MONTH = "traffic_month"
+    private const val KEY_TR_DAY_BYTES = "traffic_day_bytes"
+    private const val KEY_TR_MONTH_BYTES = "traffic_month_bytes"
+    private const val KEY_TR_APPLIED = "traffic_applied"
 
     /** Block internet while the VPN session is up but the tunnel is down. Default off. */
     fun killSwitch(ctx: Context): Boolean =
@@ -62,6 +71,90 @@ object ProfileStore {
     fun setKillSwitch(ctx: Context, enabled: Boolean) {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_KILL_SWITCH, enabled).apply()
+    }
+
+    /** "auto", "udp", or "tcp". Default is automatic UDP then TCP. */
+    fun transport(ctx: Context): String {
+        val v = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_TRANSPORT, "auto") ?: "auto"
+        return if (v == "udp" || v == "tcp") v else "auto"
+    }
+
+    fun setTransport(ctx: Context, mode: String) {
+        val saved = if (mode == "udp" || mode == "tcp") mode else "auto"
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_TRANSPORT, saved).apply()
+    }
+
+    /** Tunnel MTU. Default 1340, clamped to 1280–1500. */
+    fun mtu(ctx: Context): Int {
+        val v = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_MTU, 1340)
+        return if (v in 1280..1500) v else 1340
+    }
+
+    fun setMTU(ctx: Context, value: Int) {
+        val saved = if (value in 1280..1500) value else 1340
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_MTU, saved).apply()
+    }
+
+    /**
+     * Folds a monotonic pump total into the local day and month.
+     * A smaller total means the process restarted; only the new bytes are added.
+     */
+    fun noteTraffic(ctx: Context, total: Long) {
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val day = dayKey()
+        val month = monthKey()
+        var dayBytes = prefs.getLong(KEY_TR_DAY_BYTES, 0)
+        var monthBytes = prefs.getLong(KEY_TR_MONTH_BYTES, 0)
+        val applied = prefs.getLong(KEY_TR_APPLIED, 0)
+        if (prefs.getString(KEY_TR_DAY, "") != day) dayBytes = 0
+        if (prefs.getString(KEY_TR_MONTH, "") != month) monthBytes = 0
+        var delta = total - applied
+        if (total < applied) delta = total
+        if (delta < 0) delta = 0
+        dayBytes += delta
+        monthBytes += delta
+        prefs.edit()
+            .putString(KEY_TR_DAY, day)
+            .putString(KEY_TR_MONTH, month)
+            .putLong(KEY_TR_DAY_BYTES, dayBytes)
+            .putLong(KEY_TR_MONTH_BYTES, monthBytes)
+            .putLong(KEY_TR_APPLIED, total)
+            .apply()
+    }
+
+    fun trafficLabel(ctx: Context): String {
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val dayBytes = if (prefs.getString(KEY_TR_DAY, "") == dayKey()) {
+            prefs.getLong(KEY_TR_DAY_BYTES, 0)
+        } else {
+            0L
+        }
+        val monthBytes = if (prefs.getString(KEY_TR_MONTH, "") == monthKey()) {
+            prefs.getLong(KEY_TR_MONTH_BYTES, 0)
+        } else {
+            0L
+        }
+        return "Today: ${formatMB(dayBytes)}\nMonth: ${formatMB(monthBytes)}"
+    }
+
+    private fun formatMB(bytes: Long): String =
+        String.format(Locale.US, "%.1f MB", bytes / 1_000_000.0)
+
+    private fun dayKey(): String {
+        val cal = Calendar.getInstance()
+        return "%04d-%02d-%02d".format(
+            cal.get(Calendar.YEAR),
+            cal.get(Calendar.MONTH) + 1,
+            cal.get(Calendar.DAY_OF_MONTH),
+        )
+    }
+
+    private fun monthKey(): String {
+        val cal = Calendar.getInstance()
+        return "%04d-%02d".format(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1)
     }
 
     fun isConfigured(ctx: Context): Boolean =

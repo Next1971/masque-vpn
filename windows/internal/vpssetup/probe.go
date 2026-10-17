@@ -52,6 +52,26 @@ func ProbeUDPListener(ctx context.Context, host string, udpPort int) error {
 	return fmt.Errorf("no UDP reply from %s (open UDP %d in the cloud firewall if the service is running)", addr, udpPort)
 }
 
+// ProbeTCPListener checks that host:port accepts a TCP connection.
+// It does not complete TLS. A refusal means nothing is listening, or the
+// cloud firewall is dropping the handshake.
+func ProbeTCPListener(ctx context.Context, host string, port int) error {
+	if err := ValidateHost(host); err != nil {
+		return err
+	}
+	if err := ValidateUDPPort(port); err != nil {
+		return err
+	}
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+	var d net.Dialer
+	c, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("no TCP connection to %s (open TCP %d in the cloud firewall if the service is running)", addr, port)
+	}
+	_ = c.Close()
+	return nil
+}
+
 func isTimeout(err error) bool {
 	if err == nil {
 		return false

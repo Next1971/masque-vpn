@@ -51,7 +51,7 @@ type Session struct {
 	ipconn  packetSession
 	dev     tun.Device
 
-	// Transport is "udp" or "tcp". TCP is used only when the UDP probe is silent.
+	// Transport is "udp" or "tcp": the path this session actually opened.
 	Transport string
 
 	// AssignedPrefixes are the addresses assigned by the server to the client
@@ -119,11 +119,20 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 		return nil, err
 	}
 
+	mode := TransportMode(p.Transport)
+	if mode == "tcp" {
+		log.Printf("transport tcp; opening TCP")
+		return connectTCP(ctx, p, dev)
+	}
+
 	up, err := udpReachable(ctx, p)
 	if err != nil {
 		return nil, err
 	}
 	if !up {
+		if mode == "udp" {
+			return nil, fmt.Errorf("UDP %s did not answer", p.Server)
+		}
 		log.Printf("UDP %s did not answer; opening TCP", p.Server)
 		return connectTCP(ctx, p, dev)
 	}
@@ -156,12 +165,19 @@ func (s *Session) AttachTUN(dev tun.Device) {
 	s.dev = dev
 }
 
-// RTT is the smoothed QUIC path RTT to the MASQUE server. Zero if unknown.
+// RTT is the smoothed path RTT to the MASQUE server. QUIC uses its
+// connection stats. TCP uses HTTP/2 PING samples. Zero if unknown.
 func (s *Session) RTT() time.Duration {
-	if s == nil || s.qconn == nil {
+	if s == nil {
 		return 0
 	}
-	return s.qconn.ConnectionStats().SmoothedRTT
+	if s.qconn != nil {
+		return s.qconn.ConnectionStats().SmoothedRTT
+	}
+	if ip, ok := s.ipconn.(*tcpIP); ok {
+		return ip.rtt()
+	}
+	return 0
 }
 
 // Run starts bidirectional conn↔TUN forwarding and blocks until

@@ -18,6 +18,14 @@ BIND=$(awk -F'"' '/^bind/ {print $2; exit}' "$CFG")
 PORT="${BIND##*:}"
 [[ -n "$HOST" && "$PORT" =~ ^[0-9]+$ ]] || { echo "ERROR: cannot parse host/port from $CFG" >&2; exit 1; }
 
+ALT_ARGS=()
+if [[ -f "${ROOT}/state/alt_port" ]]; then
+  ALT=$(tr -d '[:space:]' < "${ROOT}/state/alt_port")
+  if [[ "$ALT" =~ ^[0-9]+$ && "$ALT" != "$PORT" && "$ALT" != "0" ]]; then
+    ALT_ARGS=(--alt-port "$ALT")
+  fi
+fi
+
 install -d -m 0755 "${ROOT}/state" "${ROOT}/clients"
 if [[ ! -f "$STATE" ]]; then
   echo 9 > "$STATE"
@@ -38,7 +46,7 @@ fi
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
 
-bash "$GEN" --host "$HOST" --port "$PORT" --reuse-ca "$CA" \
+bash "$GEN" --host "$HOST" --port "$PORT" "${ALT_ARGS[@]}" --reuse-ca "$CA" \
   --client-only --android-only --index "$NEXT" --out "$OUT"
 
 install -d -m 0755 "${ROOT}/clients/${NEXT}"

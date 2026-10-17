@@ -9,15 +9,17 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 
 /**
  * MainActivity — minimal UI:
  *  - “Import Profile” (file picker → ProfileStore)
+ *  - “Scan QR” (camera → the same profile text)
  *  - “Connect / Disconnect” (VPN permission request → MasqueVpnService)
  *  - status line (updated by broadcasts from the service)
  */
@@ -25,6 +27,7 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var statusView: TextView
     private lateinit var pingView: TextView
+    private lateinit var trafficView: TextView
     private lateinit var connectBtn: Button
     private var connected = false
 
@@ -36,6 +39,7 @@ class MainActivity : ComponentActivity() {
             connected = VpnStatus.applyConnected(connected, msg)
             connectBtn.text = if (connected) "Disconnect" else "Connect"
             pingView.text = VpnStatus.pingLabel(msg) ?: if (connected) pingView.text else "Ping: —"
+            trafficView.text = ProfileStore.trafficLabel(this@MainActivity)
         }
     }
 
@@ -49,6 +53,16 @@ class MainActivity : ComponentActivity() {
             toast("Unable to read file")
             return@registerForActivityResult
         }
+        applyProfile(text)
+    }
+
+    private val scanProfile = registerForActivityResult(ScanContract()) { result ->
+        val text = result.contents
+        if (text.isNullOrBlank()) return@registerForActivityResult
+        applyProfile(text)
+    }
+
+    private fun applyProfile(text: String) {
         ProfileStore.import(this, text)
             .onSuccess {
                 toast("Profile imported")
@@ -79,17 +93,24 @@ class MainActivity : ComponentActivity() {
 
         statusView = findViewById(R.id.status)
         pingView = findViewById(R.id.ping)
+        trafficView = findViewById(R.id.traffic)
         connectBtn = findViewById(R.id.btnConnect)
         findViewById<TextView>(R.id.version).text = appVersionLabel()
 
         findViewById<Button>(R.id.btnImport).setOnClickListener {
             pickProfile.launch("*/*")
         }
+        findViewById<Button>(R.id.btnScan).setOnClickListener {
+            val options = ScanOptions()
+            options.setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+            options.setPrompt("Point at the profile QR from masque-setup")
+            options.setBeepEnabled(false)
+            options.setOrientationLocked(false)
+            scanProfile.launch(options)
+        }
 
-        val killSwitch = findViewById<CheckBox>(R.id.chkKillSwitch)
-        killSwitch.isChecked = ProfileStore.killSwitch(this)
-        killSwitch.setOnCheckedChangeListener { _, checked ->
-            ProfileStore.setKillSwitch(this, checked)
+        findViewById<Button>(R.id.btnSettings).setOnClickListener {
+            ClientSettings.show(this)
         }
 
         connectBtn.setOnClickListener {
@@ -139,6 +160,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshUi() {
+        trafficView.text = ProfileStore.trafficLabel(this)
         if (MasqueVpnService.isRunning) {
             connected = true
             statusView.text = "Status: VPN active"

@@ -153,6 +153,10 @@ func handle(eng *engine.Engine, req ipc.Request) ipc.Response {
 		KillSwitch:  snap.KillSwitch,
 		AssignedIP:  snap.AssignedIP,
 		RTTMs:       snap.RTTMs,
+		Transport:   snap.Transport,
+		MTU:         snap.MTU,
+		DayBytes:    snap.DayBytes,
+		MonthBytes:  snap.MonthBytes,
 	}
 	switch req.Cmd {
 	case ipc.CmdStatus:
@@ -211,6 +215,27 @@ func handle(eng *engine.Engine, req ipc.Request) ipc.Response {
 			return resp
 		}
 		resp.KillSwitch = *req.KillSwitch
+		return resp
+	case ipc.CmdSetTransport:
+		if err := eng.SetTransport(req.Transport); err != nil {
+			resp.OK = false
+			resp.Error = err.Error()
+			return resp
+		}
+		resp.Transport = store.LoadSettings().EffectiveTransport()
+		return resp
+	case ipc.CmdSetMTU:
+		if req.MTU == 0 {
+			resp.OK = false
+			resp.Error = "missing mtu"
+			return resp
+		}
+		if err := eng.SetMTU(req.MTU); err != nil {
+			resp.OK = false
+			resp.Error = err.Error()
+			return resp
+		}
+		resp.MTU = store.LoadSettings().EffectiveMTU()
 		return resp
 	default:
 		resp.OK = false

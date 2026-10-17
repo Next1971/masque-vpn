@@ -58,6 +58,9 @@ func Connect(cfg *Config, fd int, cb Callback) (*Tunnel, error) {
 	t := &Tunnel{sess: sess, prof: prof, ctx: ctx, cancel: cancel, cb: cb, started: true}
 	rememberAssigned(t, sess)
 	pump := clientcore.NewPump(sess, dev)
+	t.mu.Lock()
+	t.pump = pump
+	t.mu.Unlock()
 	go t.runPump(ctx, pump, prof, cb)
 	return t, nil
 }

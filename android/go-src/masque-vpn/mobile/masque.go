@@ -28,7 +28,7 @@ type Config struct {
 	AltPort int
 	// BindInterface is the OS interface name for the QUIC UDP socket (iOS).
 	BindInterface string
-	// Transport is "udp" (default) or "tcp". It is an app setting, not a
+	// Transport is "auto" (empty), "udp", or "tcp". It is an app setting, not a
 	// profile field: the same certificate and server address are used.
 	Transport string
 }
@@ -55,6 +55,7 @@ type Tunnel struct {
 	stopped    bool
 	bridge     *bridgeTUN
 	pipe       *DatagramPipe
+	pump       *clientcore.Pump
 }
 
 // AssignedAddr returns the server-assigned IPv4/IPv6 address (without prefix
@@ -125,7 +126,8 @@ func (t *Tunnel) Probe(timeoutMs int64) error {
 	return sess.ProbeGateway(time.Duration(timeoutMs) * time.Millisecond)
 }
 
-// RTTMillis is the smoothed QUIC RTT to the VPN server in milliseconds.
+// RTTMillis is the smoothed RTT to the VPN server in milliseconds.
+// QUIC reports its path RTT. TCP reports HTTP/2 PING RTT.
 // Zero if the session is down or no sample exists yet.
 func (t *Tunnel) RTTMillis() int64 {
 	t.mu.Lock()
@@ -138,6 +140,17 @@ func (t *Tunnel) RTTMillis() int64 {
 		return 0
 	}
 	return d.Milliseconds()
+}
+
+// TrafficBytes is tunnel IP traffic since forwarding started, both directions.
+// The total resets when the process restarts. Callers persist the delta.
+func (t *Tunnel) TrafficBytes() int64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pump == nil {
+		return 0
+	}
+	return t.pump.Bytes()
 }
 
 // ServerIP is the VPN server address to exclude from the tunnel (IPv4 or IPv6).
@@ -337,6 +350,9 @@ func (t *Tunnel) startWithDevice(dev tun.Device, readyMsg string) error {
 	t.mu.Unlock()
 
 	pump := clientcore.NewPump(sess, dev)
+	t.mu.Lock()
+	t.pump = pump
+	t.mu.Unlock()
 	go t.runPump(ctx, pump, prof, cb)
 	if cb != nil {
 		cb.OnStatus("forwarding started")

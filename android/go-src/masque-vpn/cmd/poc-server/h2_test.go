@@ -176,6 +176,90 @@ func TestTCPConnectAssignsAddress(t *testing.T) {
 	}
 }
 
+func TestTCPCoverForVisitorAndForeignCert(t *testing.T) {
+	ca, caKey := mintCA(t)
+	otherCA, otherKey := mintCA(t)
+	serverCert := mintLeaf(t, ca, caKey, "masque.test", true)
+	goodCert := mintLeaf(t, ca, caKey, "masque-client-1", false)
+	badCert := mintLeaf(t, otherCA, otherKey, "someone-else", false)
+	pool := x509.NewCertPool()
+	pool.AddCert(ca)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go serveTCP(ctx, ln, &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
+		ClientCAs:    pool,
+		ClientAuth:   tls.RequestClientCert,
+	}, tcpConnect{
+		blocked:   map[string]struct{}{},
+		clientCAs: pool,
+		assign:    netip.MustParsePrefix("10.8.0.2/32"),
+		route:     netip.MustParsePrefix("0.0.0.0/0"),
+		live:      &sessionIndex{byCN: make(map[string]clientLink)},
+	})
+
+	visitor := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
+		RootCAs:    pool,
+		ServerName: "masque.test",
+	}}}
+	resp, err := visitor.Get("https://" + ln.Addr().String() + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "<h1>Notes</h1>") {
+		t.Fatalf("visitor status %d body %q", resp.StatusCode, body)
+	}
+
+	foreign := &http2.Transport{TLSClientConfig: &tls.Config{
+		Certificates: []tls.Certificate{badCert},
+		RootCAs:      pool,
+		ServerName:   "masque.test",
+		NextProtos:   []string{"h2"},
+	}}
+	badReq, err := http.NewRequest(http.MethodConnect, "https://"+ln.Addr().String()+"/vpn", http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	badReq.Header[":protocol"] = []string{h2ConnectProtocol}
+	badReq.Header.Set(h2CapsuleHeader, h2CapsuleValue)
+	badResp, err := foreign.RoundTrip(badReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	badBody, _ := io.ReadAll(badResp.Body)
+	badResp.Body.Close()
+	if badResp.StatusCode != http.StatusOK || !strings.Contains(string(badBody), "<h1>Notes</h1>") {
+		t.Fatalf("foreign cert status %d body %q", badResp.StatusCode, badBody)
+	}
+
+	good := &http2.Transport{TLSClientConfig: &tls.Config{
+		Certificates: []tls.Certificate{goodCert},
+		RootCAs:      pool,
+		ServerName:   "masque.test",
+		NextProtos:   []string{"h2"},
+	}}
+	pageReq, err := http.NewRequest(http.MethodGet, "https://"+ln.Addr().String()+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pageResp, err := good.RoundTrip(pageReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pageBody, _ := io.ReadAll(pageResp.Body)
+	pageResp.Body.Close()
+	if pageResp.StatusCode != http.StatusOK || !strings.Contains(string(pageBody), "<h1>Notes</h1>") {
+		t.Fatalf("valid cert page status %d body %q", pageResp.StatusCode, pageBody)
+	}
+}
+
 func mintCA(t *testing.T) (*x509.Certificate, crypto.PrivateKey) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

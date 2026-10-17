@@ -190,6 +190,13 @@ func TestTCPConnectAssignsAndEchoes(t *testing.T) {
 	if string(buf[:n]) != "pong" {
 		t.Fatalf("echo %q", buf[:n])
 	}
+	deadline := time.Now().Add(3 * time.Second)
+	for sess.RTT() <= 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("tcp session reported no ping")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func mintCA(t *testing.T) (*x509.Certificate, crypto.PrivateKey) {

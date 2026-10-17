@@ -38,6 +38,15 @@
         android:text="Ping: —"
         android:textSize="14sp"
         android:gravity="center"
+        android:layout_marginBottom="8dp" />
+
+    <TextView
+        android:id="@+id/traffic"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Today: 0.0 MB\nMonth: 0.0 MB"
+        android:textSize="14sp"
+        android:gravity="center"
         android:layout_marginBottom="24dp" />
 
     <Button
@@ -48,16 +57,23 @@
         android:layout_marginBottom="12dp" />
 
     <Button
+        android:id="@+id/btnScan"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Scan QR"
+        android:layout_marginBottom="12dp" />
+
+    <Button
         android:id="@+id/btnConnect"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Connect"
-        android:layout_marginBottom="16dp" />
+        android:layout_marginBottom="12dp" />
 
-    <CheckBox
-        android:id="@+id/chkKillSwitch"
+    <Button
+        android:id="@+id/btnSettings"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Kill switch (block internet if the tunnel drops)" />
+        android:text="Settings" />
 
 </LinearLayout>

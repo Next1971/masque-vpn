@@ -30,6 +30,10 @@ type Status struct {
 	KillSwitch  bool
 	AssignedIP  string
 	RTTMs       int64
+	Transport   string
+	MTU         int
+	DayBytes    int64
+	MonthBytes  int64
 }
 
 type Engine struct {
@@ -43,7 +47,7 @@ type Engine struct {
 
 func New(hub *ipc.Hub) *Engine {
 	s := store.LoadSettings()
-	return &Engine{
+	e := &Engine{
 		hub: hub,
 		status: Status{
 			State:       ipc.StateDisconnected,
@@ -51,6 +55,16 @@ func New(hub *ipc.Hub) *Engine {
 			Autoconnect: s.Autoconnect,
 			KillSwitch:  s.KillSwitch,
 		},
+	}
+	go e.persistTraffic()
+	return e
+}
+
+func (e *Engine) persistTraffic() {
+	t := time.NewTicker(2 * time.Second)
+	defer t.Stop()
+	for range t.C {
+		_ = e.Snapshot()
 	}
 }
 
@@ -62,13 +76,24 @@ func (e *Engine) Snapshot() Status {
 	s.Configured = store.Configured()
 	s.Autoconnect = st.Autoconnect
 	s.KillSwitch = st.KillSwitch
+	s.Transport = st.EffectiveTransport()
+	s.MTU = st.EffectiveMTU()
 	s.RTTMs = 0
+	var total int64
 	if e.pump != nil && (s.State == ipc.StateConnected || s.State == ipc.StateReconnecting) {
 		if d := e.pump.RTT(); d > 0 {
 			s.RTTMs = d.Milliseconds()
 		}
+		total = e.pump.Bytes()
 	}
+	s.DayBytes, s.MonthBytes = store.ObserveTraffic(total)
 	return s
+}
+
+func applyProfilePrefs(p *clientcore.Profile) {
+	st := store.LoadSettings()
+	p.Transport = st.EffectiveTransport()
+	p.MTU = st.EffectiveMTU()
 }
 
 func (e *Engine) set(state, detail, ip string) {
@@ -127,6 +152,24 @@ func (e *Engine) SetAutoconnect(v bool) error {
 
 func (e *Engine) SetKillSwitch(v bool) error {
 	if err := store.SetKillSwitch(v); err != nil {
+		return err
+	}
+	s := e.Snapshot()
+	e.set(s.State, s.Detail, s.AssignedIP)
+	return nil
+}
+
+func (e *Engine) SetTransport(v string) error {
+	if err := store.SetTransport(v); err != nil {
+		return err
+	}
+	s := e.Snapshot()
+	e.set(s.State, s.Detail, s.AssignedIP)
+	return nil
+}
+
+func (e *Engine) SetMTU(v int) error {
+	if err := store.SetMTU(v); err != nil {
 		return err
 	}
 	s := e.Snapshot()
@@ -202,6 +245,7 @@ func (e *Engine) loopKillSwitch(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	applyProfilePrefs(prof)
 	dev, err := tun.CreateTUN(prof.TUNName, prof.MTU)
 	if err != nil {
 		return fmt.Errorf("create TUN: %w", err)
@@ -254,6 +298,7 @@ func (e *Engine) runOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	applyProfilePrefs(prof)
 	dev, err := tun.CreateTUN(prof.TUNName, prof.MTU)
 	if err != nil {
 		return fmt.Errorf("create TUN: %w", err)
@@ -328,8 +373,15 @@ func (e *Engine) pumpOn(ctx context.Context, prof *clientcore.Profile, dev tun.D
 	e.mu.Unlock()
 	defer func() {
 		e.mu.Lock()
+		var total int64
+		if e.pump != nil {
+			total = e.pump.Bytes()
+		}
 		e.pump = nil
 		e.mu.Unlock()
+		if total > 0 {
+			store.ObserveTraffic(total)
+		}
 	}()
 	pump.OnRedial = func() {
 		e.set(ipc.StateReconnecting, "connection dropped by the network; reconnecting", clientAddr.Addr().String())

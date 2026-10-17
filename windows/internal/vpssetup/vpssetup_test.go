@@ -1,6 +1,7 @@
 package vpssetup
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -109,6 +110,83 @@ func TestValidateHost(t *testing.T) {
 	}
 	if err := ValidateUDPPort(22); err == nil {
 		t.Fatal("ssh port")
+	}
+	if err := ValidatePortPair(443, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidatePortPair(443, 443); err == nil {
+		t.Fatal("same port")
+	}
+	if err := ValidatePortPair(443, 22); err == nil {
+		t.Fatal("ssh alt")
+	}
+}
+
+func TestDescribeConflicts(t *testing.T) {
+	udp := map[int]struct{}{443: {}}
+	tcp := map[int]struct{}{2053: {}}
+	lines := DescribeConflicts(udp, tcp, 443, 2053)
+	text := strings.Join(lines, "\n")
+	if !strings.Contains(text, "UDP 443") || !strings.Contains(text, "will not start") {
+		t.Fatalf("listen udp: %s", text)
+	}
+	if !strings.Contains(text, "TCP 2053") || !strings.Contains(text, "redirects") {
+		t.Fatalf("alt tcp: %s", text)
+	}
+	if len(DescribeConflicts(nil, nil, 443, 0)) != 0 {
+		t.Fatal("expected no conflicts")
+	}
+	free := RecommendFree(udp, tcp)
+	for _, p := range free {
+		if p == 443 || p == 2053 {
+			t.Fatalf("busy port recommended: %v", free)
+		}
+	}
+}
+
+func TestExistingCABlocksReinstall(t *testing.T) {
+	ex := parseMasqueProbe("NOCONFIG\nNOBIN\nNOSVC\nINACTIVE\nHASCA\nNOALT\n---TOML---\n---ENDTOML---")
+	if !ex.Present || !ex.HasCA {
+		t.Fatalf("%+v", ex)
+	}
+	ex = parseMasqueProbe("HASCONFIG\nACTIVE\nHASCA\nALTPORT 2053\n---TOML---\nbind = \"[::]:443\"\nserver_name = \"vpn.example.com\"\n---ENDTOML---")
+	if ex.UDPPort != 443 || ex.AltPort != 2053 || ex.ServerName != "vpn.example.com" {
+		t.Fatalf("%+v", ex)
+	}
+	if !strings.Contains(ex.Summary(), "alt 2053") {
+		t.Fatalf("%s", ex.Summary())
+	}
+}
+
+func TestInstallScriptKeepsExistingLayout(t *testing.T) {
+	b, err := os.ReadFile("assets/install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(b)
+	for _, s := range []string{
+		"Refusing to replace certificates",
+		"MASQUE_ALT_PORT",
+		"--alt-port",
+		"/tcp",
+		"REDIRECT",
+		"state/alt_port",
+		"TCP_LISTEN_OK",
+		"blocked_cns",
+	} {
+		if !strings.Contains(text, s) {
+			t.Fatalf("install.sh missing %q", s)
+		}
+	}
+	if strings.Contains(text, "rm -rf /opt/masque") || strings.Contains(text, "rm ") {
+		t.Fatal("install.sh must not delete existing files")
+	}
+	issue, err := os.ReadFile("assets/issue-client.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(issue), "--alt-port") || !strings.Contains(string(issue), "--client-only") {
+		t.Fatal("issuer must pass alt_port without replacing the server cert")
 	}
 }
 

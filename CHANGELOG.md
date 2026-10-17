@@ -4,6 +4,33 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
+## [v2.1.0] - 2026-10-15
+
+**GitHub Latest.** Replaces [v1.7.1](https://github.com/Next1971/masque-vpn/releases/tag/v1.7.1). Phone APK, TV APK, Windows MSI, `masque-setup.exe`, Linux server (amd64 and arm64), `install.sh`, `gen-config.sh`, and Docker sources. [iOS 2.0](https://testflight.apple.com/join/x52N41V1) stays on TestFlight. No IPA.
+
+The published server had never carried a TCP tunnel, and it had never answered a browser. v2.0.0 was a pre-release that opened a TCP port and still rejected any handshake without a client certificate. v2.1.0 keeps that TCP tunnel and serves a website to everyone else.
+
+### Added
+
+- TCP 443 (or whichever port the server binds) asks for a client certificate and does not require one. A certificate signed by the private CA, plus an HTTP/2 CONNECT-IP request to `/vpn`, opens the tunnel. A missing, foreign, or revoked certificate gets an HTML page (`Notes`). A normal browser GET gets the same page.
+- TCP accepts HTTP/2 and HTTP/1.1, so a browser can load that page.
+- Client settings on Android phone, Android TV, Windows, and iOS: transport (Automatic, UDP only, TCP only), MTU (default 1340, range 1280–1500), kill switch (default off).
+- Day and month traffic on the main screen, in MB.
+- Ping during a TCP session (HTTP/2 PING), same display as the QUIC RTT.
+- `masque-setup.exe` installs the UDP+TCP server, optional second port, and shows a profile QR for the phone and iOS.
+
+### Changed
+
+- Android `2.1.0` (`versionCode` 26). Windows product **2.1.0**. `install.sh` defaults to release **v2.1.0**. Docker image tag `masque-vpn-server:2.1.0`.
+- UDP is unchanged: the private CA is required, and there is no website on UDP.
+
+### Compatibility
+
+- A 1.7.1 or older UDP client still reaches a 2.1.0 server over UDP.
+- A 2.0.0 or 2.1.0 client reaches this server over UDP and over TCP.
+- A 2.1.0 client still reaches an older UDP-only server over UDP. TCP needs a 2.0.0 or 2.1.0 server.
+- iOS 2.0 on TestFlight uses the private CA and works with this server. It does not need a new profile.
+
 ## [v2.0.0] - 2026-10-11
 
 **GitHub pre-release. Latest stays [v1.7.1](https://github.com/Next1971/masque-vpn/releases/tag/v1.7.1).** Full experimental drop: phone APK, TV APK, Windows MSI, Linux server, `install.sh`, and Docker sources. `masque-setup.exe` is not attached. Profiles and certificates are unchanged.

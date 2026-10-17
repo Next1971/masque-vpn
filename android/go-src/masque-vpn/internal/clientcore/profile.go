@@ -18,7 +18,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// TunnelMTU is the fixed v2.0 tunnel MTU. The client has no MTU control.
+// TunnelMTU is the default client tunnel MTU. Settings may choose 1280–1500.
 const TunnelMTU = 1340
 
 // Profile is the client server profile. The same parameter set is used
@@ -51,8 +51,8 @@ type Profile struct {
 	// interface (iOS Packet Tunnel: Wi‑Fi/LTE so handshake is not swallowed by utun).
 	BindInterface string `toml:"-"`
 
-	// Transport is an app setting, not a profile field. Empty and "udp" use
-	// QUIC. "tcp" uses HTTP/2 CONNECT-IP on the same host:port and certificates.
+	// Transport is an app setting, not a profile field. "auto" (empty) probes
+	// UDP and falls back to TCP. "udp" never opens TCP. "tcp" never opens UDP.
 	Transport string `toml:"-"`
 }
 
@@ -124,8 +124,10 @@ func (p *Profile) Validate() error {
 	if err := validateAltPort(p.Server, p.AltPort); err != nil {
 		return err
 	}
-	// v2.0 base. The profile may still say 1369. There is no MTU control.
-	p.MTU = TunnelMTU
+	// 0 or outside 1280–1500 becomes the default. A value inside the range is
+	// kept. Callers that want the default must set 1340 or 0 first: a profile
+	// file may still say 1369, which is inside the range and would otherwise stick.
+	p.MTU = ClampMTU(p.MTU)
 	if p.TUNName == "" {
 		p.TUNName = "masque0"
 	}
