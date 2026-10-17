@@ -5,14 +5,14 @@ go 1.26.0
 require (
 	fyne.io/fyne/v2 v2.8.1
 	github.com/BurntSushi/toml v1.6.0
-	github.com/Microsoft/go-winio v0.6.2
+	github.com/Microsoft/go-winio v0.6.3
 	github.com/quic-go/connect-ip-go v0.4.0
 	github.com/quic-go/quic-go v0.63.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.58.0
-	golang.org/x/sys v0.48.0
+	golang.org/x/net v0.60.0
+	golang.org/x/sys v0.49.0
 	golang.zx2c4.com/wireguard v0.0.0-20260522210424-ecfc5a8d5446
 )
 
