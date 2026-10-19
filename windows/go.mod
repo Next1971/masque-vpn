@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	fyne.io/fyne/v2 v2.8.1
 	github.com/BurntSushi/toml v1.6.0
-	github.com/Microsoft/go-winio v0.6.3
+	github.com/Microsoft/go-winio v0.6.4
 	github.com/quic-go/connect-ip-go v0.6.0
 	github.com/quic-go/quic-go v0.63.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
