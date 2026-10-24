@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import Network
 import NetworkExtension
 import Mobile
 
@@ -297,12 +296,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         ignorePathChangesUntil = Date().addingTimeInterval(8)
     }
 
-    private func pathKey(_ path: NetworkExtension.NWPath?) -> String {
+    private func pathKey(_ path: NWPath?) -> String {
         guard let path else { return "nil" }
-        let wifi = path.usesInterfaceType(.wifi)
-        let cell = path.usesInterfaceType(.cellular)
-        let wired = path.usesInterfaceType(.wiredEthernet)
-        return "\(path.status.rawValue)/wifi=\(wifi)/cell=\(cell)/wired=\(wired)"
+        // Status only. isExpensive/interface type need Network.NWPath and
+        // were ambiguous on Xcode 26 (Network vs NetworkExtension).
+        return "\(path.status.rawValue)"
     }
 
     private func resolveThenConnect(
