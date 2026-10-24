@@ -13,6 +13,8 @@ enum AppGroup {
     static let defaultsStatus = "status"
     static let defaultsPing = "pingMs"
     static let defaultsLastError = "lastError"
+    /// Last VPN server IP that completed a handshake. Used when DNS is slow.
+    static let defaultsLastServerIP = "lastServerIP"
     static let defaultsTrafficDay = "trafficDay"
     static let defaultsTrafficMonth = "trafficMonth"
     static let defaultsTrafficDayBytes = "trafficDayBytes"

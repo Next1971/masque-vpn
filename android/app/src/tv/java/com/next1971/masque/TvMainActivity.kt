@@ -34,13 +34,15 @@ class TvMainActivity : ComponentActivity() {
     private lateinit var trafficView: TextView
     private lateinit var connectBtn: Button
     private var connected = false
+    private var connecting = false
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) {
             val msg = i?.getStringExtra("msg") ?: return
             statusView.text = VpnStatus.statusLabel(msg)
             connected = VpnStatus.applyConnected(connected, msg)
-            connectBtn.text = if (connected) "Disconnect" else "Connect"
+            connecting = VpnStatus.applyConnecting(connecting, connected, msg)
+            connectBtn.text = if (connected || connecting) "Disconnect" else "Connect"
             pingView.text = VpnStatus.pingLabel(msg) ?: if (connected) pingView.text else "Ping: —"
             trafficView.text = ProfileStore.trafficLabel(this@TvMainActivity)
         }
@@ -52,6 +54,8 @@ class TvMainActivity : ComponentActivity() {
         if (res.resultCode == Activity.RESULT_OK) {
             startService(Intent(this, MasqueVpnService::class.java).setAction(MasqueVpnService.ACTION_CONNECT))
         } else {
+            connecting = false
+            connectBtn.text = "Connect"
             toast("VPN permission denied")
         }
     }
@@ -85,7 +89,9 @@ class TvMainActivity : ComponentActivity() {
         setupTvFocusAnimation(settingsBtn)
 
         connectBtn.setOnClickListener {
-            if (connected) {
+            if (connected || connecting) {
+                connecting = false
+                connectBtn.text = "Connect"
                 startService(Intent(this, MasqueVpnService::class.java).setAction(MasqueVpnService.ACTION_DISCONNECT))
             } else {
                 if (!ProfileStore.isConfigured(this)) { toast("Import a profile first"); return@setOnClickListener }
@@ -189,6 +195,9 @@ class TvMainActivity : ComponentActivity() {
     }
 
     private fun connectVpn() {
+        connecting = true
+        connectBtn.text = "Disconnect"
+        statusView.text = "Status: Connecting…"
         val prep = VpnService.prepare(this)
         if (prep != null) vpnPermission.launch(prep)
         else startService(Intent(this, MasqueVpnService::class.java).setAction(MasqueVpnService.ACTION_CONNECT))
@@ -198,9 +207,10 @@ class TvMainActivity : ComponentActivity() {
         trafficView.text = ProfileStore.trafficLabel(this)
         if (MasqueVpnService.isRunning) {
             connected = true
+            connecting = false
             statusView.text = "Status: VPN active"
             connectBtn.text = "Disconnect"
-        } else {
+        } else if (!connecting) {
             connected = false
             connectBtn.text = "Connect"
             pingView.text = "Ping: —"

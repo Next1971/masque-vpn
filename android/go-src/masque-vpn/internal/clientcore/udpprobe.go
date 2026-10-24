@@ -15,7 +15,7 @@ const udpProbeTimeout = 3 * time.Second
 // version-negotiation probe. Silence means UDP is unusable and Connect
 // should open HTTP/2 instead. A live server answers in one round trip.
 func udpReachable(ctx context.Context, p *Profile) (bool, error) {
-	addrs, err := resolveDialAddrs(p.Server, p.AltPort)
+	addrs, err := resolveDialAddrsCtx(ctx, p.Server, p.AltPort)
 	if err != nil {
 		return false, err
 	}
