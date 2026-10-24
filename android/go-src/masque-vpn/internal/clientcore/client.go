@@ -139,7 +139,7 @@ func ConnectWithPacketConn(ctx context.Context, p *Profile, dev tun.Device, pc n
 		log.Printf("transport tcp; opening TCP")
 		return connectTCP(ctx, p, dev)
 	}
-	addrs, err := resolveDialAddrs(p.Server, p.AltPort)
+	addrs, err := resolveDialAddrsCtx(ctx, p.Server, p.AltPort)
 	if err != nil {
 		return nil, fmt.Errorf("resolve server %q: %w", p.Server, err)
 	}

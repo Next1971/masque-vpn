@@ -1,6 +1,17 @@
 package com.next1971.masque
 
 object VpnStatus {
+    fun applyConnecting(previous: Boolean, connected: Boolean, msg: String): Boolean {
+        if (connected) return false
+        val m = msg.lowercase()
+        return when {
+            m == "disconnected" -> false
+            m.startsWith("error:") || m.startsWith("connection error") -> false
+            m.startsWith("connecting") || m.contains("checking tunnel") -> true
+            else -> previous
+        }
+    }
+
     fun applyConnected(previous: Boolean, msg: String): Boolean {
         val m = msg.lowercase()
         return when {

@@ -1,16 +1,26 @@
 package clientcore
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sort"
 	"strconv"
+	"time"
 )
+
+const dnsLookupTimeout = 8 * time.Second
 
 // resolveDialAddrs turns [server].server plus optional alt_port into concrete
 // UDP endpoints. A hostname yields every A and AAAA; IPv6 is listed first so
 // a single-address path prefers QUIC over IPv6 when DNS has AAAA.
 func resolveDialAddrs(server string, altPort int) ([]*net.UDPAddr, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dnsLookupTimeout)
+	defer cancel()
+	return resolveDialAddrsCtx(ctx, server, altPort)
+}
+
+func resolveDialAddrsCtx(ctx context.Context, server string, altPort int) ([]*net.UDPAddr, error) {
 	host, portStr, err := net.SplitHostPort(server)
 	if err != nil {
 		return nil, fmt.Errorf("server %q: %w", server, err)
@@ -24,9 +34,17 @@ func resolveDialAddrs(server string, altPort int) ([]*net.UDPAddr, error) {
 	if ip := net.ParseIP(host); ip != nil {
 		ips = []net.IP{ip}
 	} else {
-		ips, err = net.LookupIP(host)
-		if err != nil {
-			return nil, fmt.Errorf("lookup %q: %w", host, err)
+		if _, ok := ctx.Deadline(); !ok {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, dnsLookupTimeout)
+			defer cancel()
+		}
+		addrs, lerr := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if lerr != nil {
+			return nil, fmt.Errorf("lookup %q: %w", host, lerr)
+		}
+		for _, a := range addrs {
+			ips = append(ips, a.IP)
 		}
 	}
 	if len(ips) == 0 {

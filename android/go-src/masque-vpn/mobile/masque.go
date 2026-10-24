@@ -285,17 +285,49 @@ func DialWithPipe(cfg *Config, cb Callback, pipe *DatagramPipe) (t *Tunnel, err 
 	return dial(cfg, cb, pipe)
 }
 
+const dialTimeout = 18 * time.Second
+
+var pendingDial struct {
+	sync.Mutex
+	cancel context.CancelFunc
+}
+
+func setPendingDial(cancel context.CancelFunc) {
+	pendingDial.Lock()
+	pendingDial.cancel = cancel
+	pendingDial.Unlock()
+}
+
+// CancelPendingDial aborts an in-flight Dial (DNS/QUIC/TCP). Android calls
+// this from Disconnect so a hung whitelist path cannot freeze the UI thread
+// or keep Connect running after the user already stopped.
+func CancelPendingDial() {
+	pendingDial.Lock()
+	cancel := pendingDial.cancel
+	pendingDial.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
 func dial(cfg *Config, cb Callback, pipe *DatagramPipe) (*Tunnel, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("nil config")
 	}
 	prof := profileFromConfig(cfg)
-	ctx, cancel := context.WithCancel(context.Background())
-	sess, err := connectSession(ctx, prof, pipe)
+	// Dial used to share the session context, so a timeout would kill a live
+	// tunnel. Handshake and DNS get their own deadline; forwarding does not.
+	dialCtx, dialCancel := context.WithTimeout(context.Background(), dialTimeout)
+	setPendingDial(dialCancel)
+	defer func() {
+		dialCancel()
+		setPendingDial(nil)
+	}()
+	sess, err := connectSession(dialCtx, prof, pipe)
 	if err != nil {
-		cancel()
 		return nil, fmt.Errorf("dial: %w", err)
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	if cb != nil {
 		if sess.DialAddr != "" {
 			cb.OnStatus("CONNECT-IP session established via " + sess.DialAddr)

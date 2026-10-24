@@ -47,7 +47,7 @@ type tcpIP struct {
 // connectTCP opens HTTP/2 CONNECT-IP on the same host and ports as UDP
 // (profile port, then alt_port). The first handshake that assigns an address wins.
 func connectTCP(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) {
-	addrs, err := resolveDialAddrs(p.Server, p.AltPort)
+	addrs, err := resolveDialAddrsCtx(ctx, p.Server, p.AltPort)
 	if err != nil {
 		return nil, err
 	}

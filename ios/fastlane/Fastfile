@@ -109,7 +109,7 @@ platform :ios do
     upload_to_testflight(
       api_key: api_key,
       skip_waiting_for_build_processing: true,
-      changelog: "2.1.0: Settings (transport, MTU, kill switch), day and month traffic, TCP ping, iOS alt port and IPv6 dial."
+      changelog: "2.1.1: Keep Connect on screen; retry DNS; stay up in background; Disconnect no longer hangs. Android: Connect/Disconnect stays usable on filtered mobile data."
     )
   end
 end

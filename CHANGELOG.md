@@ -4,6 +4,11 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
+### Client 2.1.1 (APK + TestFlight, no GitHub Release)
+
+- Android: Dial no longer blocks the UI thread, so Connect/Disconnect still work on filtered mobile data (whitelist).
+- iOS: Connect stays on screen; DNS retries; VPN does not drop just because other apps opened; Disconnect no longer hangs on preference save.
+
 ## [v2.1.0] - 2026-10-15
 
 **GitHub Latest.** Replaces [v1.7.1](https://github.com/Next1971/masque-vpn/releases/tag/v1.7.1). Phone APK, TV APK, Windows MSI, `masque-setup.exe`, Linux server (amd64 and arm64), `install.sh`, `gen-config.sh`, and Docker sources. [iOS 2.0](https://testflight.apple.com/join/x52N41V1) stays on TestFlight. No IPA.

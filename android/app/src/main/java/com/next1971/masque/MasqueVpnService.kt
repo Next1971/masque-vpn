@@ -20,6 +20,7 @@ import mobile.Config
 import mobile.Mobile
 import mobile.Tunnel
 import java.io.FileDescriptor
+import java.util.concurrent.Executors
 
 /**
  * MasqueVpnService — Android VpnService wrapping the shared Go core (clientcore)
@@ -56,8 +57,12 @@ class MasqueVpnService : VpnService() {
 
     private var tunnel: Tunnel? = null
     private var pfd: ParcelFileDescriptor? = null
-    private var userStop = false
+    @Volatile private var userStop = false
     private var retryPosted = false
+    private val vpnLock = Any()
+    private val vpnWorker = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "masque-vpn").apply { isDaemon = true }
+    }
     private var networksRegistered = false
     private var underlying: Network? = null
     private val rttHandler = Handler(Looper.getMainLooper())
@@ -106,36 +111,44 @@ class MasqueVpnService : VpnService() {
             ACTION_DISCONNECT -> {
                 userStop = true
                 rttHandler.removeCallbacksAndMessages(null)
+                try {
+                    Class.forName("mobile.Mobile").getMethod("cancelPendingDial").invoke(null)
+                } catch (_: Exception) {
+                }
+                // Do not queue behind Dial on vpnWorker: Disconnect must win
+                // even while a whitelist handshake is still in flight.
                 stopVpn()
                 return START_NOT_STICKY
             }
             else -> {
                 userStop = false
-                startVpn()
+                try {
+                    startForeground(NOTIF_ID, buildNotification("Connecting…"))
+                } catch (e: Exception) {
+                    Log.e(TAG, "startForeground failed", e)
+                    broadcast("Error: ${e.message}")
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                broadcast("Connecting…")
+                vpnWorker.execute { startVpn() }
             }
         }
         return START_STICKY
     }
 
     private fun startVpn() {
-        if (tunnel != null && pfd != null) {
-            Log.i(TAG, "VPN already running; ignore extra CONNECT")
-            return
+        synchronized(vpnLock) {
+            if (tunnel != null && pfd != null) {
+                Log.i(TAG, "VPN already running; ignore extra CONNECT")
+                return
+            }
         }
 
         val prof = ProfileStore.load(this)
         if (prof == null) {
             Log.e(TAG, "no profile configured")
             broadcast("Error: profile not configured")
-            stopSelf()
-            return
-        }
-
-        try {
-            startForeground(NOTIF_ID, buildNotification("Connecting…"))
-        } catch (e: Exception) {
-            Log.e(TAG, "startForeground failed", e)
-            broadcast("Error: ${e.message}")
             stopSelf()
             return
         }
@@ -155,7 +168,7 @@ class MasqueVpnService : VpnService() {
             override fun onStatus(msg: String?) {
                 Log.i(TAG, "status: $msg")
                 if (msg == "assigned-ip-changed") {
-                    Handler(Looper.getMainLooper()).post { rebuildTunnel() }
+                    vpnWorker.execute { rebuildTunnel() }
                     return
                 }
                 broadcast(msg ?: "")
@@ -181,7 +194,11 @@ class MasqueVpnService : VpnService() {
             try {
                 updateNotification(if (attempt == 1) "Connecting…" else "Checking tunnel ($attempt/3)…")
                 val t = Mobile.dial(cfg, cb)
-                tunnel = t
+                if (userStop) {
+                    try { t.stop() } catch (_: Exception) {}
+                    return
+                }
+                synchronized(vpnLock) { tunnel = t }
                 if (!excludeQuic(t)) {
                     lastError = "could not exclude the VPN socket from the tunnel"
                     dropSession()
@@ -202,6 +219,10 @@ class MasqueVpnService : VpnService() {
                     continue
                 }
                 t.startWithFD(iface.fd.toLong())
+                if (userStop) {
+                    dropSession()
+                    return
+                }
                 registerUnderlyingNetworks()
                 excludeQuic(t)
                 isRunning = true
@@ -339,7 +360,7 @@ class MasqueVpnService : VpnService() {
         rttHandler.postDelayed({
             retryPosted = false
             if (userStop || tunnel != null) return@postDelayed
-            startVpn()
+            vpnWorker.execute { startVpn() }
         }, 2000)
     }
 
@@ -429,22 +450,24 @@ class MasqueVpnService : VpnService() {
     }
 
     private fun tearDownTunnel(stopService: Boolean) {
-        isRunning = false
-        retryPosted = false
-        rttHandler.removeCallbacks(rttTick)
-        rttHandler.removeCallbacksAndMessages(null)
-        unregisterUnderlyingNetworks()
-        try {
-            tunnel?.stop()
-        } catch (e: Exception) {
-            Log.w(TAG, "tunnel.stop: ${e.message}")
+        synchronized(vpnLock) {
+            isRunning = false
+            retryPosted = false
+            rttHandler.removeCallbacks(rttTick)
+            rttHandler.removeCallbacksAndMessages(null)
+            unregisterUnderlyingNetworks()
+            try {
+                tunnel?.stop()
+            } catch (e: Exception) {
+                Log.w(TAG, "tunnel.stop: ${e.message}")
+            }
+            tunnel = null
+            try {
+                pfd?.close()
+            } catch (_: Exception) {
+            }
+            pfd = null
         }
-        tunnel = null
-        try {
-            pfd?.close()
-        } catch (_: Exception) {
-        }
-        pfd = null
         broadcast("Disconnected")
         if (stopService) {
             stopForeground(STOP_FOREGROUND_REMOVE)
