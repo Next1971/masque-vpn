@@ -264,6 +264,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 let key = self.pathKey(self.defaultPath)
                 guard key != self.lastPathKey else { return }
                 self.lastPathKey = key
+                // Safari flips isExpensive and used to replace a live QUIC
+                // session (server: H3_NO_ERROR in the same second). A real
+                // Wi-Fi↔cellular loss still fails the UDP session, which
+                // reconnects on its own.
+                if self.tunnel != nil {
+                    self.publishStatus("path changed, tunnel still live")
+                    return
+                }
                 self.scheduleReconnect("network path changed")
             }
         }
@@ -271,7 +279,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private func pathKey(_ path: NetworkExtension.NWPath?) -> String {
         guard let path else { return "nil" }
-        return "\(path.status.rawValue)/exp=\(path.isExpensive)"
+        let wifi = path.usesInterfaceType(.wifi)
+        let cell = path.usesInterfaceType(.cellular)
+        return "\(path.status.rawValue)/w=\(wifi)/c=\(cell)"
     }
 
     /// First non-tunnel IPv4. utun/ipsec are the VPN itself; 10.8.0.254 is ours.
