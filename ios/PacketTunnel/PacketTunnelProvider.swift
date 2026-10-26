@@ -279,9 +279,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private func pathKey(_ path: NetworkExtension.NWPath?) -> String {
         guard let path else { return "nil" }
-        let wifi = path.usesInterfaceType(.wifi)
-        let cell = path.usesInterfaceType(.cellular)
-        return "\(path.status.rawValue)/w=\(wifi)/c=\(cell)"
+        // Status only. isExpensive flips when another app opens and is not a
+        // new network. Interface-type APIs need Network.NWPath, which is
+        // ambiguous next to NetworkExtension.NWPath on Xcode 26.
+        return "\(path.status.rawValue)"
     }
 
     /// First non-tunnel IPv4. utun/ipsec are the VPN itself; 10.8.0.254 is ours.
