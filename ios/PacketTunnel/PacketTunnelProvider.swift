@@ -284,12 +284,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 let work = DispatchWorkItem { [weak self] in
                     guard let self else { return }
                     guard self.everDialed, !self.stopping, !self.reconnecting else { return }
+                    guard Date() > self.ignorePathChangesUntil else { return }
                     let nowKey = self.pathKey(self.defaultPath)
                     guard nowKey != self.lastPathKey else { return }
                     self.lastPathKey = nowKey
                     // Opening Safari/Instagram flips isExpensive; do not tear
                     // down a live QUIC session for that. Only Wi-Fi↔cellular.
-                    if let ms = self.tunnel?.rttMillis(), ms > 0, ms < 8000 {
+                    // RTT is 0 right after Dial — that is not a dead tunnel.
+                    if self.tunnel != nil {
                         self.publishStatus("path changed, tunnel still live")
                         return
                     }
@@ -812,9 +814,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    /// Put default routes + server exclude on the tunnel *before* UDP/QUIC.
-    /// Build 28 excluded the IP but left only 198.18.0.1, then applied 0.0.0.0/0
-    /// after Dial — that cancelled NWUDPSession. Safari kept working over IPv6.
+    /// IPv4 default + server exclude *before* UDP. Do not call this again after
+    /// Dial (that cancelled QUIC). No IPv6 default: that is what killed build 29
+    /// in the same second as ESTABLISHED.
     private func ensureExcluded(_ ip: String, profile: MasqueProfile, completion: @escaping () -> Void) {
         if ip.isEmpty {
             completion()
@@ -825,14 +827,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
         lastRemote = ip
-        let settings = (ip == "127.0.0.1")
-            ? bootstrapSettings(remote: ip, profile: profile)
-            : routeSettings(v4: lastAssignedV4, v6: lastAssignedV6, remote: ip, profile: profile)
+        if ip == "127.0.0.1" {
+            setTunnelNetworkSettings(bootstrapSettings(remote: ip, profile: profile)) { [weak self] _ in
+                self?.workQueue.asyncAfter(deadline: .now() + 0.4, execute: completion)
+            }
+            return
+        }
+        let settings = routeSettings(v4: lastAssignedV4, v6: lastAssignedV6, remote: ip, profile: profile)
         setTunnelNetworkSettings(settings) { [weak self] _ in
-            self?.workQueue.asyncAfter(deadline: .now() + 0.4) {
-                if ip != "127.0.0.1" {
-                    self?.routesApplied = true
-                }
+            self?.workQueue.asyncAfter(deadline: .now() + 0.8) {
+                self?.routesApplied = true
                 completion()
             }
         }
@@ -922,6 +926,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
         tunnel = t
+        // Path observer used to fire between Dial and startBridge and
+        // immediately reconnect (VPS: ESTABLISHED then H3_NO_ERROR).
+        ignorePathChangesUntil = Date().addingTimeInterval(12)
         everDialed = true
         rememberAssigned(t)
         let used = Self.host(of: dialServer)
@@ -1229,9 +1236,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         } else {
             ipv6 = NEIPv6Settings(addresses: ["fd00::1"], networkPrefixLengths: [128])
         }
-        // Apply v4 and v6 defaults in the *first* settings (before UDP).
-        // A second default after Dial rebuilds the path and kills QUIC.
-        ipv6.includedRoutes = [NEIPv6Route.default()]
+        // No IPv6 default: a second default route makes iOS rebuild the path
+        // and the QUIC UDP session goes silent until idle-timeout.
+        ipv6.includedRoutes = []
         Self.excludeServer(remote, ipv4: ipv4, ipv6: ipv6)
         settings.ipv4Settings = ipv4
         settings.ipv6Settings = ipv6
