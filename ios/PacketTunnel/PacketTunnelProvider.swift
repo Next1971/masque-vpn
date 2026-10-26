@@ -509,7 +509,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private func openPhysicalTCP(host: String, port: String, completion: @escaping (Error?) -> Void) {
         teardownTCP()
         let endpoint = NWHostEndpoint(hostname: host, port: port)
-        let connection = createTCPConnection(to: endpoint, from: nil)
+        // Xcode 26: createTCPConnection(to:from:) is gone. TLS stays in Go.
+        let connection = createTCPConnection(
+            to: endpoint,
+            enableTLS: false,
+            tlsParameters: nil,
+            delegate: nil
+        )
         tcpConnection = connection
 
         var finished = false
@@ -521,7 +527,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             }
         }
 
-        tcpStateObs = connection.observe(\.state, options: [.new]) { [weak self] conn, _ in
+        tcpStateObs = connection.observe(\NWTCPConnection.state, options: [.new]) { [weak self] conn, _ in
             self?.publishStatus("TCP state \(conn.state.rawValue)")
             switch conn.state {
             case .connected:
