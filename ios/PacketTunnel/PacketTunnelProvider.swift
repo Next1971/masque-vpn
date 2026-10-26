@@ -100,12 +100,19 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
 
         let cached = AppGroup.defaults.string(forKey: AppGroup.defaultsLastServerIP) ?? ""
-        let remote = cached.isEmpty ? "127.0.0.1" : cached
+        // 2.1.0 resolved before bootstrap so the server IP was excluded.
+        // 2.1.1 finished startTunnel first; UDP then sat on the tunnel and
+        // never reached the VPS. Cap DNS so cellular cannot miss the deadline.
+        let quick = Self.resolveServersTimed(host, seconds: 1.5)
+        let remote = quick.first ?? (cached.isEmpty ? "127.0.0.1" : cached)
 
         lastProfile = profile
         lastRemote = remote
         lastDialServer = Self.dialServer(remote, port)
-        lastServerIP = cached
+        lastServerIP = remote == "127.0.0.1" ? cached : remote
+        if lastServerIP != "127.0.0.1", !lastServerIP.isEmpty {
+            AppGroup.defaults.set(lastServerIP, forKey: AppGroup.defaultsLastServerIP)
+        }
         lastPort = port
         lastPortNum = portNum
         lastPathKey = pathKey(defaultPath)
@@ -333,13 +340,19 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                         AppGroup.defaults.set(first, forKey: AppGroup.defaultsLastServerIP)
                     }
                     let ordered = Self.prefer(self.lastServerIP.isEmpty ? cached : self.lastServerIP, in: ips)
-                    self.connectCandidates(
-                        profile: profile,
-                        ips: ordered,
-                        port: port,
-                        portNum: portNum,
-                        onFailure: onFailure
-                    )
+                    guard let first = ordered.first else {
+                        onFailure("could not resolve \(host)")
+                        return
+                    }
+                    self.ensureExcluded(first, profile: profile) {
+                        self.connectCandidates(
+                            profile: profile,
+                            ips: ordered,
+                            port: port,
+                            portNum: portNum,
+                            onFailure: onFailure
+                        )
+                    }
                     return
                 }
                 if tryIndex + 1 < 6 {
@@ -358,13 +371,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 }
                 if !cached.isEmpty {
                     self.publishStatus("using last known server \(cached)")
-                    self.connectCandidates(
-                        profile: profile,
-                        ips: [cached],
-                        port: port,
-                        portNum: portNum,
-                        onFailure: onFailure
-                    )
+                    self.ensureExcluded(cached, profile: profile) {
+                        self.connectCandidates(
+                            profile: profile,
+                            ips: [cached],
+                            port: port,
+                            portNum: portNum,
+                            onFailure: onFailure
+                        )
+                    }
                     return
                 }
                 onFailure("could not resolve \(host)")
@@ -791,17 +806,25 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    /// Once the default route is installed, the server address has to stay
-    /// excluded or the next dial is captured by the tunnel.
+    /// Keep the MASQUE server off the tunnel *before* createUDPSession.
+    /// Skipping this while routesApplied is false (2.1.1) sent QUIC into utun.
     private func ensureExcluded(_ ip: String, profile: MasqueProfile, completion: @escaping () -> Void) {
-        if !routesApplied || ip.isEmpty || ip == lastRemote {
+        if ip.isEmpty {
+            completion()
+            return
+        }
+        if ip == lastRemote, lastRemote != "127.0.0.1" {
             completion()
             return
         }
         lastRemote = ip
-        let settings = routeSettings(v4: lastAssignedV4, v6: lastAssignedV6, remote: ip, profile: profile)
+        let settings = routesApplied
+            ? routeSettings(v4: lastAssignedV4, v6: lastAssignedV6, remote: ip, profile: profile)
+            : bootstrapSettings(remote: ip, profile: profile)
         setTunnelNetworkSettings(settings) { [weak self] _ in
-            self?.workQueue.async { completion() }
+            // 2.1.0 waited for the exclude path to settle; opening UDP in the
+            // same turn as the settings apply cancelled the session.
+            self?.workQueue.asyncAfter(deadline: .now() + 0.4, execute: completion)
         }
     }
 
