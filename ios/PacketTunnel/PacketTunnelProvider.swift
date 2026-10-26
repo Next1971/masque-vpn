@@ -37,6 +37,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var lastPathKey = ""
     private var lastPhysicalIP = ""
     private var ignorePathChangesUntil = Date.distantPast
+    private var zeroRTTTicks = 0
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         // A Packet Tunnel is jetsam-killed around 15 MB. Cap the Go heap before
@@ -67,6 +68,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         stopping = false
         reconnecting = false
         everDialed = false
+        zeroRTTTicks = 0
         routesApplied = false
         AppGroup.defaults.removeObject(forKey: AppGroup.defaultsLastError)
 
@@ -812,6 +814,21 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
+    /// iOS freezes this process and QUIC then dies after three quiet minutes.
+    /// wake() is the only signal that the process is running again.
+    override func wake() {
+        workQueue.async { [weak self] in
+            guard let self, !self.stopping, self.startCompleted, self.everDialed else { return }
+            guard Date() > self.ignorePathChangesUntil else { return }
+            let udpReady = self.udpSession?.state == .ready
+            let rtt = self.tunnel?.rttMillis() ?? 0
+            if self.tunnel == nil || !udpReady || rtt == 0 {
+                self.zeroRTTTicks = 0
+                self.scheduleReconnect("extension woke")
+            }
+        }
+    }
+
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         workQueue.async { [weak self] in
             guard let self else {
@@ -908,6 +925,21 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             let ms = t.rttMillis()
             if ms > 0 {
                 AppGroup.defaults.set(Int(ms), forKey: AppGroup.defaultsPing)
+            }
+            self.workQueue.async {
+                guard !self.stopping, self.everDialed, !self.reconnecting else { return }
+                guard Date() > self.ignorePathChangesUntil else { return }
+                if ms > 0 {
+                    self.zeroRTTTicks = 0
+                    return
+                }
+                self.zeroRTTTicks += 1
+                // QUIC keepalive is 15s. A live session keeps a non-zero RTT.
+                // Zero for half a minute means the socket died while we slept.
+                if self.zeroRTTTicks >= 15 {
+                    self.zeroRTTTicks = 0
+                    self.scheduleReconnect("QUIC went silent")
+                }
             }
             let total = t.trafficBytes()
             if total > 0 {
