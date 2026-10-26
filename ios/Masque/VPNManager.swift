@@ -59,7 +59,7 @@ final class VPNManager: ObservableObject {
     }
 
     var connectTitle: String {
-        if busy { return "Stop" }
+        if busy { return connected ? "Disconnecting…" : "Connecting… (tap to stop)" }
         return connected ? "Disconnect" : "Connect"
     }
 
@@ -68,7 +68,7 @@ final class VPNManager: ObservableObject {
             if !connected && !busy {
                 // Keep a failure on screen: "profile ready" used to wipe the
                 // reason the tunnel just died.
-                let tunnelErr = Self.displayError(AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? "")
+                let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
                 statusText = tunnelErr.isEmpty ? "Status: profile ready" : "Status: \(tunnelErr)"
             }
         } else {
@@ -132,13 +132,14 @@ final class VPNManager: ObservableObject {
         // A stuck busy flag used to make the button do nothing at all, so a tap
         // while busy stops whatever is half-started instead of being ignored.
         if busy {
+            busy = false
             statusText = "Status: cancelling"
             beginUserStop()
             return
         }
 
         if connected {
-            setBusy(true)
+            busy = true
             statusText = "Status: disconnecting"
             beginUserStop()
             return
@@ -153,7 +154,7 @@ final class VPNManager: ObservableObject {
         ProfileStore.saveMTU(mtu)
 
         userStop = false
-        setBusy(true)
+        busy = true
         statusText = "Status: starting…"
         let arm = AppGroup.defaults.bool(forKey: AppGroup.defaultsKillSwitch)
         AppGroup.defaults.set(arm, forKey: AppGroup.defaultsKillSwitchArmed)
@@ -190,10 +191,10 @@ final class VPNManager: ObservableObject {
         busyWatchdog?.invalidate()
         busyWatchdog = nil
         guard on else { return }
-        busyWatchdog = Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { [weak self] _ in
+        busyWatchdog = Timer.scheduledTimer(withTimeInterval: 25, repeats: false) { [weak self] _ in
             guard let self, self.busy, !self.connected else { return }
             self.busy = false
-            let tunnelErr = Self.displayError(AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? "")
+            let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
             self.lastError = tunnelErr.isEmpty ? "Connect timed out" : tunnelErr
             self.refreshProfileStatus()
         }
@@ -210,14 +211,6 @@ final class VPNManager: ObservableObject {
                     self.refreshProfileStatus()
                 }
             case .success(let mgr):
-                if self.userStop {
-                    mgr.connection.stopVPNTunnel()
-                    DispatchQueue.main.async {
-                        self.setBusy(false)
-                        self.refreshProfileStatus()
-                    }
-                    return
-                }
                 do {
                     try mgr.connection.startVPNTunnel()
                     DispatchQueue.main.async {
@@ -321,12 +314,6 @@ final class VPNManager: ObservableObject {
                     mgr.protocolConfiguration = proto
                     mgr.localizedDescription = "MASQUE"
                     mgr.isEnabled = true
-                    // Bring the tunnel back if iOS jetsams the extension while
-                    // other apps are open. Disconnect turns this off first.
-                    let always = NEOnDemandRuleConnect()
-                    always.interfaceTypeMatch = .any
-                    mgr.onDemandRules = [always]
-                    mgr.isOnDemandEnabled = true
                     mgr.saveToPreferences { saveErr in
                         self.prefs.async {
                             if let saveErr {
@@ -390,8 +377,6 @@ final class VPNManager: ObservableObject {
         case .connected:
             connected = true
             userStop = false
-            lastError = nil
-            AppGroup.defaults.removeObject(forKey: AppGroup.defaultsLastError)
             killSwitchRetryAttempt = 0
             killSwitchRetryPending = false
             let stage = AppGroup.defaults.string(forKey: AppGroup.defaultsStatus) ?? ""
@@ -432,7 +417,7 @@ final class VPNManager: ObservableObject {
             } else {
                 releaseIfNeverUp()
             }
-            let tunnelErr = Self.displayError(AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? "")
+            let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
             if !tunnelErr.isEmpty {
                 lastError = tunnelErr
             }
@@ -492,47 +477,30 @@ final class VPNManager: ObservableObject {
             guard let self else { return }
             guard let mgr else {
                 DispatchQueue.main.async {
-                    self.setBusy(false)
+                    self.busy = false
                     self.refreshProfileStatus()
                 }
                 return
             }
-            var stopped = false
-            let stopNow: () -> Void = {
-                guard !stopped else { return }
-                stopped = true
-                mgr.connection.stopVPNTunnel()
-                DispatchQueue.main.async {
-                    self.setBusy(false)
-                    self.connected = false
-                    self.refreshProfileStatus()
-                }
-            }
             mgr.loadFromPreferences { _ in
                 self.prefs.async {
                     self.setIncludeAllNetworks(false, on: mgr)
-                    mgr.isOnDemandEnabled = false
                     mgr.saveToPreferences { _ in
-                        self.prefs.async { stopNow() }
+                        self.prefs.async {
+                            mgr.loadFromPreferences { _ in
+                                self.prefs.async {
+                                    mgr.connection.stopVPNTunnel()
+                                    DispatchQueue.main.async {
+                                        self.busy = false
+                                        self.refreshProfileStatus()
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
-            // saveToPreferences used to hang Disconnect. Stop anyway.
-            DispatchQueue.global().asyncAfter(deadline: .now() + 2.5) {
-                self.prefs.async { stopNow() }
-            }
         }
-    }
-
-    /// Transient UDP/DNS noise must not replace the Connect button with a wall of text.
-    private static func displayError(_ raw: String) -> String {
-        let m = raw.lowercased()
-        if m.contains("udp write failed") { return "" }
-        if m.contains("socket is not connected") || m.contains("сокет не подключен") { return "" }
-        if raw.hasPrefix("could not resolve") {
-            return "Could not resolve the VPN server. Check mobile data / DNS and try again."
-        }
-        return raw
     }
 
     /// Clear a leftover system block. No save when the flag is already off.
@@ -564,7 +532,7 @@ final class VPNManager: ObservableObject {
         trafficText = TrafficAccount.label()
         guard connected else {
             if considerKillSwitchRearm() { return }
-            let tunnelErr = Self.displayError(AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? "")
+            let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
             if !tunnelErr.isEmpty, lastError != tunnelErr {
                 lastError = tunnelErr
             }

@@ -8,7 +8,7 @@ All notable changes to MASQUE VPN are documented here.
 
 - Android: Dial no longer blocks the UI thread, so Connect/Disconnect still work on filtered mobile data (whitelist).
 - iOS: Connect stays on screen; DNS retries; VPN does not drop just because other apps opened; Disconnect no longer hangs on preference save.
-- iOS: TCP uses the Packet Tunnel TCP session (`createTCPConnection`), same physical-path rule as UDP, so TCP-only and UDP→TCP fallback can reach a 2.1.x server.
+- iOS TestFlight tunnel is back to the 2.1.0 UDP path. The 2.1.1 Packet Tunnel TCP and route experiments did not carry traffic; dropping connects will be fixed from the 2.1.0 baseline.
 
 ## [v2.1.0] - 2026-10-15
 

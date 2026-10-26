@@ -11,7 +11,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private let workQueue = DispatchQueue(label: "com.next1971.masque.provider")
     private let dialQueue = DispatchQueue(label: "com.next1971.masque.dial")
     private let udpQueue = DispatchQueue(label: "com.next1971.masque.udp")
-    private let tcpQueue = DispatchQueue(label: "com.next1971.masque.tcp")
     private var startCompleted = false
     private var startHandler: ((Error?) -> Void)?
 
@@ -19,11 +18,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var udpStateObs: NSKeyValueObservation?
     private var udpWriter: GoUDPWriter?
     private var datagramPipe: MobileDatagramPipe?
-    private var tcpConnection: NWTCPConnection?
-    private var tcpStateObs: NSKeyValueObservation?
-    private var tcpWriter: GoTCPWriter?
-    private var streamPipe: MobileStreamPipe?
-    private var tearingDownTCP = false
     private var udpWriteErrorLogged = false
     private var stopping = false
     private var reconnecting = false
@@ -48,7 +42,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         // A Packet Tunnel is jetsam-killed around 15 MB. Cap the Go heap before
         // anything allocates, or the process dies mid-session (9-19 min in) and
         // no Swift reconnect handler ever runs.
-        _ = setenv("GODEBUG", "http2xconnect=1", 1)
         MobileTuneForExtension(12)
         workQueue.async { [weak self] in
             self?.startTunnelLocked(completionHandler: completionHandler)
@@ -88,8 +81,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
         let host = Self.host(of: profile.server)
         let port = Self.port(of: profile.server)
-        guard let portNum = Int(port), portNum > 0 else {
-            let msg = "invalid server port \(port)"
+        let ips = Self.resolveServers(host)
+        let serverIP = ips.first
+        let remote = serverIP ?? "127.0.0.1"
+
+        guard let serverIP, let portNum = Int(port), portNum > 0 else {
+            let msg = ips.isEmpty
+                ? "could not resolve \(host)"
+                : "invalid server port \(port)"
             recordError(msg)
             finishStart(NSError(
                 domain: "masque",
@@ -99,24 +98,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
-        let cached = AppGroup.defaults.string(forKey: AppGroup.defaultsLastServerIP) ?? ""
-        // 2.1.0 resolved before bootstrap so the server IP was excluded.
-        // 2.1.1 finished startTunnel first; UDP then sat on the tunnel and
-        // never reached the VPS. Cap DNS so cellular cannot miss the deadline.
-        let quick = Self.resolveServersTimed(host, seconds: 1.5)
-        let remote = quick.first ?? (cached.isEmpty ? "127.0.0.1" : cached)
-
         lastProfile = profile
         lastRemote = remote
-        lastDialServer = Self.dialServer(remote, port)
-        lastServerIP = remote == "127.0.0.1" ? cached : remote
-        if lastServerIP != "127.0.0.1", !lastServerIP.isEmpty {
-            AppGroup.defaults.set(lastServerIP, forKey: AppGroup.defaultsLastServerIP)
-        }
+        lastDialServer = Self.dialServer(serverIP, port)
+        lastServerIP = serverIP
         lastPort = port
         lastPortNum = portNum
         lastPathKey = pathKey(defaultPath)
-        ignorePathChangesUntil = Date().addingTimeInterval(8)
+        ignorePathChangesUntil = Date().addingTimeInterval(4)
         observeDefaultPath()
 
         publishStatus("starting")
@@ -132,18 +121,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     self.finishStart(err)
                     return
                 }
-                // Meet the iOS startTunnel deadline before DNS. A hung
-                // getaddrinfo used to fail the first Connect on cellular.
                 self.finishStart(nil)
-                self.waitForPhysicalPath(tries: 0) { [weak self] in
+                // Let the exclude-route path settle. Binding from: physicalIP:0
+                // (build 11) made NWUDPSession jump to .failed immediately.
+                self.workQueue.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                     guard let self else { return }
-                    self.resolveThenConnect(
+                    self.connectCandidates(
                         profile: profile,
-                        host: host,
+                        ips: ips,
                         port: port,
-                        portNum: portNum,
-                        cached: cached,
-                        tryIndex: 0
+                        portNum: portNum
                     ) { msg in
                         self.failAfterStart(msg, code: 9)
                     }
@@ -266,8 +253,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    private var pathDebounce: DispatchWorkItem?
-
     private func observeDefaultPath() {
         pathObs?.invalidate()
         pathObs = observe(\.defaultPath, options: [.new]) { [weak self] _, _ in
@@ -276,117 +261,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 guard self.everDialed, self.startCompleted, !self.stopping else { return }
                 guard !self.reconnecting else { return }
                 guard Date() > self.ignorePathChangesUntil else { return }
-                let path = self.defaultPath
-                guard path?.status == .satisfied else { return }
-                let key = self.pathKey(path)
+                let key = self.pathKey(self.defaultPath)
                 guard key != self.lastPathKey else { return }
-                self.pathDebounce?.cancel()
-                let work = DispatchWorkItem { [weak self] in
-                    guard let self else { return }
-                    guard self.everDialed, !self.stopping, !self.reconnecting else { return }
-                    guard Date() > self.ignorePathChangesUntil else { return }
-                    let nowKey = self.pathKey(self.defaultPath)
-                    guard nowKey != self.lastPathKey else { return }
-                    self.lastPathKey = nowKey
-                    // Opening Safari/Instagram flips isExpensive; do not tear
-                    // down a live QUIC session for that. Only Wi-Fi↔cellular.
-                    // RTT is 0 right after Dial — that is not a dead tunnel.
-                    if self.tunnel != nil {
-                        self.publishStatus("path changed, tunnel still live")
-                        return
-                    }
-                    self.scheduleReconnect("network path changed")
-                }
-                self.pathDebounce = work
-                self.workQueue.asyncAfter(deadline: .now() + 2.5, execute: work)
+                self.lastPathKey = key
+                self.scheduleReconnect("network path changed")
             }
         }
     }
 
-    override func sleep(completionHandler: @escaping () -> Void) {
-        ignorePathChangesUntil = Date().addingTimeInterval(45)
-        completionHandler()
-    }
-
-    override func wake() {
-        ignorePathChangesUntil = Date().addingTimeInterval(8)
-    }
-
-    private func pathKey(_ path: NWPath?) -> String {
+    private func pathKey(_ path: NetworkExtension.NWPath?) -> String {
         guard let path else { return "nil" }
-        // Status only. isExpensive/interface type need Network.NWPath and
-        // were ambiguous on Xcode 26 (Network vs NetworkExtension).
-        return "\(path.status.rawValue)"
-    }
-
-    private func resolveThenConnect(
-        profile: MasqueProfile,
-        host: String,
-        port: String,
-        portNum: Int,
-        cached: String,
-        tryIndex: Int,
-        onFailure: @escaping (String) -> Void
-    ) {
-        if stopping {
-            onFailure("stopped")
-            return
-        }
-        publishStatus(tryIndex == 0 ? "resolving \(host)" : "resolving \(host) (\(tryIndex + 1)/6)")
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let ips = Self.resolveServersTimed(host, seconds: 4)
-            self?.workQueue.async {
-                guard let self else { return }
-                if !ips.isEmpty {
-                    if let first = ips.first {
-                        AppGroup.defaults.set(first, forKey: AppGroup.defaultsLastServerIP)
-                    }
-                    let ordered = Self.prefer(self.lastServerIP.isEmpty ? cached : self.lastServerIP, in: ips)
-                    guard let first = ordered.first else {
-                        onFailure("could not resolve \(host)")
-                        return
-                    }
-                    self.ensureExcluded(first, profile: profile) {
-                        self.connectCandidates(
-                            profile: profile,
-                            ips: ordered,
-                            port: port,
-                            portNum: portNum,
-                            onFailure: onFailure
-                        )
-                    }
-                    return
-                }
-                if tryIndex + 1 < 6 {
-                    self.workQueue.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-                        self?.resolveThenConnect(
-                            profile: profile,
-                            host: host,
-                            port: port,
-                            portNum: portNum,
-                            cached: cached,
-                            tryIndex: tryIndex + 1,
-                            onFailure: onFailure
-                        )
-                    }
-                    return
-                }
-                if !cached.isEmpty {
-                    self.publishStatus("using last known server \(cached)")
-                    self.ensureExcluded(cached, profile: profile) {
-                        self.connectCandidates(
-                            profile: profile,
-                            ips: [cached],
-                            port: port,
-                            portNum: portNum,
-                            onFailure: onFailure
-                        )
-                    }
-                    return
-                }
-                onFailure("could not resolve \(host)")
-            }
-        }
+        return "\(path.status.rawValue)/exp=\(path.isExpensive)"
     }
 
     /// First non-tunnel IPv4. utun/ipsec are the VPN itself; 10.8.0.254 is ours.
@@ -475,11 +360,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     code: 9,
                     userInfo: [NSLocalizedDescriptionKey: msg]
                 ))
-                self?.workQueue.async {
-                    guard let self, !self.tearingDownUDP, !self.reconnecting else { return }
-                    guard self.everDialed, self.startCompleted, !self.stopping else { return }
-                    guard self.udpSession === sess else { return }
-                    self.scheduleReconnect(msg)
+                // Handshake failures are retried by the openPhysicalUDP
+                // completion. After the tunnel is up, a speedtest burst can
+                // cancel this session — reconnect instead of killing the VPN.
+                if self?.tearingDownUDP != true, self?.reconnecting != true {
+                    self?.scheduleReconnect(msg)
                 }
             case .cancelled:
                 finish(NSError(
@@ -487,11 +372,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     code: 9,
                     userInfo: [NSLocalizedDescriptionKey: "UDP session cancelled"]
                 ))
-                self?.workQueue.async {
-                    guard let self, !self.tearingDownUDP, !self.reconnecting else { return }
-                    guard self.everDialed, self.startCompleted, !self.stopping else { return }
-                    guard self.udpSession === sess else { return }
-                    self.scheduleReconnect("UDP session cancelled")
+                if self?.tearingDownUDP != true, self?.reconnecting != true {
+                    self?.scheduleReconnect("UDP session cancelled")
                 }
             default:
                 break
@@ -520,96 +402,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     userInfo: [NSLocalizedDescriptionKey: "UDP session not ready (state \(session.state.rawValue))"]
                 ))
             }
-        }
-    }
-
-    private func openPhysicalTCP(host: String, port: String, completion: @escaping (Error?) -> Void) {
-        teardownTCP()
-        let endpoint = NWHostEndpoint(hostname: host, port: port)
-        // Xcode 26: createTCPConnection(to:from:) is gone. TLS stays in Go.
-        let connection = createTCPConnection(
-            to: endpoint,
-            enableTLS: false,
-            tlsParameters: nil,
-            delegate: nil
-        )
-        tcpConnection = connection
-
-        var finished = false
-        let finish: (Error?) -> Void = { [weak self] err in
-            self?.workQueue.async {
-                guard !finished else { return }
-                finished = true
-                completion(err)
-            }
-        }
-
-        tcpStateObs = connection.observe(\NWTCPConnection.state, options: [.new]) { [weak self] conn, _ in
-            self?.publishStatus("TCP state \(conn.state.rawValue)")
-            switch conn.state {
-            case .connected:
-                finish(nil)
-            case .disconnected, .cancelled:
-                finish(NSError(
-                    domain: "masque",
-                    code: 12,
-                    userInfo: [NSLocalizedDescriptionKey: "TCP session \(conn.state.rawValue)"]
-                ))
-                self?.workQueue.async {
-                    guard let self, !self.tearingDownTCP, !self.reconnecting else { return }
-                    guard self.everDialed, self.startCompleted, !self.stopping else { return }
-                    guard self.tcpConnection === conn else { return }
-                    self.scheduleReconnect("TCP session \(conn.state.rawValue)")
-                }
-            default:
-                break
-            }
-        }
-
-        switch connection.state {
-        case .connected:
-            finish(nil)
-        case .disconnected, .cancelled:
-            finish(NSError(
-                domain: "masque",
-                code: 12,
-                userInfo: [NSLocalizedDescriptionKey: "TCP session \(connection.state.rawValue)"]
-            ))
-        default:
-            break
-        }
-
-        workQueue.asyncAfter(deadline: .now() + 12) { [weak self] in
-            guard let self, let connection = self.tcpConnection else { return }
-            if connection.state != .connected {
-                finish(NSError(
-                    domain: "masque",
-                    code: 12,
-                    userInfo: [NSLocalizedDescriptionKey: "TCP session not connected (state \(connection.state.rawValue))"]
-                ))
-            }
-        }
-    }
-
-    private func armTCPRead(pipe: MobileStreamPipe) {
-        guard let connection = tcpConnection else { return }
-        connection.readMinimumLength(1, maximumLength: 32 * 1024) { [weak self] data, err in
-            if let data, !data.isEmpty {
-                pipe.deliver(data)
-            }
-            guard let self else { return }
-            if let err {
-                let text = err.localizedDescription.lowercased()
-                if text.contains("cancel") || text.contains("отмен") {
-                    return
-                }
-                self.workQueue.async {
-                    guard self.tunnel == nil else { return }
-                    self.recordError("TCP read: \(err.localizedDescription)")
-                }
-                return
-            }
-            self.armTCPRead(pipe: pipe)
         }
     }
 
@@ -665,17 +457,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
         let ordered = Self.prefer(lastServerIP, in: ips)
-        let targets = udpTargets(ips: ordered, port: port, portNum: portNum, altPort: profile.altPort)
         if transportMode() == "tcp" {
             tryTCP(
                 profile: profile,
-                targets: targets,
+                ips: ordered,
+                port: port,
                 index: 0,
                 lastError: "TCP did not answer",
                 onFailure: onFailure
             )
             return
         }
+        let targets = udpTargets(ips: ordered, port: port, portNum: portNum, altPort: profile.altPort)
         tryUDP(
             profile: profile,
             targets: targets,
@@ -698,14 +491,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             onFailure("stopped")
             return
         }
-        if tunnel != nil {
-            return
-        }
         if index >= targets.count {
             if transportMode() == "auto" {
+                var seen = Set<String>()
+                var ips: [String] = []
+                for target in targets where seen.insert(target.ip).inserted {
+                    ips.append(target.ip)
+                }
                 tryTCP(
                     profile: profile,
-                    targets: targets,
+                    ips: ips,
+                    port: port,
                     index: 0,
                     lastError: lastError,
                     onFailure: onFailure
@@ -756,10 +552,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    /// Each address, profile port then alt_port, on a Packet Tunnel TCP session.
+    /// One address at a time. Go then tries that address on the profile port and alt_port.
     private func tryTCP(
         profile: MasqueProfile,
-        targets: [UDPTarget],
+        ips: [String],
+        port: String,
         index: Int,
         lastError: String,
         onFailure: @escaping (String) -> Void
@@ -768,73 +565,48 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             onFailure("stopped")
             return
         }
-        if tunnel != nil {
-            return
-        }
-        if index >= targets.count {
+        if index >= ips.count {
             onFailure(lastError)
             return
         }
-        let target = targets[index]
-        ensureExcluded(target.ip, profile: profile) { [weak self] in
+        let ip = ips[index]
+        ensureExcluded(ip, profile: profile) { [weak self] in
             guard let self else { return }
-            self.publishStatus("opening TCP to \(target.ip):\(target.port)")
-            self.openPhysicalTCP(host: target.ip, port: target.port) { [weak self] tcpErr in
-                guard let self else { return }
-                self.workQueue.async {
-                    if let tcpErr {
+            self.publishStatus("opening TCP to \(ip):\(port)")
+            let dial = Self.dialServer(ip, port)
+            self.dialQueue.async {
+                self.dialThenApplySettings(
+                    profile: profile,
+                    dialServer: dial,
+                    remote: ip,
+                    pipe: nil,
+                    transport: "tcp",
+                    onFailure: { msg in
                         self.tryTCP(
                             profile: profile,
-                            targets: targets,
-                            index: index + 1,
-                            lastError: tcpErr.localizedDescription,
-                            onFailure: onFailure
-                        )
-                        return
-                    }
-                    let dial = Self.dialServer(target.ip, target.port)
-                    self.attachStreamAndDial(
-                        profile: profile,
-                        dialServer: dial,
-                        remote: target.ip,
-                        serverIP: target.ip,
-                        portNum: target.portNum
-                    ) { msg in
-                        self.abandonDialAttempt()
-                        self.tryTCP(
-                            profile: profile,
-                            targets: targets,
+                            ips: ips,
+                            port: port,
                             index: index + 1,
                             lastError: msg,
                             onFailure: onFailure
                         )
                     }
-                }
+                )
             }
         }
     }
 
-    /// Exclude the server before UDP. The default route is installed only after
-    /// the first Dial, on a fresh UDP session (see dialThenApplySettings).
+    /// Once the default route is installed, the server address has to stay
+    /// excluded or the next dial is captured by the tunnel.
     private func ensureExcluded(_ ip: String, profile: MasqueProfile, completion: @escaping () -> Void) {
-        if ip.isEmpty {
-            completion()
-            return
-        }
-        if routesApplied, ip == lastRemote, lastRemote != "127.0.0.1" {
-            completion()
-            return
-        }
-        if !routesApplied, ip == lastRemote, lastRemote != "127.0.0.1" {
+        if !routesApplied || ip.isEmpty || ip == lastRemote {
             completion()
             return
         }
         lastRemote = ip
-        let settings = routesApplied
-            ? routeSettings(v4: lastAssignedV4, v6: lastAssignedV6, remote: ip, profile: profile)
-            : bootstrapSettings(remote: ip, profile: profile)
+        let settings = routeSettings(v4: lastAssignedV4, v6: lastAssignedV6, remote: ip, profile: profile)
         setTunnelNetworkSettings(settings) { [weak self] _ in
-            self?.workQueue.asyncAfter(deadline: .now() + 0.4, execute: completion)
+            self?.workQueue.async { completion() }
         }
     }
 
@@ -844,42 +616,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         tunnel = nil
         goCallback = nil
         teardownUDP()
-        teardownTCP()
-    }
-
-    private func attachStreamAndDial(
-        profile: MasqueProfile,
-        dialServer: String,
-        remote: String,
-        serverIP: String,
-        portNum: Int,
-        onFailure: @escaping (String) -> Void
-    ) {
-        guard let connection = tcpConnection else {
-            onFailure("TCP session missing after ready")
-            return
-        }
-        let writer = GoTCPWriter(connection: connection, queue: tcpQueue, owner: self)
-        tcpWriter = writer
-        var pipeErr: NSError?
-        guard let pipe = MobileNewStreamPipe(writer, serverIP, portNum, &pipeErr) else {
-            onFailure(pipeErr?.localizedDescription ?? "TCP pipe failed")
-            return
-        }
-        streamPipe = pipe
-        armTCPRead(pipe: pipe)
-        publishStatus("dialing TCP \(serverIP):\(portNum)")
-        dialQueue.async { [weak self] in
-            self?.dialThenApplySettings(
-                profile: profile,
-                dialServer: dialServer,
-                remote: remote,
-                pipe: nil,
-                stream: pipe,
-                transport: "tcp",
-                onFailure: onFailure
-            )
-        }
     }
 
     private func dialThenApplySettings(
@@ -887,7 +623,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         dialServer: String,
         remote: String,
         pipe: MobileDatagramPipe?,
-        stream: MobileStreamPipe? = nil,
         transport: String,
         onFailure: @escaping (String) -> Void
     ) {
@@ -898,7 +633,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         cfg.certPath = profile.certPath
         cfg.keyPath = profile.keyPath
         cfg.mtu = profile.mtu
-        cfg.altPort = (pipe == nil && stream == nil) ? profile.altPort : 0
+        cfg.altPort = pipe == nil ? profile.altPort : 0
         cfg.bindInterface = ""
         cfg.transport = transport
 
@@ -906,9 +641,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         goCallback = cb
         var dialErr: NSError?
         let t: MobileTunnel?
-        if let stream {
-            t = MobileDialWithStream(cfg, cb, stream, &dialErr)
-        } else if let pipe {
+        if let pipe {
             t = MobileDialWithPipe(cfg, cb, pipe, &dialErr)
         } else {
             t = MobileDial(cfg, cb, &dialErr)
@@ -922,25 +655,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
         tunnel = t
-        // Path observer used to fire between Dial and startBridge and
-        // immediately reconnect (VPS: ESTABLISHED then H3_NO_ERROR).
-        ignorePathChangesUntil = Date().addingTimeInterval(12)
         everDialed = true
         rememberAssigned(t)
         let used = Self.host(of: dialServer)
         if !used.isEmpty {
             lastServerIP = used
             lastRemote = used
-            AppGroup.defaults.set(used, forKey: AppGroup.defaultsLastServerIP)
         }
 
         let startBridge: () -> Void = { [weak self] in
             guard let self, !self.stopping else { return }
             if let pipe {
                 self.rearmUDPRead(pipe: pipe)
-            }
-            if let stream {
-                self.armTCPRead(pipe: stream)
             }
             do {
                 try t.startPacketBridge()
@@ -976,45 +702,19 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
-        // First Dial only learns 10.8.0.x. Build 30 installed the placeholder
-        // 10.8.0.254 before that, so the phone never wrote packets. Applying
-        // the real route on this same UDP session kills QUIC, so close it,
-        // install 0.0.0.0/0 with the assigned address, and dial again.
-        workQueue.async { [weak self] in
-            guard let self, !self.stopping else { return }
-            self.rememberAssigned(t)
-            self.publishStatus("applying routes")
-            t.stop()
-            self.tunnel = nil
-            self.goCallback = nil
-            self.teardownUDP()
-            self.teardownTCP()
-            let settings = self.routeSettings(
-                v4: self.lastAssignedV4,
-                v6: self.lastAssignedV6,
-                remote: remote,
-                profile: profile
-            )
-            self.setTunnelNetworkSettings(settings) { [weak self] err in
-                guard let self else { return }
-                self.workQueue.async {
-                    if let err {
-                        self.failAfterStart(err.localizedDescription, code: 10)
-                        return
-                    }
-                    self.routesApplied = true
-                    self.ignorePathChangesUntil = Date().addingTimeInterval(12)
-                    var ips = [remote]
-                    if !self.lastServerIP.isEmpty { ips = [self.lastServerIP] }
-                    self.connectCandidates(
-                        profile: profile,
-                        ips: ips,
-                        port: self.lastPort,
-                        portNum: self.lastPortNum
-                    ) { msg in
-                        self.failAfterStart(msg, code: 12)
-                    }
+        let settings = networkSettings(for: t, profile: profile, fallbackRemote: remote)
+        setTunnelNetworkSettings(settings) { [weak self] err in
+            guard let self else { return }
+            self.workQueue.async {
+                if let err {
+                    t.stop()
+                    self.tunnel = nil
+                    self.goCallback = nil
+                    self.failAfterStart(err.localizedDescription, code: 10)
+                    return
                 }
+                self.routesApplied = true
+                startBridge()
             }
         }
     }
@@ -1051,18 +751,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         tearingDownUDP = false
     }
 
-    private func teardownTCP() {
-        tearingDownTCP = true
-        tcpStateObs?.invalidate()
-        tcpStateObs = nil
-        try? streamPipe?.close()
-        streamPipe = nil
-        tcpWriter = nil
-        tcpConnection?.cancel()
-        tcpConnection = nil
-        tearingDownTCP = false
-    }
-
     /// QUIC going idle (server: "no recent network activity") used to cancel the
     /// whole VPN. Redial on a new UDP session and keep startTunnel completed.
     private func scheduleReconnect(_ reason: String) {
@@ -1078,7 +766,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self.tunnel = nil
             self.goCallback = nil
             self.teardownUDP()
-            self.teardownTCP()
             MobileReleaseMemory()
             self.waitForPhysicalPath(tries: 0) { [weak self] in
                 guard let self else { return }
@@ -1087,7 +774,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     return
                 }
                 let host = Self.host(of: profile.server)
-                var ips = Self.resolveServersTimed(host, seconds: 4)
+                var ips = Self.resolveServers(host)
                 if ips.isEmpty, !self.lastServerIP.isEmpty {
                     ips = [self.lastServerIP]
                 }
@@ -1121,17 +808,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 return
             }
             self.stopping = true
-            self.pathDebounce?.cancel()
             self.pathObs?.invalidate()
             self.pathObs = nil
             self.pingTimer?.cancel()
             self.pingTimer = nil
-            let t = self.tunnel
+            self.tunnel?.stop()
             self.tunnel = nil
             self.goCallback = nil
-            self.dialQueue.async { t?.stop() }
             self.teardownUDP()
-            self.teardownTCP()
             AppGroup.defaults.set(0, forKey: AppGroup.defaultsPing)
             AppGroup.defaults.set("Disconnected", forKey: AppGroup.defaultsStatus)
             // A crash or a network drop leaves sessionUp set so the app can
@@ -1161,7 +845,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         workQueue.async { [weak self] in
             guard let self, !self.udpWriteErrorLogged else { return }
             self.udpWriteErrorLogged = true
-            NSLog("MASQUE UDP write: %@", err.localizedDescription)
+            self.recordError("UDP write failed: \(err.localizedDescription)")
         }
     }
 
@@ -1319,8 +1003,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         return "443"
     }
 
-    /// Keep the server's own address off the tunnel so QUIC/TCP stay on the
-    /// physical path after the default routes are installed.
+    /// Keep the server's own address off the tunnel. IPv6 has no default route;
+    /// the exclude still covers a later settings update.
     private static func excludeServer(_ remote: String, ipv4: NEIPv4Settings, ipv6: NEIPv6Settings) {
         if remote.contains(":") {
             ipv6.excludedRoutes = [
@@ -1350,27 +1034,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     /// A and AAAA. IPv6 is listed first, matching the shared client core.
     /// A literal address is returned as itself.
-    /// getaddrinfo with a hard cap. Cellular whitelist DNS can hang past the
-    /// Packet Tunnel start deadline if this runs on the provider queue.
-    private static func resolveServersTimed(_ host: String, seconds: TimeInterval) -> [String] {
-        var result: [String] = []
-        let lock = NSLock()
-        let group = DispatchGroup()
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            let ips = resolveServers(host)
-            lock.lock()
-            result = ips
-            lock.unlock()
-            group.leave()
-        }
-        _ = group.wait(timeout: .now() + seconds)
-        lock.lock()
-        let ips = result
-        lock.unlock()
-        return ips
-    }
-
     private static func resolveServers(_ host: String) -> [String] {
         var v6buf = in6_addr()
         if host.withCString({ inet_pton(AF_INET6, $0, &v6buf) }) == 1 {
@@ -1427,47 +1090,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 /// went on the wire, and the extension died a few seconds into the dial.
 /// Implement the protocol on a plain NSObject instead.
 ///
-/// writeDatagram must not block: gomobile calls it on the Go QUIC thread.
-private final class GoTCPWriter: NSObject, MobileStreamWriterProtocol {
-    private let connection: NWTCPConnection
-    private let queue: DispatchQueue
-    private weak var owner: PacketTunnelProvider?
-
-    init(connection: NWTCPConnection, queue: DispatchQueue, owner: PacketTunnelProvider) {
-        self.connection = connection
-        self.queue = queue
-        self.owner = owner
-        super.init()
-    }
-
-    /// Blocks until the Packet Tunnel write finishes. TLS records cannot be dropped.
-    func writeStream(_ p: Data?) throws {
-        guard let data = p, !data.isEmpty else { return }
-        let lock = DispatchSemaphore(value: 0)
-        var writeErr: Error?
-        queue.async { [weak self] in
-            guard let self else {
-                lock.signal()
-                return
-            }
-            self.connection.write(data) { err in
-                writeErr = err
-                lock.signal()
-            }
-        }
-        if lock.wait(timeout: .now() + 20) == .timedOut {
-            throw NSError(
-                domain: "masque",
-                code: 13,
-                userInfo: [NSLocalizedDescriptionKey: "TCP write timed out"]
-            )
-        }
-        if let writeErr {
-            throw writeErr
-        }
-    }
-}
-
 /// writeDatagram must not block: gomobile calls it on the Go QUIC thread.
 private final class GoUDPWriter: NSObject, MobileDatagramWriterProtocol {
     private let session: NWUDPSession
