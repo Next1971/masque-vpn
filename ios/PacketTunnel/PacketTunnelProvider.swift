@@ -814,9 +814,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    /// IPv4 default + server exclude *before* UDP. Do not call this again after
-    /// Dial (that cancelled QUIC). No IPv6 default: that is what killed build 29
-    /// in the same second as ESTABLISHED.
+    /// Exclude the server before UDP. The default route is installed only after
+    /// the first Dial, on a fresh UDP session (see dialThenApplySettings).
     private func ensureExcluded(_ ip: String, profile: MasqueProfile, completion: @escaping () -> Void) {
         if ip.isEmpty {
             completion()
@@ -826,19 +825,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             completion()
             return
         }
-        lastRemote = ip
-        if ip == "127.0.0.1" {
-            setTunnelNetworkSettings(bootstrapSettings(remote: ip, profile: profile)) { [weak self] _ in
-                self?.workQueue.asyncAfter(deadline: .now() + 0.4, execute: completion)
-            }
+        if !routesApplied, ip == lastRemote, lastRemote != "127.0.0.1" {
+            completion()
             return
         }
-        let settings = routeSettings(v4: lastAssignedV4, v6: lastAssignedV6, remote: ip, profile: profile)
+        lastRemote = ip
+        let settings = routesApplied
+            ? routeSettings(v4: lastAssignedV4, v6: lastAssignedV6, remote: ip, profile: profile)
+            : bootstrapSettings(remote: ip, profile: profile)
         setTunnelNetworkSettings(settings) { [weak self] _ in
-            self?.workQueue.asyncAfter(deadline: .now() + 0.8) {
-                self?.routesApplied = true
-                completion()
-            }
+            self?.workQueue.asyncAfter(deadline: .now() + 0.4, execute: completion)
         }
     }
 
@@ -980,19 +976,45 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
-        let settings = networkSettings(for: t, profile: profile, fallbackRemote: remote)
-        setTunnelNetworkSettings(settings) { [weak self] err in
-            guard let self else { return }
-            self.workQueue.async {
-                if let err {
-                    t.stop()
-                    self.tunnel = nil
-                    self.goCallback = nil
-                    self.failAfterStart(err.localizedDescription, code: 10)
-                    return
+        // First Dial only learns 10.8.0.x. Build 30 installed the placeholder
+        // 10.8.0.254 before that, so the phone never wrote packets. Applying
+        // the real route on this same UDP session kills QUIC, so close it,
+        // install 0.0.0.0/0 with the assigned address, and dial again.
+        workQueue.async { [weak self] in
+            guard let self, !self.stopping else { return }
+            self.rememberAssigned(t)
+            self.publishStatus("applying routes")
+            t.stop()
+            self.tunnel = nil
+            self.goCallback = nil
+            self.teardownUDP()
+            self.teardownTCP()
+            let settings = self.routeSettings(
+                v4: self.lastAssignedV4,
+                v6: self.lastAssignedV6,
+                remote: remote,
+                profile: profile
+            )
+            self.setTunnelNetworkSettings(settings) { [weak self] err in
+                guard let self else { return }
+                self.workQueue.async {
+                    if let err {
+                        self.failAfterStart(err.localizedDescription, code: 10)
+                        return
+                    }
+                    self.routesApplied = true
+                    self.ignorePathChangesUntil = Date().addingTimeInterval(12)
+                    var ips = [remote]
+                    if !self.lastServerIP.isEmpty { ips = [self.lastServerIP] }
+                    self.connectCandidates(
+                        profile: profile,
+                        ips: ips,
+                        port: self.lastPort,
+                        portNum: self.lastPortNum
+                    ) { msg in
+                        self.failAfterStart(msg, code: 12)
+                    }
                 }
-                self.routesApplied = true
-                startBridge()
             }
         }
     }
