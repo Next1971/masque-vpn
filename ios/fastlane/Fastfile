@@ -109,7 +109,7 @@ platform :ios do
     upload_to_testflight(
       api_key: api_key,
       skip_waiting_for_build_processing: true,
-      changelog: "2.1.1: Keep Connect on screen; retry DNS; stay up in background; Disconnect no longer hangs. Android: Connect/Disconnect stays usable on filtered mobile data."
+      changelog: "2.1.1: Keep Connect on screen; retry DNS; stay up in background; TCP uses the Packet Tunnel path. Android: Connect/Disconnect stays usable on filtered mobile data."
     )
   end
 end

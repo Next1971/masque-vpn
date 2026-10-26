@@ -55,6 +55,7 @@ type Tunnel struct {
 	stopped    bool
 	bridge     *bridgeTUN
 	pipe       *DatagramPipe
+	stream     *StreamPipe
 	pump       *clientcore.Pump
 }
 
@@ -266,7 +267,7 @@ func Dial(cfg *Config, cb Callback) (t *Tunnel, err error) {
 			t = nil
 		}
 	}()
-	return dial(cfg, cb, nil)
+	return dial(cfg, cb, nil, nil)
 }
 
 // DialWithPipe is Dial using a Swift UDP session as the QUIC PacketConn.
@@ -282,7 +283,22 @@ func DialWithPipe(cfg *Config, cb Callback, pipe *DatagramPipe) (t *Tunnel, err 
 	if pipe == nil || pipe.conn == nil {
 		return nil, fmt.Errorf("nil datagram pipe")
 	}
-	return dial(cfg, cb, pipe)
+	return dial(cfg, cb, pipe, nil)
+}
+
+// DialWithStream is Dial using a Swift TCP connection as the net.Conn.
+// iOS must open NEPacketTunnelProvider.createTCPConnection before calling this.
+func DialWithStream(cfg *Config, cb Callback, stream *StreamPipe) (t *Tunnel, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("dial panic: %v", r)
+			t = nil
+		}
+	}()
+	if stream == nil || stream.conn == nil {
+		return nil, fmt.Errorf("nil stream pipe")
+	}
+	return dial(cfg, cb, nil, stream)
 }
 
 const dialTimeout = 18 * time.Second
@@ -310,7 +326,7 @@ func CancelPendingDial() {
 	}
 }
 
-func dial(cfg *Config, cb Callback, pipe *DatagramPipe) (*Tunnel, error) {
+func dial(cfg *Config, cb Callback, pipe *DatagramPipe, stream *StreamPipe) (*Tunnel, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("nil config")
 	}
@@ -323,7 +339,7 @@ func dial(cfg *Config, cb Callback, pipe *DatagramPipe) (*Tunnel, error) {
 		dialCancel()
 		setPendingDial(nil)
 	}()
-	sess, err := connectSession(dialCtx, prof, pipe)
+	sess, err := connectSession(dialCtx, prof, pipe, stream)
 	if err != nil {
 		return nil, fmt.Errorf("dial: %w", err)
 	}
@@ -338,12 +354,15 @@ func dial(cfg *Config, cb Callback, pipe *DatagramPipe) (*Tunnel, error) {
 			cb.OnStatus("assigned " + sess.AssignedPrefixes[0].String())
 		}
 	}
-	t := &Tunnel{sess: sess, prof: prof, ctx: ctx, cancel: cancel, cb: cb, pipe: pipe}
+	t := &Tunnel{sess: sess, prof: prof, ctx: ctx, cancel: cancel, cb: cb, pipe: pipe, stream: stream}
 	rememberAssigned(t, sess)
 	return t, nil
 }
 
-func connectSession(ctx context.Context, prof *clientcore.Profile, pipe *DatagramPipe) (*clientcore.Session, error) {
+func connectSession(ctx context.Context, prof *clientcore.Profile, pipe *DatagramPipe, stream *StreamPipe) (*clientcore.Session, error) {
+	if stream != nil && stream.conn != nil {
+		return clientcore.ConnectWithTCPConn(ctx, prof, nil, stream.conn)
+	}
 	if pipe != nil && pipe.conn != nil {
 		return clientcore.ConnectWithPacketConn(ctx, prof, nil, pipe.conn)
 	}
@@ -397,7 +416,17 @@ func (t *Tunnel) runPump(ctx context.Context, pump *clientcore.Pump, prof *clien
 		if cb != nil {
 			cb.OnStatus("reconnecting")
 		}
-		s, err := connectSession(ctx, prof, t.pipe)
+		if t.stream != nil {
+			err := fmt.Errorf("tcp path closed")
+			if cb != nil {
+				cb.OnError(err.Error())
+			}
+			if t.cancel != nil {
+				t.cancel()
+			}
+			return nil, err
+		}
+		s, err := connectSession(ctx, prof, t.pipe, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -476,6 +505,9 @@ func (t *Tunnel) Stop() {
 	}
 	if t.pipe != nil {
 		_ = t.pipe.Close()
+	}
+	if t.stream != nil {
+		_ = t.stream.Close()
 	}
 	if t.bridge != nil {
 		_ = t.bridge.Close()

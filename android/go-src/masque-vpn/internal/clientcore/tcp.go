@@ -26,7 +26,7 @@ type tcpIP struct {
 	body       io.ReadCloser
 	pw         *io.PipeWriter
 	bw         *bufio.Writer
-	tcp        *net.TCPConn
+	tcp        net.Conn
 	mu         sync.Mutex
 	wmu        sync.Mutex
 	pkts       chan []byte
@@ -53,7 +53,7 @@ func connectTCP(ctx context.Context, p *Profile, dev tun.Device) (*Session, erro
 	}
 	var last error
 	for _, addr := range addrs {
-		sess, err := connectTCPAddr(ctx, p, dev, addr.String())
+		sess, err := connectTCPAddr(ctx, p, dev, addr.String(), nil)
 		if err == nil {
 			return sess, nil
 		}
@@ -69,7 +69,7 @@ func connectTCP(ctx context.Context, p *Profile, dev tun.Device) (*Session, erro
 	return nil, last
 }
 
-func connectTCPAddr(ctx context.Context, p *Profile, dev tun.Device, dialAddr string) (*Session, error) {
+func connectTCPAddr(ctx context.Context, p *Profile, dev tun.Device, dialAddr string, raw net.Conn) (*Session, error) {
 	tlsConf, err := buildTLSConfig(p)
 	if err != nil {
 		return nil, err
@@ -77,30 +77,29 @@ func connectTCPAddr(ctx context.Context, p *Profile, dev tun.Device, dialAddr st
 	tlsConf = tlsConf.Clone()
 	tlsConf.NextProtos = []string{"h2"}
 
-	dialer := net.Dialer{Timeout: tcpHandshakeTimeout}
-	raw, err := dialer.DialContext(ctx, "tcp", dialAddr)
-	if err != nil {
-		return nil, fmt.Errorf("tcp dial %s: %w", dialAddr, err)
+	conn := raw
+	if conn == nil {
+		dialer := net.Dialer{Timeout: tcpHandshakeTimeout}
+		opened, err := dialer.DialContext(ctx, "tcp", dialAddr)
+		if err != nil {
+			return nil, fmt.Errorf("tcp dial %s: %w", dialAddr, err)
+		}
+		conn = opened
 	}
-	tcp, ok := raw.(*net.TCPConn)
-	if !ok {
-		raw.Close()
-		return nil, fmt.Errorf("tcp dial %s: not a TCP socket", dialAddr)
-	}
-	if err := tcp.SetDeadline(time.Now().Add(tcpHandshakeTimeout)); err != nil {
-		tcp.Close()
+	if err := conn.SetDeadline(time.Now().Add(tcpHandshakeTimeout)); err != nil {
+		conn.Close()
 		return nil, err
 	}
 
-	tc := tls.Client(tcp, tlsConf)
+	tc := tls.Client(conn, tlsConf)
 	if err := tc.HandshakeContext(ctx); err != nil {
-		tcp.Close()
+		conn.Close()
 		return nil, fmt.Errorf("tcp tls: %w", err)
 	}
 
 	h2conn, err := (&http2.Transport{}).NewClientConn(tc)
 	if err != nil {
-		tcp.Close()
+		conn.Close()
 		return nil, fmt.Errorf("http2 conn: %w", err)
 	}
 
@@ -108,7 +107,7 @@ func connectTCPAddr(ctx context.Context, p *Profile, dev tun.Device, dialAddr st
 	req, err := http.NewRequestWithContext(ctx, http.MethodConnect, "https://"+p.ServerName+"/vpn", pr)
 	if err != nil {
 		pw.Close()
-		tcp.Close()
+		conn.Close()
 		return nil, err
 	}
 	req.ContentLength = -1
@@ -118,13 +117,13 @@ func connectTCPAddr(ctx context.Context, p *Profile, dev tun.Device, dialAddr st
 	resp, err := h2conn.RoundTrip(req)
 	if err != nil {
 		pw.Close()
-		tcp.Close()
+		conn.Close()
 		return nil, fmt.Errorf("tcp connect-ip: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		pw.Close()
-		tcp.Close()
+		conn.Close()
 		return nil, fmt.Errorf("tcp connect-ip status %d", resp.StatusCode)
 	}
 
@@ -132,7 +131,7 @@ func connectTCPAddr(ctx context.Context, p *Profile, dev tun.Device, dialAddr st
 		body:  resp.Body,
 		pw:    pw,
 		bw:    bufio.NewWriter(pw),
-		tcp:   tcp,
+		tcp:   conn,
 		h2:    h2conn,
 		pkts:  make(chan []byte, 32),
 		done:  make(chan struct{}),
@@ -149,7 +148,7 @@ func connectTCPAddr(ctx context.Context, p *Profile, dev tun.Device, dialAddr st
 		ip.Close()
 		return nil, fmt.Errorf("tcp connect-ip: no address assignment from %s", dialAddr)
 	}
-	_ = tcp.SetDeadline(time.Time{})
+	_ = conn.SetDeadline(time.Time{})
 
 	ip.mu.Lock()
 	assigned := append([]netip.Prefix(nil), ip.assigned...)
@@ -167,8 +166,9 @@ func connectTCPAddr(ctx context.Context, p *Profile, dev tun.Device, dialAddr st
 	log.Printf("CONNECT-IP session established via tcp %s, prefixes %v", dialAddr, assigned)
 	go ip.loopRTT()
 
+	native, _ := conn.(*net.TCPConn)
 	return &Session{
-		tcpConn:          tcp,
+		tcpConn:          native,
 		ipconn:           ip,
 		dev:              dev,
 		AssignedPrefixes: assigned,
