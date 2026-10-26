@@ -122,6 +122,28 @@ func Connect(ctx context.Context, p *Profile, dev tun.Device) (*Session, error) 
 	return ConnectWithPacketConn(ctx, p, dev, nil)
 }
 
+// ConnectWithTCPConn is Connect using an already-open TCP socket. iOS passes
+// a Network Extension NWTCPConnection wrapper; Android keeps using Connect.
+func ConnectWithTCPConn(ctx context.Context, p *Profile, dev tun.Device, conn net.Conn) (sess *Session, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("connect panic: %v", r)
+			sess = nil
+		}
+	}()
+	if conn == nil {
+		return nil, fmt.Errorf("nil tcp conn")
+	}
+	if err := p.Validate(); err != nil {
+		return nil, err
+	}
+	dialAddr := p.Server
+	if addr := conn.RemoteAddr(); addr != nil && addr.String() != "" {
+		dialAddr = addr.String()
+	}
+	return connectTCPAddr(ctx, p, dev, dialAddr, conn)
+}
+
 // ConnectWithPacketConn is Connect with an optional PacketConn. iOS passes a
 // Network Extension UDP session wrapper; a nil pc uses a BSD socket (Android).
 func ConnectWithPacketConn(ctx context.Context, p *Profile, dev tun.Device, pc net.PacketConn) (sess *Session, err error) {
@@ -168,10 +190,8 @@ func ConnectWithPacketConn(ctx context.Context, p *Profile, dev tun.Device, pc n
 		udpAddr := addrs[0]
 		leg := &quicLeg{packetConn: pc, ownUDP: false, addr: udpAddr.String()}
 		if err := leg.dial(ctx, udpAddr, tlsConf); err != nil {
-			if mode == "auto" {
-				log.Printf("UDP dial failed (%v); opening TCP", err)
-				return connectTCP(ctx, p, dev)
-			}
+			// iOS owns TCP via createTCPConnection. A BSD dial from here
+			// never leaves the Packet Tunnel on the physical path.
 			return nil, err
 		}
 		return finishCONNECTIP(ctx, p, leg, dev)

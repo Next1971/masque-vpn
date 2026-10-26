@@ -1,8 +1,10 @@
 package mobile
 
 import (
+	"os"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync"
 )
 
@@ -15,6 +17,7 @@ const defaultExtensionLimitMB = 12
 // TuneForExtension caps the Go heap and makes the collector far more eager.
 // limitMB <= 0 uses the default. Safe to call more than once.
 func TuneForExtension(limitMB int) {
+	enableHTTP2Connect()
 	if limitMB <= 0 {
 		limitMB = defaultExtensionLimitMB
 	}
@@ -22,6 +25,21 @@ func TuneForExtension(limitMB int) {
 	// 40%: collect often enough for a Packet Tunnel, but a speedtest burst
 	// must not stall the QUIC thread in a GC storm (20% did).
 	debug.SetGCPercent(40)
+}
+
+func enableHTTP2Connect() {
+	v := os.Getenv("GODEBUG")
+	if strings.Contains(v, "http2xconnect=1") {
+		return
+	}
+	if v != "" && !strings.HasSuffix(v, ",") {
+		v += ","
+	}
+	_ = os.Setenv("GODEBUG", v+"http2xconnect=1")
+}
+
+func init() {
+	enableHTTP2Connect()
 }
 
 // HeapKB is the live Go heap in KiB. For on-screen diagnostics.
