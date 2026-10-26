@@ -9,61 +9,44 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                VStack(spacing: 8) {
-                    Text(vpn.statusText)
-                        .font(.body)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(3)
-                        .truncationMode(.tail)
-                    Text(vpn.pingText)
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                    Text(vpn.trafficText)
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    Text(vpn.versionLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 16) {
+                Text(vpn.statusText)
+                    .font(.body)
+                Text(vpn.pingText)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                Text(vpn.trafficText)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                Text(vpn.versionLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
-                    if let err = vpn.lastError, !err.isEmpty, !vpn.statusText.contains(err) {
-                        Text(err)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(3)
-                            .truncationMode(.tail)
-                    }
+                if let err = vpn.lastError, !err.isEmpty {
+                    Text(err)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
                 }
-                .frame(maxWidth: .infinity)
-                .layoutPriority(0)
 
-                VStack(spacing: 12) {
-                    Button("Import Profile") { importing = true }
-                        .buttonStyle(.bordered)
-                        .disabled(vpn.connected)
+                Button("Import Profile") { importing = true }
+                    .buttonStyle(.bordered)
+                    .disabled(vpn.connected)
 
-                    Button("Scan QR") { scanning = true }
-                        .buttonStyle(.bordered)
-                        .disabled(vpn.connected)
+                Button("Scan QR") { scanning = true }
+                    .buttonStyle(.bordered)
+                    .disabled(vpn.connected)
 
-                    Button(vpn.connectTitle) {
-                        vpn.toggle()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-
-                    Button("Settings") { showSettings = true }
-                        .buttonStyle(.bordered)
+                Button(vpn.connectTitle) {
+                    vpn.toggle()
                 }
-                .layoutPriority(1)
+                .buttonStyle(.borderedProminent)
 
-                Spacer(minLength: 0)
+                Button("Settings") { showSettings = true }
+                    .buttonStyle(.bordered)
+
+                Spacer()
             }
             .padding()
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .navigationTitle("MASQUE")
             .fileImporter(isPresented: $importing, allowedContentTypes: [.item, .text, .data]) { result in
                 if case .success(let url) = result {
