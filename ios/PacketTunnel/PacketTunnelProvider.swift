@@ -696,6 +696,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             onFailure("stopped")
             return
         }
+        if tunnel != nil {
+            return
+        }
         if index >= targets.count {
             if transportMode() == "auto" {
                 tryTCP(
@@ -763,6 +766,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             onFailure("stopped")
             return
         }
+        if tunnel != nil {
+            return
+        }
         if index >= targets.count {
             onFailure(lastError)
             return
@@ -806,25 +812,29 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    /// Keep the MASQUE server off the tunnel *before* createUDPSession.
-    /// Skipping this while routesApplied is false (2.1.1) sent QUIC into utun.
+    /// Put default routes + server exclude on the tunnel *before* UDP/QUIC.
+    /// Build 28 excluded the IP but left only 198.18.0.1, then applied 0.0.0.0/0
+    /// after Dial — that cancelled NWUDPSession. Safari kept working over IPv6.
     private func ensureExcluded(_ ip: String, profile: MasqueProfile, completion: @escaping () -> Void) {
         if ip.isEmpty {
             completion()
             return
         }
-        if ip == lastRemote, lastRemote != "127.0.0.1" {
+        if routesApplied, ip == lastRemote, lastRemote != "127.0.0.1" {
             completion()
             return
         }
         lastRemote = ip
-        let settings = routesApplied
-            ? routeSettings(v4: lastAssignedV4, v6: lastAssignedV6, remote: ip, profile: profile)
-            : bootstrapSettings(remote: ip, profile: profile)
+        let settings = (ip == "127.0.0.1")
+            ? bootstrapSettings(remote: ip, profile: profile)
+            : routeSettings(v4: lastAssignedV4, v6: lastAssignedV6, remote: ip, profile: profile)
         setTunnelNetworkSettings(settings) { [weak self] _ in
-            // 2.1.0 waited for the exclude path to settle; opening UDP in the
-            // same turn as the settings apply cancelled the session.
-            self?.workQueue.asyncAfter(deadline: .now() + 0.4, execute: completion)
+            self?.workQueue.asyncAfter(deadline: .now() + 0.4) {
+                if ip != "127.0.0.1" {
+                    self?.routesApplied = true
+                }
+                completion()
+            }
         }
     }
 
@@ -1219,9 +1229,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         } else {
             ipv6 = NEIPv6Settings(addresses: ["fd00::1"], networkPrefixLengths: [128])
         }
-        // No IPv6 default: a second default route makes iOS rebuild the path
-        // and the QUIC UDP session goes silent until idle-timeout.
-        ipv6.includedRoutes = []
+        // Apply v4 and v6 defaults in the *first* settings (before UDP).
+        // A second default after Dial rebuilds the path and kills QUIC.
+        ipv6.includedRoutes = [NEIPv6Route.default()]
         Self.excludeServer(remote, ipv4: ipv4, ipv6: ipv6)
         settings.ipv4Settings = ipv4
         settings.ipv6Settings = ipv6
@@ -1280,8 +1290,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         return "443"
     }
 
-    /// Keep the server's own address off the tunnel. IPv6 has no default route;
-    /// the exclude still covers a later settings update.
+    /// Keep the server's own address off the tunnel so QUIC/TCP stay on the
+    /// physical path after the default routes are installed.
     private static func excludeServer(_ remote: String, ipv4: NEIPv4Settings, ipv6: NEIPv6Settings) {
         if remote.contains(":") {
             ipv6.excludedRoutes = [
