@@ -4,7 +4,7 @@ Android clients use Kotlin, VpnService, and a shared Go core packaged as masque.
 
 ## Install a published APK
 
-1. Download masque-phone-2.1.0.apk or masque-tv-2.1.0.apk from [v2.1.0](../../releases/tag/v2.1.0).
+1. Download masque-phone-2.1.0.apk or masque-tv-2.1.0.apk from [v2.1.0](../../releases/tag/v2.1.0). If the TV screen has no Connect button, install masque-tv-2.1.1.apk from the optional [v2.1.1](../../releases/tag/v2.1.1) pre-release instead of the v2.1.0 TV APK. v2.1.1 is not Latest and does not replace the phone APK.
 2. Allow installation from the source used to open the APK, then install the correct flavor.
 3. Import a real profile.masque issued for this device. The bundled sample is a format example, not working credentials.
 4. Grant VPN permission. On phones, allow the battery-optimization exemption if requested.
