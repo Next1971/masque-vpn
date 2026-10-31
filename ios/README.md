@@ -1,8 +1,8 @@
 # MASQUE VPN — iOS client (TestFlight)
 
-The current published iOS client is iOS 2.0, available through [public TestFlight](https://testflight.apple.com/join/x52N41V1). It uses the private CA and connects to the v2.1.0 server over UDP and TCP. No IPA is attached to GitHub Releases. This is not an App Store availability announcement.
+The current published iOS client is iOS 2.0, available through [public TestFlight](https://testflight.apple.com/join/x52N41V1). It uses the private CA and connects to the v2.1.0 server over UDP only. TCP does not carry traffic on iOS yet. No IPA is attached to GitHub Releases. This is not an App Store availability announcement.
 
-The older iOS 1.7 / Apple build 20 was UDP-only. Its 4 December 2026 expiry is historical and must not be used as the current iOS 2.0 expiry. Check the installed build number and actual expiration in TestFlight; this guide does not assert an unverified current build number or date.
+iOS 1.7 / Apple build 20 was UDP-only as well. Its 4 December 2026 expiry is historical and must not be used as the current iOS 2.0 expiry. Check the installed build number and actual expiration in TestFlight; this guide does not assert an unverified current build number or date.
 
 Swift provides the host app and Packet Tunnel Network Extension; gomobile builds Mobile.xcframework from the shared Go core. The simulator can compile UI/code but cannot validate the real VPN path; use a physical device. The project targets iPhone; check current device availability in TestFlight.
 
@@ -14,9 +14,9 @@ Swift provides the host app and Packet Tunnel Network Extension; gomobile builds
 4. Allow VPN configuration when iOS asks, then connect.
 5. Verify the VPS exit address, DNS, and application traffic.
 
-Existing profiles and certificates remain unchanged. TCP requires a v2.0.0 or v2.1.0 server; use v2.1.0 for the documented TCP website behavior. Older servers can still be used over UDP. UDP/TCP support does not imply identical UI controls to Android or Windows.
+Existing profiles and certificates remain unchanged. iOS connects over UDP only. Older servers can still be used over UDP.
 
-On QUIC, ping means smoothed QUIC RTT. Do not describe a TCP measurement as QUIC RTT or infer an iOS measurement implementation from another platform.
+Ping on iOS is the smoothed QUIC RTT.
 
 ## Layout and identifiers
 

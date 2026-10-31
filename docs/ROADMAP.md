@@ -7,7 +7,8 @@
 | Release | Status | Scope |
 |---|---|---|
 | [v2.1.0](../../../releases/tag/v2.1.0) | GitHub Latest | Android phone/TV, Windows, Linux server, install.sh, gen-config.sh, checksums, Docker sources, and masque-setup.exe. UDP and TCP CONNECT-IP; TCP serves an HTML page to connections without a valid client certificate. |
-| iOS 2.0 | Current TestFlight client | Public [join link](https://testflight.apple.com/join/x52N41V1). Uses the private CA and works with the v2.1.0 server over UDP and TCP. No GitHub IPA. |
+| [v2.1.1](../../../releases/tag/v2.1.1) | Optional pre-release, not Latest | Android TV APK only, for sets where the v2.1.0 Connect button is below the screen. No phone APK, MSI, or server binary. |
+| iOS 2.0 | Current TestFlight client | Public [join link](https://testflight.apple.com/join/x52N41V1). Uses the private CA and connects over UDP only. TCP does not carry traffic on iOS yet. No GitHub IPA. |
 | [v2.0.0](../../../releases/tag/v2.0.0) | Earlier experimental pre-release | First TCP CONNECT-IP experiment; fixed client MTU 1340 and automatic fallback after an unanswered UDP probe. TCP required a client certificate at the handshake and did not serve a website. Not Latest. |
 | [v1.7.1](../../../releases/tag/v1.7.1) | Previous Latest | Android phone/TV and Windows clients; UDP-only. No server binary in that release. |
 | [v1.7](../../../releases/tag/v1.7) | Older iOS TestFlight release | Apple build 20, UDP-only. Its 4 December 2026 expiry refers to that older build, not to the current iOS 2.0 build. |
@@ -26,7 +27,7 @@ All releases remain experimental software. GitHub build/test checks are not an i
 - The server certificate is still signed by the private CA. A browser shows a certificate warning before the page. UDP does not serve a website.
 - Android phone, Android TV, and Windows expose Automatic / UDP only / TCP only transport selection and a configurable MTU with default 1340.
 - These clients also expose a kill switch (off by default), day/month traffic statistics, and ping on TCP sessions. QUIC ping remains the smoothed QUIC RTT; TCP ping must not be described as QUIC RTT.
-- iOS 2.0 is available through TestFlight and works over UDP and TCP. Do not infer identical UI controls across platforms from transport compatibility.
+- iOS 2.0 is available through TestFlight and is UDP only for now. TCP does not carry traffic on iOS.
 
 ### Compatibility and deployment
 
@@ -71,7 +72,7 @@ This is a capability summary, not a second changelog.
 | Connectivity | QUIC keepalive, optional dual-port QUIC dialing, IPv6 QUIC transport, TCP CONNECT-IP, and documented alternate-port redirects. |
 | Operations | Experimental Windows VPS installer with certificate issuance/revocation, UDP/TCP deployment and profile QR display; server CN denylist; install.sh; checksums/attestations; Docker/Compose sources. |
 | User interface | Android/Windows icons, version display, QUIC RTT display, and TCP-session ping in v2.1.0 Android/TV/Windows clients. |
-| iOS | Public TestFlight distribution with a Packet Tunnel client and shared Go core; iOS 2.0 supports UDP and TCP. |
+| iOS | Public TestFlight distribution with a Packet Tunnel client and shared Go core. iOS 2.0 is UDP only for now. |
 
 The initial public v1.0 release shipped on 14 August 2026. Detailed version-by-version changes belong in the [changelog](../CHANGELOG.md).
 

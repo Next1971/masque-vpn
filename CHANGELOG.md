@@ -4,11 +4,18 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
-### Client 2.1.1 (APK + TestFlight, no GitHub Release)
+### Not in the v2.1.1 GitHub drop
 
-- Android: Dial no longer blocks the UI thread, so Connect/Disconnect still work on filtered mobile data (whitelist).
-- iOS: Connect stays on screen; DNS retries; VPN does not drop just because other apps opened; Disconnect no longer hangs on preference save.
-- iOS TestFlight tunnel is back to the 2.1.0 UDP path. The 2.1.1 Packet Tunnel TCP and route experiments did not carry traffic; dropping connects will be fixed from the 2.1.0 baseline.
+- Android phone: Dial no longer blocks the UI thread, so Connect/Disconnect still work on filtered mobile data (whitelist). No phone APK is attached to v2.1.1.
+- iOS: Connect stays on screen; DNS retries; VPN does not drop just because other apps opened; Disconnect no longer hangs on preference save. iOS remains UDP only. TCP does not carry traffic on iOS yet.
+
+## [v2.1.1] - 2026-10-31
+
+**GitHub pre-release. Not Latest.** Latest stays [v2.1.0](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.0). Optional Android TV APK for sets where Connect is below the screen. No phone APK, MSI, server binary, installer, or IPA.
+
+### Fixed
+
+- Android TV: Connect is the first control and the column fits a 540dp TV screen. v2.1.0 drew Connect and Settings below the panel after the traffic lines were added. `versionCode` 27, version `2.1.1-tv`.
 
 ## [v2.1.0] - 2026-10-15
 
