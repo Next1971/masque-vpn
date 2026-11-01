@@ -7,7 +7,7 @@ require (
 	github.com/quic-go/connect-ip-go v0.6.0
 	github.com/quic-go/quic-go v0.64.1
 	github.com/yosida95/uritemplate/v3 v3.0.2
-	golang.org/x/net v0.61.0
+	golang.org/x/net v0.62.0
 	golang.org/x/sys v0.49.0
 	golang.zx2c4.com/wireguard v0.0.0-20260522210424-ecfc5a8d5446
 )
