@@ -1,13 +1,14 @@
 # Roadmap
 
-> Status snapshot: 2026-10-17. This document covers current release status, project decisions, and future work. See [CHANGELOG.md](../CHANGELOG.md) and [GitHub Releases](../../../releases) for detailed release history. Release notes take precedence over older platform-guide introductions that still describe v1.7.1 as Latest.
+> Status snapshot: 2026-10-25. This document covers current release status, project decisions, and future work. See [CHANGELOG.md](../CHANGELOG.md) and [GitHub Releases](../../../releases) for detailed release history. Release notes take precedence over older platform-guide introductions that still describe v1.7.1 as Latest.
 
 ## Current releases
 
 | Release | Status | Scope |
 |---|---|---|
 | [v2.1.0](../../../releases/tag/v2.1.0) | GitHub Latest | Android phone/TV, Windows, Linux server, install.sh, gen-config.sh, checksums, Docker sources, and masque-setup.exe. UDP and TCP CONNECT-IP; TCP serves an HTML page to connections without a valid client certificate. |
-| [v2.1.1](../../../releases/tag/v2.1.1) | Optional pre-release, not Latest | Android TV APK only, for sets where the v2.1.0 Connect button is below the screen. No phone APK, MSI, or server binary. |
+| [v2.1.2](../../../releases/tag/v2.1.2) | Optional TV release, not Latest | Android TV APK only. Connect stays on screen, and a silent tunnel dials again. No phone APK, MSI, or server binary. |
+| [v2.1.1](../../../releases/tag/v2.1.1) | Superseded TV build | Android TV APK only, for sets where the v2.1.0 Connect button is below the screen. Install v2.1.2 instead. |
 | iOS 2.0 | Current TestFlight client | Public [join link](https://testflight.apple.com/join/x52N41V1). Uses the private CA and connects over UDP only. TCP does not carry traffic on iOS yet. No GitHub IPA. |
 | [v2.0.0](../../../releases/tag/v2.0.0) | Earlier experimental pre-release | First TCP CONNECT-IP experiment; fixed client MTU 1340 and automatic fallback after an unanswered UDP probe. TCP required a client certificate at the handshake and did not serve a website. Not Latest. |
 | [v1.7.1](../../../releases/tag/v1.7.1) | Previous Latest | Android phone/TV and Windows clients; UDP-only. No server binary in that release. |
@@ -50,6 +51,10 @@ A phone-path sweep on 2026-10-11 found UDP usable at MTU 1280 and 1340, slow at 
 ## Planned work
 
 No committed release numbers or dates are assigned to the items below.
+
+- [ ] Windows: before connecting, detect another VPN that already owns the default route. Ask whether to continue: another VPN is already connected, and continuing builds a tunnel inside a tunnel («Уже подключен другой VPN. Вы действительно хотите сделать туннель в туннеле?»). Connect only after confirmation. Do not disconnect the other VPN. The Windows GUI is English, so the dialog copy should match that UI. If the user confirms, pin the MASQUE server bypass to the physical gateway. Checked before `CreateTUN`.
+- [ ] Android status-bar VPN indicator: no client change yet. NekoBox (`MatsuriDayo/NekoBoxForAndroid`) does not draw the system key. Its `VpnService` is `foregroundServiceType="systemExempted"`, `Builder.setConfigureIntent` is set, and the `service-vpn` channel is `IMPORTANCE_MIN` so the app notification stays out of the system key's way. The mark that stays visible on Samsung is the ongoing notification icon: solid pink vector `ic_service_active` (`#fb7299`), not a white silhouette. MASQUE uses `specialUse`, no configure intent, `IMPORTANCE_LOW`, and a white hdpi-only shield. Decide later whether to follow NekoBox or another client; do not change the Android client until then.
+- [ ] iOS status-bar VPN label and nested-VPN behavior: wait for tester reports before any packet-tunnel change.
 
 - [ ] Expand troubleshooting documentation and platform-specific FAQs; remove stale release-status and transport descriptions from server and client guides and Wiki pages.
 - [ ] Add or complete current-session upload/download counters across Android phone/TV, Windows, and iOS, separate from the day/month statistics delivered on Android/TV/Windows. The original proposal counts tunnel IP packets in the shared pump and resets the session totals on Disconnect; confirm existing implementation coverage before changing it. No server or protocol change is intended.

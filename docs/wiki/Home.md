@@ -23,7 +23,7 @@ Current release: [v2.1.0](https://github.com/Next1971/masque-vpn/releases/tag/v2
 
 Profiles and certificates do not change in v2.1.0. Older UDP clients, including v1.7.1, still work with the v2.1.0 server over UDP. TCP on Android and Windows requires a v2.0.0 or v2.1.0 server. A v2.1.0 client still reaches older servers over UDP. iOS is UDP only for now.
 
-If Connect is below the screen on a TV running v2.1.0, install the optional [v2.1.1](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.1) pre-release. That drop is an Android TV APK only and is not Latest.
+On Android TV, install the optional [v2.1.2](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.2) release. It is an Android TV APK only and is not Latest. Phone, Windows, and the server stay on v2.1.0.
 
 install.sh is a fresh-install path and refuses to overwrite an existing CA, configuration, or service. Read the server documentation before upgrading; do not regenerate the CA just to update the server binary.
 

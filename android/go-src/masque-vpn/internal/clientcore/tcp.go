@@ -41,7 +41,11 @@ type tcpIP struct {
 	routes     []connectip.IPRoute
 	h2         *http2.ClientConn
 	rttNS      atomic.Int64
+	pingFails  atomic.Int32
 	pingLogged atomic.Bool
+	// cancelReq ends the CONNECT stream. It is not the dial context:
+	// that context is cancelled as soon as Dial returns.
+	cancelReq context.CancelFunc
 }
 
 // connectTCP opens HTTP/2 CONNECT-IP on the same host and ports as UDP
@@ -103,8 +107,29 @@ func connectTCPAddr(ctx context.Context, p *Profile, dev tun.Device, dialAddr st
 		return nil, fmt.Errorf("http2 conn: %w", err)
 	}
 
+	// Dial cancels ctx as soon as it returns. The CONNECT stream stays bound
+	// to the request context, so using ctx here resets a live TCP tunnel
+	// (RST CANCEL) the moment the handshake succeeds. Abort the handshake
+	// if ctx ends early, then let the stream live until the session closes.
+	reqCtx, reqCancel := context.WithCancel(context.Background())
+	stopWatch := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			reqCancel()
+		case <-stopWatch:
+		}
+	}()
+	disarm := false
+	defer func() {
+		if !disarm {
+			close(stopWatch)
+			reqCancel()
+		}
+	}()
+
 	pr, pw := io.Pipe()
-	req, err := http.NewRequestWithContext(ctx, http.MethodConnect, "https://"+p.ServerName+"/vpn", pr)
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodConnect, "https://"+p.ServerName+"/vpn", pr)
 	if err != nil {
 		pw.Close()
 		conn.Close()
@@ -128,14 +153,15 @@ func connectTCPAddr(ctx context.Context, p *Profile, dev tun.Device, dialAddr st
 	}
 
 	ip := &tcpIP{
-		body:  resp.Body,
-		pw:    pw,
-		bw:    bufio.NewWriter(pw),
-		tcp:   conn,
-		h2:    h2conn,
-		pkts:  make(chan []byte, 32),
-		done:  make(chan struct{}),
-		ready: make(chan struct{}),
+		body:      resp.Body,
+		pw:        pw,
+		bw:        bufio.NewWriter(pw),
+		tcp:       conn,
+		h2:        h2conn,
+		pkts:      make(chan []byte, 32),
+		done:      make(chan struct{}),
+		ready:     make(chan struct{}),
+		cancelReq: reqCancel,
 	}
 	go ip.readLoop()
 
@@ -165,6 +191,8 @@ func connectTCPAddr(ctx context.Context, p *Profile, dev tun.Device, dialAddr st
 	}
 	log.Printf("CONNECT-IP session established via tcp %s, prefixes %v", dialAddr, assigned)
 	go ip.loopRTT()
+	close(stopWatch)
+	disarm = true
 
 	native, _ := conn.(*net.TCPConn)
 	return &Session{
@@ -282,6 +310,9 @@ func (c *tcpIP) Close() error {
 	c.closeOnce.Do(func() {
 		close(c.done)
 		c.readyOnce.Do(func() { close(c.ready) })
+		if c.cancelReq != nil {
+			c.cancelReq()
+		}
 		if c.pw != nil {
 			_ = c.pw.Close()
 		}
@@ -295,7 +326,12 @@ func (c *tcpIP) Close() error {
 	return nil
 }
 
-const tcpRTTInterval = 2 * time.Second
+const (
+	tcpRTTInterval = 2 * time.Second
+	// Dead TCP stays open at the socket until something writes. A run of
+	// failed PINGs is the signal to drop the session so Pump dials again.
+	tcpPingFailLimit = 8
+)
 
 // loopRTT samples HTTP/2 PING so the UI can show a ping while QUIC stats
 // are absent. It stops when the session closes.
@@ -328,11 +364,23 @@ func (c *tcpIP) sampleRTT() {
 	}()
 	start := time.Now()
 	if err := c.h2.Ping(ctx); err != nil {
+		select {
+		case <-c.done:
+			return
+		default:
+		}
+		n := c.pingFails.Add(1)
 		if c.pingLogged.CompareAndSwap(false, true) {
 			log.Printf("tcp ping: %v", err)
 		}
+		if n >= tcpPingFailLimit {
+			log.Printf("tcp path silent (%d ping failures); reconnecting", n)
+			c.Close()
+		}
 		return
 	}
+	c.pingFails.Store(0)
+	c.pingLogged.Store(false)
 	c.noteRTT(time.Since(start))
 }
 
