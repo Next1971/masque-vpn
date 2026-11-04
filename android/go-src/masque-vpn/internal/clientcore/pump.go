@@ -14,6 +14,10 @@ import (
 const (
 	reconnectMinBackoff = time.Second
 	reconnectMaxBackoff = 15 * time.Second
+	// QUIC keepalives are every 15s. Three missed receive windows means the
+	// path is blackholed and ReadPacket may stay blocked until idle timeout.
+	pathSilenceStep  = 15 * time.Second
+	pathSilenceLimit = 45 * time.Second
 )
 
 // Pump keeps one TUN device and replaces the MASQUE session when QUIC dies.
@@ -163,7 +167,49 @@ func (p *Pump) setTunErr(err error) {
 	p.mu.Unlock()
 }
 
+// pathQuiet advances the silence timer when no new QUIC packet arrived.
+// A moving counter resets it. drop is true once quiet reaches limit.
+func pathQuiet(prev, now uint64, quiet, step, limit time.Duration) (uint64, time.Duration, bool) {
+	if now != prev {
+		return now, 0, false
+	}
+	quiet += step
+	return prev, quiet, quiet >= limit
+}
+
+func (p *Pump) watchPath(ctx context.Context, sess *Session) {
+	if sess == nil || sess.qconn == nil {
+		return
+	}
+	tick := time.NewTicker(pathSilenceStep)
+	defer tick.Stop()
+	last := sess.qconn.ConnectionStats().PacketsReceived
+	quiet := time.Duration(0)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-sess.done:
+			return
+		case <-tick.C:
+			now := sess.qconn.ConnectionStats().PacketsReceived
+			var drop bool
+			last, quiet, drop = pathQuiet(last, now, quiet, pathSilenceStep, pathSilenceLimit)
+			if !drop {
+				continue
+			}
+			log.Printf("no QUIC packets for %s; reconnecting", quiet)
+			sess.Abandon("path silent")
+			return
+		}
+	}
+}
+
 func (p *Pump) readConn(ctx context.Context, sess *Session) error {
+	watchCtx, watchCancel := context.WithCancel(ctx)
+	defer watchCancel()
+	go p.watchPath(watchCtx, sess)
+
 	mtu, err := p.dev.MTU()
 	if err != nil || mtu <= 0 {
 		mtu = TunnelMTU

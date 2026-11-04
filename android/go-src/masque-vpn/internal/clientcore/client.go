@@ -354,28 +354,44 @@ func (s *Session) Run(ctx context.Context) error {
 // closes it, together with route rollback). Android reconnect (Pump) relies
 // on that: a new Session is dialed against the same TUN device.
 func (s *Session) Close() error {
+	s.closeReason("client shutdown")
+	return nil
+}
+
+// Abandon closes a session the path stopped answering on. Pump treats the
+// resulting read error like any other drop and dials again.
+func (s *Session) Abandon(reason string) {
+	if reason == "" {
+		reason = "path silent"
+	}
+	s.closeReason(reason)
+}
+
+func (s *Session) closeReason(reason string) {
 	s.closeOnce.Do(func() {
 		close(s.done)
 		if s.ipconn != nil {
 			s.ipconn.Close() // sends CONNECT-IP close → server calls Release
 		}
 		if s.qconn != nil {
-			s.qconn.CloseWithError(0, "client shutdown")
+			s.qconn.CloseWithError(0, reason)
+		}
+		if s.tcpConn != nil {
+			_ = s.tcpConn.Close()
 		}
 		// Shared PacketConn (iOS NE UDP session) outlives a single QUIC
 		// session so reconnect can reuse it. Only close sockets we opened.
 		if s.ownUDP && s.udpConn != nil {
 			s.udpConn.Close()
 		}
-		log.Printf("session closed gracefully")
+		log.Printf("session closed: %s", reason)
 	})
-	return nil
 }
 
 // Keepalive must be shorter than idle so PINGs reset the timeout while the
 // process is running. Idle is the negotiated minimum of both peers, so the
-// server uses the same values. This does not survive Android Doze freezing
-// the process; that needs a battery exemption (and later reconnect).
+// server uses the same values. Android still has to keep the process awake
+// (partial wake lock); a frozen process never sends these PINGs.
 const (
 	quicKeepAlivePeriod = 15 * time.Second
 	quicMaxIdleTimeout  = 3 * time.Minute

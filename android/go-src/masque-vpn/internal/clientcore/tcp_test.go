@@ -165,6 +165,10 @@ func TestTCPConnectAssignsAndEchoes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sess.Close()
+	// Dial cancels the handshake context as soon as it returns. The stream
+	// must stay up, or the TV client resets TCP the moment Connect succeeds.
+	cancel()
+	time.Sleep(50 * time.Millisecond)
 	if len(sess.AssignedPrefixes) != 1 || sess.AssignedPrefixes[0].String() != "10.8.0.2/32" {
 		t.Fatalf("assigned %v", sess.AssignedPrefixes)
 	}

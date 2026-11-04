@@ -10,7 +10,9 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.VpnService
+import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.PowerManager
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
@@ -65,6 +67,8 @@ class MasqueVpnService : VpnService() {
     }
     private var networksRegistered = false
     private var underlying: Network? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
     private val rttHandler = Handler(Looper.getMainLooper())
     private val rttTick = object : Runnable {
         override fun run() {
@@ -226,6 +230,7 @@ class MasqueVpnService : VpnService() {
                 registerUnderlyingNetworks()
                 excludeQuic(t)
                 isRunning = true
+                acquireLocks()
                 broadcast("Connected")
                 updateNotification("VPN active")
                 rttHandler.removeCallbacks(rttTick)
@@ -449,10 +454,55 @@ class MasqueVpnService : VpnService() {
         tearDownTunnel(stopService = true)
     }
 
+    // Android TV sleeps Wi-Fi and freezes a background process. QUIC keepalives
+    // then stop, the server idle-closes the session, and the pump never redials.
+    private fun acquireLocks() {
+        try {
+            if (wakeLock == null) {
+                val pm = getSystemService(PowerManager::class.java)
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "masque:vpn").apply {
+                    setReferenceCounted(false)
+                }
+            }
+            if (wakeLock?.isHeld != true) wakeLock?.acquire()
+        } catch (e: Exception) {
+            Log.w(TAG, "wake lock: ${e.message}")
+        }
+        try {
+            if (wifiLock == null) {
+                val wm = applicationContext.getSystemService(WifiManager::class.java) ?: return
+                @Suppress("DEPRECATION")
+                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
+                wifiLock = wm.createWifiLock(mode, "masque:wifi").apply {
+                    setReferenceCounted(false)
+                }
+            }
+            if (wifiLock?.isHeld != true) wifiLock?.acquire()
+        } catch (e: Exception) {
+            Log.w(TAG, "wifi lock: ${e.message}")
+        }
+    }
+
+    private fun releaseLocks() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {
+        }
+        try {
+            if (wifiLock?.isHeld == true) wifiLock?.release()
+        } catch (_: Exception) {
+        }
+    }
+
     private fun tearDownTunnel(stopService: Boolean) {
         synchronized(vpnLock) {
             isRunning = false
             retryPosted = false
+            releaseLocks()
             rttHandler.removeCallbacks(rttTick)
             rttHandler.removeCallbacksAndMessages(null)
             unregisterUnderlyingNetworks()

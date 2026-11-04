@@ -20,7 +20,7 @@ Experimental software, not a commercial VPN service or an independently security
 
 Existing profiles and certificates remain unchanged. A v1.7.1 client can connect to a v2.1.0 server over UDP. A v2.0.0 or v2.1.0 Android or Windows client can use UDP or TCP with this server; TCP requires a v2.0.0 or v2.1.0 server. A v2.1.0 client can still use an older server over UDP. iOS is UDP only for now.
 
-Optional Android TV build: [v2.1.1](../../releases/tag/v2.1.1) is a pre-release and is not Latest. It ships only `masque-tv-2.1.1.apk`, for TVs where the v2.1.0 Connect button sits below the screen. Phone, Windows, the server, and iOS stay on v2.1.0.
+Optional Android TV build: [v2.1.2](../../releases/tag/v2.1.2) is not Latest. It ships only `masque-tv-2.1.2.apk`. Use it instead of the v2.1.0 or v2.1.1 TV APK: Connect stays on screen, and a stalled tunnel dials again. Phone, Windows, the server, and iOS stay on v2.1.0.
 
 For earlier release details, use the [changelog](CHANGELOG.md) and the corresponding release notes.
 
@@ -43,7 +43,7 @@ Generate a separate profile.masque bundle for each device; see [issuing client c
 | Platform | Start here |
 |---|---|
 | Android | Install the phone APK, import the profile, grant VPN permission, connect. [Android guide](android/README.md) |
-| Android TV | Install the TV APK; clipboard/paste-text import is available. If Connect is below the screen, use the optional v2.1.1 TV APK. [Android guide](android/README.md) |
+| Android TV | Install the optional v2.1.2 TV APK. Clipboard/paste-text import is available. [Android guide](android/README.md) |
 | Windows | Install the MSI (one UAC prompt), open MASQUE VPN, import the profile, connect. Daily use does not require administrator privileges; closing the window leaves the tunnel running. [Windows guide](windows/README.md) |
 | iOS | Install [iOS 2.0 through TestFlight](https://testflight.apple.com/join/x52N41V1), then import a device-specific profile. [iOS guide](ios/README.md) |
 
