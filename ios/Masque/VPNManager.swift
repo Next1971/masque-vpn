@@ -17,14 +17,18 @@ final class VPNManager: ObservableObject {
 
     /// User tapped Disconnect or cancel. Stops the kill-switch retry.
     private var userStop = false
+    /// Button copy. Set only while a stop is actually in progress.
+    private var showDisconnecting = false
     private var killSwitchRetryPending = false
     private var killSwitchRetryAttempt = 0
 
     private var observer: NSObjectProtocol?
     private var pingTimer: Timer?
     private var busyWatchdog: Timer?
-    private let prefs = DispatchQueue(label: "com.next1971.masque.vpn-prefs")
-    /// Only touch on `prefs` queue.
+    /// NEVPNManager is main-thread only. A private queue here crashed the app
+    /// on connect, disconnect, and when the status callback ran after sleep.
+    private let prefs = DispatchQueue.main
+    /// Only touch on the main queue.
     private var cachedManager: NETunnelProviderManager?
 
     init() {
@@ -59,8 +63,27 @@ final class VPNManager: ObservableObject {
     }
 
     var connectTitle: String {
-        if busy { return connected ? "Disconnecting…" : "Connecting… (tap to stop)" }
+        if showDisconnecting { return "Disconnecting…" }
+        if busy { return "Connecting… (tap to stop)" }
         return connected ? "Disconnect" : "Connect"
+    }
+
+    /// Go reports "forwarding started" once the packet bridge is up. That is
+    /// the connected state; NEVPNStatus.connected arrives earlier, at bootstrap.
+    private func tunnelUp(_ stage: String) -> Bool {
+        if stage.hasPrefix("VPN active") || stage.hasPrefix("reconnected") { return true }
+        switch stage {
+        case "forwarding started", "packet bridge ready", "path changed, tunnel still live":
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func applyTunnelStage(_: String) {
+        statusText = "Status: VPN active"
+        showDisconnecting = false
+        setBusy(false)
     }
 
     func refreshProfileStatus() {
@@ -69,7 +92,10 @@ final class VPNManager: ObservableObject {
                 // Keep a failure on screen: "profile ready" used to wipe the
                 // reason the tunnel just died.
                 let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
-                statusText = tunnelErr.isEmpty ? "Status: profile ready" : "Status: \(tunnelErr)"
+                if !tunnelErr.isEmpty {
+                    lastError = tunnelErr
+                }
+                statusText = "Status: profile ready"
             }
         } else {
             statusText = "Status: profile not configured"
@@ -132,14 +158,12 @@ final class VPNManager: ObservableObject {
         // A stuck busy flag used to make the button do nothing at all, so a tap
         // while busy stops whatever is half-started instead of being ignored.
         if busy {
-            busy = false
             statusText = "Status: cancelling"
             beginUserStop()
             return
         }
 
         if connected {
-            busy = true
             statusText = "Status: disconnecting"
             beginUserStop()
             return
@@ -171,6 +195,8 @@ final class VPNManager: ObservableObject {
     /// with includeAllNetworks still set leaves the phone with no internet.
     private func beginUserStop() {
         userStop = true
+        showDisconnecting = true
+        busy = true
         killSwitchRetryPending = false
         killSwitchRetryAttempt = 0
         AppGroup.defaults.set(false, forKey: AppGroup.defaultsKillSwitchArmed)
@@ -380,23 +406,26 @@ final class VPNManager: ObservableObject {
             killSwitchRetryAttempt = 0
             killSwitchRetryPending = false
             let stage = AppGroup.defaults.string(forKey: AppGroup.defaultsStatus) ?? ""
-            if stage.hasPrefix("VPN active") {
-                setBusy(false)
-                statusText = "Status: VPN active"
+            if tunnelUp(stage) {
+                applyTunnelStage(stage)
             } else {
+                showDisconnecting = false
                 setBusy(true)
                 statusText = "Status: \(stage.isEmpty ? "connecting" : stage)"
             }
         case .connecting, .reasserting:
             connected = false
+            showDisconnecting = false
             setBusy(true)
             statusText = "Status: connecting"
         case .disconnecting:
             connected = false
+            showDisconnecting = true
             setBusy(true)
             statusText = "Status: disconnecting"
         default:
             connected = false
+            showDisconnecting = false
             pingText = "Ping: —"
             if userStop {
                 userStop = false
@@ -438,7 +467,7 @@ final class VPNManager: ObservableObject {
         if busy || killSwitchRetryPending { return true }
         killSwitchRetryPending = true
         busy = true
-        statusText = "Status: Kill switch: traffic blocked, reconnecting"
+        statusText = "Status: reconnecting"
         let delay = min(8.0, Double(killSwitchRetryAttempt + 1))
         killSwitchRetryAttempt += 1
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -454,7 +483,7 @@ final class VPNManager: ObservableObject {
                 return
             }
             self.busy = true
-            self.statusText = "Status: Kill switch: traffic blocked, reconnecting"
+            self.statusText = "Status: reconnecting"
             self.prefs.async {
                 self.startTunnel(server: profile.server, attempt: 0)
             }
@@ -539,12 +568,21 @@ final class VPNManager: ObservableObject {
             // Show how far the extension got: starting / opening UDP / dialing QUIC.
             if busy, tunnelErr.isEmpty {
                 let stage = AppGroup.defaults.string(forKey: AppGroup.defaultsStatus) ?? ""
-                if !stage.isEmpty { statusText = "Status: \(stage)" }
+                if tunnelUp(stage) {
+                    connected = true
+                    applyTunnelStage(stage)
+                } else if !stage.isEmpty {
+                    statusText = "Status: \(stage)"
+                }
             }
             return
         }
         let msg = AppGroup.defaults.string(forKey: AppGroup.defaultsStatus) ?? ""
-        if !msg.isEmpty { statusText = "Status: \(msg)" }
+        if tunnelUp(msg) {
+            applyTunnelStage(msg)
+        } else if !msg.isEmpty {
+            statusText = "Status: \(msg)"
+        }
         let ms = AppGroup.defaults.integer(forKey: AppGroup.defaultsPing)
         if ms > 0 {
             pingText = "Ping: \(ms) ms"
