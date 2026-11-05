@@ -416,8 +416,12 @@ func (t *Tunnel) runPump(ctx context.Context, pump *clientcore.Pump, prof *clien
 		if cb != nil {
 			cb.OnStatus("reconnecting")
 		}
-		if t.stream != nil {
-			err := fmt.Errorf("tcp path closed")
+		// Swift owns the socket. Redialing on the same NWUDPSession writes a
+		// second handshake the server accepts, then the unread reply dies at
+		// the 15s handshake timeout and Connect stays stuck. A new socket has
+		// to come from the extension.
+		if t.stream != nil || t.pipe != nil {
+			err := fmt.Errorf("path closed")
 			if cb != nil {
 				cb.OnError(err.Error())
 			}

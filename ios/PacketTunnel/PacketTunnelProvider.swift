@@ -52,6 +52,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// Last time the extension was actually running. A big gap means iOS froze
     /// the process in sleep and QUIC/TCP keepalives did not go out.
     private var lastAlive = Date()
+    private var lastUDPDatagram = Date()
+    private var udpRearmAt = Date.distantPast
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         // A Packet Tunnel is jetsam-killed around 15 MB. Cap the Go heap before
@@ -953,13 +955,27 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         session.setReadHandler({ [weak self] datagrams, readErr in
             if let readErr {
                 let text = readErr.localizedDescription.lowercased()
+                // A settings or path update cancels the in-flight read and
+                // does not call this handler again. Writes still leave, so
+                // the server keeps the session, but after a few minutes the
+                // client redials blind and both sides drop.
                 if text.contains("cancel") || text.contains("отмен") {
+                    self?.workQueue.async {
+                        guard let self, !self.stopping, !self.tearingDownUDP, !self.reconnecting else { return }
+                        guard self.tunnel != nil, self.udpSession?.state == .ready else { return }
+                        guard Date().timeIntervalSince(self.udpRearmAt) > 1 else { return }
+                        self.udpRearmAt = Date()
+                        self.rearmUDPRead(pipe: pipe)
+                    }
                     return
                 }
                 self?.workQueue.async {
                     guard self?.tunnel == nil else { return }
                     self?.recordError("UDP read: \(readErr.localizedDescription)")
                 }
+            }
+            if !(datagrams ?? []).isEmpty {
+                self?.workQueue.async { self?.lastUDPDatagram = Date() }
             }
             for d in datagrams ?? [] {
                 pipe.deliver(d)
@@ -1223,6 +1239,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             let total = t.trafficBytes()
             if total > 0 {
                 TrafficAccount.note(total: Int(total))
+            }
+            // NWUDPSession stops delivering without leaving .ready. Arm the
+            // read again before the QUIC idle timer gives up on the path.
+            if let session = self.udpSession, session.state == .ready,
+               !self.reconnecting, !self.tearingDownUDP,
+               let pipe = self.datagramPipe,
+               Date().timeIntervalSince(self.lastUDPDatagram) > 20 {
+                self.lastUDPDatagram = Date()
+                self.udpRearmAt = Date()
+                self.rearmUDPRead(pipe: pipe)
             }
         }
         timer.resume()
