@@ -11,6 +11,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private let workQueue = DispatchQueue(label: "com.next1971.masque.provider")
     private let dialQueue = DispatchQueue(label: "com.next1971.masque.dial")
     private let udpQueue = DispatchQueue(label: "com.next1971.masque.udp")
+    /// Hands TCP bytes to Go off the Network Extension callback. deliver blocks
+    /// when Go is behind; doing that on the connection callback also stalls writes.
+    private let tcpDeliverQueue = DispatchQueue(label: "com.next1971.masque.tcp-deliver")
     private var startCompleted = false
     private var startHandler: ((Error?) -> Void)?
 
@@ -766,31 +769,36 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let generation = tcpReadGeneration
         conn.readMinimumLength(1, maximumLength: 16 * 1024) { [weak self] data, err in
             guard let self else { return }
-            // Deliver on this callback. The pipe blocks when Go is behind,
-            // which is TCP flow control. Doing it on workQueue would stall
-            // reconnect and status for the whole extension.
-            if err == nil, let data, !data.isEmpty {
-                stream.deliver(data)
-            }
-            self.workQueue.async {
-                guard generation == self.tcpReadGeneration else { return }
-                self.tcpReadPending = false
-                if let err {
-                    let text = err.localizedDescription.lowercased()
-                    if text.contains("cancel") || text.contains("отмен") {
-                        if self.tunnel != nil, !self.stopping, !self.tearingDownTCP {
-                            self.readTCP(stream: stream)
+            // Return immediately. deliver blocks while Go is behind, and this
+            // callback is also where write completions run. Blocking it stalls
+            // the handshake and the app sits on "connecting" until the write
+            // gives up (~8s) and the process is killed.
+            let payload = (err == nil) ? data.flatMap { $0.isEmpty ? nil : Data($0) } : nil
+            self.tcpDeliverQueue.async { [weak self] in
+                if let payload {
+                    stream.deliver(payload)
+                }
+                self?.workQueue.async {
+                    guard let self else { return }
+                    guard generation == self.tcpReadGeneration else { return }
+                    self.tcpReadPending = false
+                    if let err {
+                        let text = err.localizedDescription.lowercased()
+                        if text.contains("cancel") || text.contains("отмен") {
+                            if self.tunnel != nil, !self.stopping, !self.tearingDownTCP {
+                                self.readTCP(stream: stream)
+                            }
+                            return
+                        }
+                        if self.tunnel == nil {
+                            self.recordError("TCP read: \(err.localizedDescription)")
+                        } else {
+                            self.reconnectTCPIfLive("TCP read: \(err.localizedDescription)")
                         }
                         return
                     }
-                    if self.tunnel == nil {
-                        self.recordError("TCP read: \(err.localizedDescription)")
-                    } else {
-                        self.reconnectTCPIfLive("TCP read: \(err.localizedDescription)")
-                    }
-                    return
+                    self.readTCP(stream: stream)
                 }
-                self.readTCP(stream: stream)
             }
         }
     }
@@ -1391,15 +1399,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 }
 
-/// Go calls writeStream on its HTTP/2 thread. Waiting here for the Network
-/// Extension completion deadlocks that thread (the read callback needs it)
-/// and iOS kills the extension. Copy the bytes and return once they are queued.
+/// Go calls writeStream on its HTTP/2 thread and will not read until the call
+/// returns. Waiting here froze the dial for 8 seconds and then killed the app.
+/// Bytes are copied onto a serial queue; that queue writes one chunk at a time
+/// so the TCP stream stays in order without holding the Go thread.
 private final class GoTCPWriter: NSObject, MobileStreamWriterProtocol {
     private let connection: NWTCPConnection
     private let queue = DispatchQueue(label: "com.next1971.masque.tcp-write")
     private weak var owner: PacketTunnelProvider?
-    private var pending = 0
-    private static let maxPending = 32
+    private var pending: [Data] = []
+    private var buffered = 0
+    private var writing = false
+    private static let maxBuffered = 1_048_576
 
     init(connection: NWTCPConnection, owner: PacketTunnelProvider) {
         self.connection = connection
@@ -1409,40 +1420,47 @@ private final class GoTCPWriter: NSObject, MobileStreamWriterProtocol {
 
     func writeStream(_ p: Data?) throws {
         guard let data = p, !data.isEmpty else { return }
+        if connection.state != .connected {
+            throw NSError(
+                domain: "masque",
+                code: 12,
+                userInfo: [NSLocalizedDescriptionKey: "TCP connection is not connected"]
+            )
+        }
         let copy = Data(data)
-        let deadline = Date().addingTimeInterval(8)
-        while true {
-            if connection.state != .connected {
-                throw NSError(
-                    domain: "masque",
-                    code: 12,
-                    userInfo: [NSLocalizedDescriptionKey: "TCP connection is not connected"]
-                )
+        var overflow = false
+        queue.sync {
+            if buffered + copy.count > Self.maxBuffered {
+                overflow = true
+                return
             }
-            var queued = false
-            queue.sync {
-                guard pending < Self.maxPending else { return }
-                pending += 1
-                queued = true
-                connection.write(copy) { [weak self] err in
-                    self?.queue.async {
-                        guard let self else { return }
-                        self.pending = max(0, self.pending - 1)
-                        if let err {
-                            self.owner?.noteTCPWriteError(err)
-                        }
-                    }
+            buffered += copy.count
+            pending.append(copy)
+            pumpLocked()
+        }
+        if overflow {
+            throw NSError(
+                domain: "masque",
+                code: 12,
+                userInfo: [NSLocalizedDescriptionKey: "TCP write buffer full"]
+            )
+        }
+    }
+
+    private func pumpLocked() {
+        guard !writing, !pending.isEmpty else { return }
+        writing = true
+        let chunk = pending.removeFirst()
+        connection.write(chunk) { [weak self] err in
+            self?.queue.async {
+                guard let self else { return }
+                self.buffered = max(0, self.buffered - chunk.count)
+                self.writing = false
+                if let err {
+                    self.owner?.noteTCPWriteError(err)
                 }
+                self.pumpLocked()
             }
-            if queued { return }
-            if Date() > deadline {
-                throw NSError(
-                    domain: "masque",
-                    code: 12,
-                    userInfo: [NSLocalizedDescriptionKey: "TCP write timed out"]
-                )
-            }
-            usleep(10_000)
         }
     }
 }
