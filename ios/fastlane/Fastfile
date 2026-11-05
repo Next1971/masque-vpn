@@ -109,7 +109,7 @@ platform :ios do
     upload_to_testflight(
       api_key: api_key,
       skip_waiting_for_build_processing: true,
-      changelog: "2.1.1: status reaches VPN active while the tunnel is up, and the button no longer stays on Disconnecting. TCP uses the packet-tunnel socket and no longer resets the session right after connect."
+      changelog: "2.1.1: traffic counters update while the tunnel is up. TCP no longer waits on the packet-tunnel thread, which was killing the app. After sleep, a frozen QUIC session dials again."
     )
   end
 end

@@ -46,6 +46,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var lastPhysicalIP = ""
     private var ignorePathChangesUntil = Date.distantPast
     private var zeroRTTTicks = 0
+    /// Last time the extension was actually running. A big gap means iOS froze
+    /// the process in sleep and QUIC/TCP keepalives did not go out.
+    private var lastAlive = Date()
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         // A Packet Tunnel is jetsam-killed around 15 MB. Cap the Go heap before
@@ -1028,11 +1031,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             let udpReady = self.udpSession?.state == .ready
             let tcpReady = self.tcpConnection?.state == .connected
             let rtt = self.tunnel?.rttMillis() ?? 0
-            // TCP has no UDP session. Treating that as dead reconnects on
-            // every wake and the server logs RST_STREAM CANCEL.
-            if self.tunnel == nil || rtt == 0 || !(udpReady || tcpReady) {
+            let frozen = Date().timeIntervalSince(self.lastAlive) > 20
+            // A cached RTT stays non-zero across sleep, so it cannot prove the
+            // session survived. Twenty seconds without a tick means the
+            // process was frozen and the server will drop the idle QUIC conn.
+            let pathReady = udpReady || tcpReady
+            if self.tunnel == nil || rtt == 0 || !pathReady || frozen {
                 self.zeroRTTTicks = 0
-                self.scheduleReconnect("extension woke")
+                self.scheduleReconnect(frozen ? "extension woke from sleep" : "extension woke")
             }
         }
     }
@@ -1149,10 +1155,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     private func startPingTimer() {
-        let timer = DispatchSource.makeTimerSource(queue: writeQueue)
+        // writeQueue is stuck inside readPacket for the whole session, so a
+        // timer there never fires and traffic counters stay at zero.
+        let timer = DispatchSource.makeTimerSource(queue: workQueue)
         timer.schedule(deadline: .now() + 2, repeating: 2)
         timer.setEventHandler { [weak self] in
             guard let self, let t = self.tunnel else { return }
+            self.lastAlive = Date()
             let ms = t.rttMillis()
             if ms > 0 {
                 AppGroup.defaults.set(Int(ms), forKey: AppGroup.defaultsPing)
@@ -1358,11 +1367,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 }
 
-/// writeStream must not return until the bytes are queued. Go calls it on the
-/// HTTP/2 thread and a dropped record breaks TLS.
+/// Go calls writeStream on its HTTP/2 thread. Waiting here for the Network
+/// Extension completion deadlocks that thread (the read callback needs it)
+/// and iOS kills the extension. Copy the bytes and return once they are queued.
 private final class GoTCPWriter: NSObject, MobileStreamWriterProtocol {
     private let connection: NWTCPConnection
+    private let queue = DispatchQueue(label: "com.next1971.masque.tcp-write")
     private weak var owner: PacketTunnelProvider?
+    private var pending = 0
+    private static let maxPending = 32
 
     init(connection: NWTCPConnection, owner: PacketTunnelProvider) {
         self.connection = connection
@@ -1372,29 +1385,40 @@ private final class GoTCPWriter: NSObject, MobileStreamWriterProtocol {
 
     func writeStream(_ p: Data?) throws {
         guard let data = p, !data.isEmpty else { return }
-        if connection.state != .connected {
-            throw NSError(
-                domain: "masque",
-                code: 12,
-                userInfo: [NSLocalizedDescriptionKey: "TCP connection is not connected"]
-            )
-        }
-        let sem = DispatchSemaphore(value: 0)
-        var writeErr: Error?
-        connection.write(data) { err in
-            writeErr = err
-            sem.signal()
-        }
-        if sem.wait(timeout: .now() + 20) == .timedOut {
-            throw NSError(
-                domain: "masque",
-                code: 12,
-                userInfo: [NSLocalizedDescriptionKey: "TCP write timed out"]
-            )
-        }
-        if let writeErr {
-            owner?.noteTCPWriteError(writeErr)
-            throw writeErr
+        let copy = Data(data)
+        let deadline = Date().addingTimeInterval(8)
+        while true {
+            if connection.state != .connected {
+                throw NSError(
+                    domain: "masque",
+                    code: 12,
+                    userInfo: [NSLocalizedDescriptionKey: "TCP connection is not connected"]
+                )
+            }
+            var queued = false
+            queue.sync {
+                guard pending < Self.maxPending else { return }
+                pending += 1
+                queued = true
+                connection.write(copy) { [weak self] err in
+                    self?.queue.async {
+                        guard let self else { return }
+                        self.pending = max(0, self.pending - 1)
+                        if let err {
+                            self.owner?.noteTCPWriteError(err)
+                        }
+                    }
+                }
+            }
+            if queued { return }
+            if Date() > deadline {
+                throw NSError(
+                    domain: "masque",
+                    code: 12,
+                    userInfo: [NSLocalizedDescriptionKey: "TCP write timed out"]
+                )
+            }
+            usleep(10_000)
         }
     }
 }

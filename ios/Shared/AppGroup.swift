@@ -57,10 +57,12 @@ enum TrafficAccount {
         d.set(dayBytes, forKey: AppGroup.defaultsTrafficDayBytes)
         d.set(monthBytes, forKey: AppGroup.defaultsTrafficMonthBytes)
         d.set(total, forKey: AppGroup.defaultsTrafficApplied)
+        d.synchronize()
     }
 
     static func label() -> String {
         let d = AppGroup.defaults
+        d.synchronize()
         let dayBytes = d.string(forKey: AppGroup.defaultsTrafficDay) == dayKey()
             ? d.integer(forKey: AppGroup.defaultsTrafficDayBytes) : 0
         let monthBytes = d.string(forKey: AppGroup.defaultsTrafficMonth) == monthKey()
