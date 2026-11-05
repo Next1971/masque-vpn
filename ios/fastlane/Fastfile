@@ -109,7 +109,7 @@ platform :ios do
     upload_to_testflight(
       api_key: api_key,
       skip_waiting_for_build_processing: true,
-      changelog: "2.1.1: traffic counters update while the tunnel is up. TCP no longer waits on the packet-tunnel thread, which was killing the app. After sleep, a frozen QUIC session dials again."
+      changelog: "2.1.1: the status line stays VPN active. Connecting and reconnecting no longer print long messages that shift the screen."
     )
   end
 end

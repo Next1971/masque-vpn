@@ -1142,16 +1142,47 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private func recordError(_ msg: String) {
         AppGroup.defaults.set(msg, forKey: AppGroup.defaultsLastError)
-        AppGroup.defaults.set(msg, forKey: AppGroup.defaultsStatus)
         AppGroup.defaults.synchronize()
     }
 
+    /// The main screen is a single line. Long stages wrap and shift the buttons.
     private func publishStatus(_ msg: String) {
-        AppGroup.defaults.set(msg, forKey: AppGroup.defaultsStatus)
+        let shown = Self.shortStatus(msg)
+        if shown == "connecting", tunnel != nil {
+            return
+        }
+        AppGroup.defaults.set(shown, forKey: AppGroup.defaultsStatus)
         if let ms = tunnel?.rttMillis(), ms > 0 {
             AppGroup.defaults.set(Int(ms), forKey: AppGroup.defaultsPing)
         }
         AppGroup.defaults.synchronize()
+    }
+
+    private static func shortStatus(_ msg: String) -> String {
+        if msg.hasPrefix("VPN active")
+            || msg.hasPrefix("reconnected")
+            || msg == "forwarding started"
+            || msg == "packet bridge ready"
+            || msg.hasPrefix("path changed") {
+            return "VPN active"
+        }
+        if msg.hasPrefix("reconnect") {
+            return "reconnecting"
+        }
+        if msg.hasPrefix("waiting")
+            || msg.hasPrefix("physical")
+            || msg.hasPrefix("no physical")
+            || msg.hasPrefix("opening")
+            || msg.hasPrefix("dialing")
+            || msg.hasPrefix("UDP state")
+            || msg.hasPrefix("TCP state")
+            || msg.hasPrefix("starting") {
+            return "connecting"
+        }
+        if msg.count > 22 {
+            return "connecting"
+        }
+        return msg
     }
 
     private func startPingTimer() {
@@ -1185,13 +1216,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             if total > 0 {
                 TrafficAccount.note(total: Int(total))
             }
-            // Headroom before jetsam, plus Go heap: tells us whether a drop was
-            // the process being killed or the network going away.
-            let leftMB = Double(os_proc_available_memory()) / 1_048_576
-            let heapMB = Double(MobileHeapKB()) / 1024
-            self.publishStatus(String(
-                format: "VPN active (free %.1f MB, heap %.1f MB)", leftMB, heapMB
-            ))
         }
         timer.resume()
         pingTimer = timer

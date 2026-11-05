@@ -80,12 +80,8 @@ final class VPNManager: ObservableObject {
         }
     }
 
-    private func applyTunnelStage(_ stage: String) {
-        if stage.hasPrefix("VPN active") || stage.hasPrefix("reconnected") {
-            statusText = "Status: \(stage)"
-        } else {
-            statusText = "Status: VPN active"
-        }
+    private func applyTunnelStage(_: String) {
+        statusText = "Status: VPN active"
         showDisconnecting = false
         setBusy(false)
     }
@@ -96,7 +92,10 @@ final class VPNManager: ObservableObject {
                 // Keep a failure on screen: "profile ready" used to wipe the
                 // reason the tunnel just died.
                 let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
-                statusText = tunnelErr.isEmpty ? "Status: profile ready" : "Status: \(tunnelErr)"
+                if !tunnelErr.isEmpty {
+                    lastError = tunnelErr
+                }
+                statusText = "Status: profile ready"
             }
         } else {
             statusText = "Status: profile not configured"
@@ -468,7 +467,7 @@ final class VPNManager: ObservableObject {
         if busy || killSwitchRetryPending { return true }
         killSwitchRetryPending = true
         busy = true
-        statusText = "Status: Kill switch: traffic blocked, reconnecting"
+        statusText = "Status: reconnecting"
         let delay = min(8.0, Double(killSwitchRetryAttempt + 1))
         killSwitchRetryAttempt += 1
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -484,7 +483,7 @@ final class VPNManager: ObservableObject {
                 return
             }
             self.busy = true
-            self.statusText = "Status: Kill switch: traffic blocked, reconnecting"
+            self.statusText = "Status: reconnecting"
             self.prefs.async {
                 self.startTunnel(server: profile.server, attempt: 0)
             }
