@@ -18,7 +18,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var udpStateObs: NSKeyValueObservation?
     private var udpWriter: GoUDPWriter?
     private var datagramPipe: MobileDatagramPipe?
+    private var tcpConnection: NWTCPConnection?
+    private var tcpStateObs: NSKeyValueObservation?
+    private var tcpWriter: GoTCPWriter?
+    private var streamPipe: MobileStreamPipe?
+    private var tcpReadPending = false
+    private var tcpReadGeneration = 0
     private var udpWriteErrorLogged = false
+    private var tcpWriteErrorLogged = false
     private var stopping = false
     private var reconnecting = false
     private var lastProfile: MasqueProfile?
@@ -65,6 +72,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         startCompleted = false
         startHandler = completionHandler
         udpWriteErrorLogged = false
+        tcpWriteErrorLogged = false
         stopping = false
         reconnecting = false
         everDialed = false
@@ -145,6 +153,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private func failAfterStart(_ msg: String, code: Int) {
         recordError(msg)
         teardownUDP()
+        teardownTCP()
         let err = NSError(
             domain: "masque",
             code: code,
@@ -376,18 +385,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 // Handshake failures are retried by the openPhysicalUDP
                 // completion. After the tunnel is up, a speedtest burst can
                 // cancel this session — reconnect instead of killing the VPN.
-                if self?.tearingDownUDP != true, self?.reconnecting != true {
-                    self?.scheduleReconnect(msg)
-                }
+                // The route install right after dial also cancels this session;
+                // reconnecting there RST the CONNECT that just succeeded.
+                self?.reconnectUDPIfLive(msg)
             case .cancelled:
                 finish(NSError(
                     domain: "masque",
                     code: 9,
                     userInfo: [NSLocalizedDescriptionKey: "UDP session cancelled"]
                 ))
-                if self?.tearingDownUDP != true, self?.reconnecting != true {
-                    self?.scheduleReconnect("UDP session cancelled")
-                }
+                self?.reconnectUDPIfLive("UDP session cancelled")
             default:
                 break
             }
@@ -415,6 +422,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     userInfo: [NSLocalizedDescriptionKey: "UDP session not ready (state \(session.state.rawValue))"]
                 ))
             }
+        }
+    }
+
+    /// A UDP failure while routes are being installed is the settings apply,
+    /// not a dead path. startBridge rearms the read.
+    private func reconnectUDPIfLive(_ reason: String) {
+        workQueue.async { [weak self] in
+            guard let self else { return }
+            if self.tearingDownUDP || self.reconnecting { return }
+            if self.tunnel != nil, !self.routesApplied { return }
+            if self.tunnel != nil, Date() <= self.ignorePathChangesUntil { return }
+            self.scheduleReconnect(reason)
         }
     }
 
@@ -565,7 +584,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    /// One address at a time. Go then tries that address on the profile port and alt_port.
+    /// One address at a time, profile port then alt_port. The socket is
+    /// NWTCPConnection so it stays on the physical path after the default
+    /// route is installed. A BSD dial from Go is captured by the tunnel and
+    /// the server then sees RST_STREAM CANCEL.
     private func tryTCP(
         profile: MasqueProfile,
         ips: [String],
@@ -574,39 +596,213 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         lastError: String,
         onFailure: @escaping (String) -> Void
     ) {
+        let portNum = Int(port) ?? 443
+        let targets = udpTargets(ips: ips, port: port, portNum: portNum, altPort: profile.altPort)
+        tryTCPTarget(
+            profile: profile,
+            targets: targets,
+            index: index,
+            lastError: lastError,
+            onFailure: onFailure
+        )
+    }
+
+    private func tryTCPTarget(
+        profile: MasqueProfile,
+        targets: [UDPTarget],
+        index: Int,
+        lastError: String,
+        onFailure: @escaping (String) -> Void
+    ) {
         if stopping {
             onFailure("stopped")
             return
         }
-        if index >= ips.count {
+        if index >= targets.count {
             onFailure(lastError)
             return
         }
-        let ip = ips[index]
-        ensureExcluded(ip, profile: profile) { [weak self] in
+        let target = targets[index]
+        ensureExcluded(target.ip, profile: profile) { [weak self] in
             guard let self else { return }
-            self.publishStatus("opening TCP to \(ip):\(port)")
-            let dial = Self.dialServer(ip, port)
-            self.dialQueue.async {
-                self.dialThenApplySettings(
-                    profile: profile,
-                    dialServer: dial,
-                    remote: ip,
-                    pipe: nil,
-                    transport: "tcp",
-                    onFailure: { msg in
-                        self.tryTCP(
+            self.publishStatus("opening TCP to \(target.ip):\(target.port)")
+            self.openPhysicalTCP(host: target.ip, port: target.port) { [weak self] tcpErr in
+                guard let self else { return }
+                self.workQueue.async {
+                    if let tcpErr {
+                        self.tryTCPTarget(
                             profile: profile,
-                            ips: ips,
-                            port: port,
+                            targets: targets,
                             index: index + 1,
-                            lastError: msg,
+                            lastError: tcpErr.localizedDescription,
                             onFailure: onFailure
                         )
+                        return
                     }
-                )
+                    guard let conn = self.tcpConnection else {
+                        self.tryTCPTarget(
+                            profile: profile,
+                            targets: targets,
+                            index: index + 1,
+                            lastError: "TCP connection missing after ready",
+                            onFailure: onFailure
+                        )
+                        return
+                    }
+                    let writer = GoTCPWriter(connection: conn, owner: self)
+                    self.tcpWriter = writer
+                    var pipeErr: NSError?
+                    guard let stream = MobileNewStreamPipe(writer, target.ip, target.portNum, &pipeErr) else {
+                        self.teardownTCP()
+                        self.tryTCPTarget(
+                            profile: profile,
+                            targets: targets,
+                            index: index + 1,
+                            lastError: pipeErr?.localizedDescription ?? "TCP pipe failed",
+                            onFailure: onFailure
+                        )
+                        return
+                    }
+                    self.streamPipe = stream
+                    self.readTCP(stream: stream)
+                    let dial = Self.dialServer(target.ip, target.port)
+                    self.dialQueue.async {
+                        self.dialThenApplySettings(
+                            profile: profile,
+                            dialServer: dial,
+                            remote: target.ip,
+                            pipe: nil,
+                            stream: stream,
+                            transport: "tcp",
+                            onFailure: { msg in
+                                self.abandonDialAttempt()
+                                self.tryTCPTarget(
+                                    profile: profile,
+                                    targets: targets,
+                                    index: index + 1,
+                                    lastError: msg,
+                                    onFailure: onFailure
+                                )
+                            }
+                        )
+                    }
+                }
             }
         }
+    }
+
+    /// from: the Packet Tunnel API. enableTLS is false — Go does mTLS.
+    private func openPhysicalTCP(host: String, port: String, completion: @escaping (Error?) -> Void) {
+        teardownTCP()
+        let endpoint = NWHostEndpoint(hostname: host, port: port)
+        let conn = createTCPConnection(to: endpoint, enableTLS: false, tlsParameters: nil, delegate: nil)
+        tcpConnection = conn
+
+        var finished = false
+        let finish: (Error?) -> Void = { [weak self] err in
+            self?.workQueue.async {
+                guard !finished else { return }
+                finished = true
+                completion(err)
+            }
+        }
+
+        tcpStateObs = conn.observe(\.state, options: [.new]) { [weak self] c, _ in
+            self?.publishStatus("TCP state \(c.state.rawValue)")
+            switch c.state {
+            case .connected:
+                finish(nil)
+            case .disconnected:
+                let msg = c.error?.localizedDescription ?? "TCP connection disconnected"
+                finish(NSError(domain: "masque", code: 9, userInfo: [NSLocalizedDescriptionKey: msg]))
+                self?.reconnectTCPIfLive(msg, conn: c)
+            case .cancelled:
+                finish(NSError(
+                    domain: "masque",
+                    code: 9,
+                    userInfo: [NSLocalizedDescriptionKey: "TCP connection cancelled"]
+                ))
+                self?.reconnectTCPIfLive("TCP connection cancelled", conn: c)
+            default:
+                break
+            }
+        }
+
+        if conn.state == .connected {
+            finish(nil)
+        }
+
+        workQueue.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self, let conn = self.tcpConnection else { return }
+            if conn.state != .connected {
+                finish(NSError(
+                    domain: "masque",
+                    code: 9,
+                    userInfo: [NSLocalizedDescriptionKey: "TCP connection not ready (state \(conn.state.rawValue))"]
+                ))
+            }
+        }
+    }
+
+    private func reconnectTCPIfLive(_ reason: String, conn: NWTCPConnection? = nil) {
+        workQueue.async { [weak self] in
+            guard let self else { return }
+            if let conn, self.tcpConnection !== conn { return }
+            if self.tearingDownTCP || self.reconnecting { return }
+            if self.tunnel != nil, !self.routesApplied { return }
+            if self.tunnel != nil, Date() <= self.ignorePathChangesUntil { return }
+            guard self.everDialed, self.startCompleted else { return }
+            self.scheduleReconnect(reason)
+        }
+    }
+
+    private func readTCP(stream: MobileStreamPipe) {
+        guard !tcpReadPending, !tearingDownTCP, !stopping, let conn = tcpConnection else { return }
+        tcpReadPending = true
+        let generation = tcpReadGeneration
+        conn.readMinimumLength(1, maximumLength: 16 * 1024) { [weak self] data, err in
+            guard let self else { return }
+            // Deliver on this callback. The pipe blocks when Go is behind,
+            // which is TCP flow control. Doing it on workQueue would stall
+            // reconnect and status for the whole extension.
+            if err == nil, let data, !data.isEmpty {
+                stream.deliver(data)
+            }
+            self.workQueue.async {
+                guard generation == self.tcpReadGeneration else { return }
+                self.tcpReadPending = false
+                if let err {
+                    let text = err.localizedDescription.lowercased()
+                    if text.contains("cancel") || text.contains("отмен") {
+                        if self.tunnel != nil, !self.stopping, !self.tearingDownTCP {
+                            self.readTCP(stream: stream)
+                        }
+                        return
+                    }
+                    if self.tunnel == nil {
+                        self.recordError("TCP read: \(err.localizedDescription)")
+                    } else {
+                        self.reconnectTCPIfLive("TCP read: \(err.localizedDescription)")
+                    }
+                    return
+                }
+                self.readTCP(stream: stream)
+            }
+        }
+    }
+
+    private func teardownTCP() {
+        tearingDownTCP = true
+        tcpReadGeneration += 1
+        tcpReadPending = false
+        tcpStateObs?.invalidate()
+        tcpStateObs = nil
+        try? streamPipe?.close()
+        streamPipe = nil
+        tcpWriter = nil
+        tcpConnection?.cancel()
+        tcpConnection = nil
+        tearingDownTCP = false
     }
 
     /// Once the default route is installed, the server address has to stay
@@ -629,6 +825,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         tunnel = nil
         goCallback = nil
         teardownUDP()
+        teardownTCP()
     }
 
     private func dialThenApplySettings(
@@ -636,6 +833,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         dialServer: String,
         remote: String,
         pipe: MobileDatagramPipe?,
+        stream: MobileStreamPipe? = nil,
         transport: String,
         onFailure: @escaping (String) -> Void
     ) {
@@ -646,7 +844,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         cfg.certPath = profile.certPath
         cfg.keyPath = profile.keyPath
         cfg.mtu = profile.mtu
-        cfg.altPort = pipe == nil ? profile.altPort : 0
+        cfg.altPort = (pipe == nil && stream == nil) ? profile.altPort : 0
         cfg.bindInterface = ""
         cfg.transport = transport
 
@@ -656,6 +854,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let t: MobileTunnel?
         if let pipe {
             t = MobileDialWithPipe(cfg, cb, pipe, &dialErr)
+        } else if let stream {
+            t = MobileDialWithStream(cfg, cb, stream, &dialErr)
         } else {
             t = MobileDial(cfg, cb, &dialErr)
         }
@@ -680,6 +880,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             guard let self, !self.stopping else { return }
             if let pipe {
                 self.rearmUDPRead(pipe: pipe)
+            }
+            if let stream = self.streamPipe {
+                self.readTCP(stream: stream)
             }
             do {
                 try t.startPacketBridge()
@@ -779,6 +982,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self.tunnel = nil
             self.goCallback = nil
             self.teardownUDP()
+            self.teardownTCP()
             MobileReleaseMemory()
             self.waitForPhysicalPath(tries: 0) { [weak self] in
                 guard let self else { return }
@@ -821,8 +1025,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             guard let self, !self.stopping, self.startCompleted, self.everDialed else { return }
             guard Date() > self.ignorePathChangesUntil else { return }
             let udpReady = self.udpSession?.state == .ready
+            let tcpReady = self.tcpConnection?.state == .connected
             let rtt = self.tunnel?.rttMillis() ?? 0
-            if self.tunnel == nil || !udpReady || rtt == 0 {
+            // TCP has no UDP session. Treating that as dead reconnects on
+            // every wake and the server logs RST_STREAM CANCEL.
+            if self.tunnel == nil || rtt == 0 || !(udpReady || tcpReady) {
                 self.zeroRTTTicks = 0
                 self.scheduleReconnect("extension woke")
             }
@@ -844,6 +1051,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self.tunnel = nil
             self.goCallback = nil
             self.teardownUDP()
+            self.teardownTCP()
             AppGroup.defaults.set(0, forKey: AppGroup.defaultsPing)
             AppGroup.defaults.set("Disconnected", forKey: AppGroup.defaultsStatus)
             // A crash or a network drop leaves sessionUp set so the app can
@@ -869,6 +1077,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     /// First failed datagram send only: QUIC retransmits, so this would spam.
+    fileprivate func noteTCPWriteError(_ err: Error) {
+        workQueue.async { [weak self] in
+            guard let self, !self.tcpWriteErrorLogged else { return }
+            self.tcpWriteErrorLogged = true
+            self.recordError("TCP write failed: \(err.localizedDescription)")
+        }
+    }
+
     fileprivate func noteUDPWriteError(_ err: Error) {
         workQueue.async { [weak self] in
             guard let self, !self.udpWriteErrorLogged else { return }
@@ -887,6 +1103,19 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     code: 2,
                     userInfo: [NSLocalizedDescriptionKey: "assigned IP changed"]
                 ))
+                return
+            }
+            if msg == "forwarding started" || msg == "packet bridge ready" {
+                self.publishStatus("VPN active")
+                return
+            }
+            // Handshake lines are queued behind startBridge and used to
+            // overwrite "VPN active" with "forwarding started".
+            if self.everDialed,
+               !msg.hasPrefix("reconnecting"),
+               !msg.hasPrefix("reconnected"),
+               !msg.hasPrefix("path changed"),
+               !msg.hasPrefix("VPN active") {
                 return
             }
             self.publishStatus(msg)
@@ -915,6 +1144,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         if let ms = tunnel?.rttMillis(), ms > 0 {
             AppGroup.defaults.set(Int(ms), forKey: AppGroup.defaultsPing)
         }
+        AppGroup.defaults.synchronize()
     }
 
     private func startPingTimer() {
@@ -1124,6 +1354,47 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return NSNumber(value: AF_INET6)
         }
         return NSNumber(value: AF_INET)
+    }
+}
+
+/// writeStream must not return until the bytes are queued. Go calls it on the
+/// HTTP/2 thread and a dropped record breaks TLS.
+private final class GoTCPWriter: NSObject, MobileStreamWriterProtocol {
+    private let connection: NWTCPConnection
+    private weak var owner: PacketTunnelProvider?
+
+    init(connection: NWTCPConnection, owner: PacketTunnelProvider) {
+        self.connection = connection
+        self.owner = owner
+        super.init()
+    }
+
+    func writeStream(_ p: Data?) throws {
+        guard let data = p, !data.isEmpty else { return }
+        if connection.state != .connected {
+            throw NSError(
+                domain: "masque",
+                code: 12,
+                userInfo: [NSLocalizedDescriptionKey: "TCP connection is not connected"]
+            )
+        }
+        let sem = DispatchSemaphore(value: 0)
+        var writeErr: Error?
+        connection.write(data) { err in
+            writeErr = err
+            sem.signal()
+        }
+        if sem.wait(timeout: .now() + 20) == .timedOut {
+            throw NSError(
+                domain: "masque",
+                code: 12,
+                userInfo: [NSLocalizedDescriptionKey: "TCP write timed out"]
+            )
+        }
+        if let writeErr {
+            owner?.noteTCPWriteError(writeErr)
+            throw writeErr
+        }
     }
 }
 

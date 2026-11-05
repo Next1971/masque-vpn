@@ -107,17 +107,22 @@ func connectTCPAddr(ctx context.Context, p *Profile, dev tun.Device, dialAddr st
 		return nil, fmt.Errorf("http2 conn: %w", err)
 	}
 
-	// Dial cancels ctx as soon as it returns. The CONNECT stream stays bound
-	// to the request context, so using ctx here resets a live TCP tunnel
-	// (RST CANCEL) the moment the handshake succeeds. Abort the handshake
-	// if ctx ends early, then let the stream live until the session closes.
+	// Dial cancels ctx as soon as it returns. The CONNECT stream must not
+	// be bound to that ctx: a plain select races when both channels are
+	// ready and picking ctx.Done sends RST_STREAM CANCEL on a session that
+	// just finished the handshake. Abort only if the dial is still in progress.
 	reqCtx, reqCancel := context.WithCancel(context.Background())
 	stopWatch := make(chan struct{})
 	go func() {
 		select {
-		case <-ctx.Done():
-			reqCancel()
 		case <-stopWatch:
+			return
+		case <-ctx.Done():
+		}
+		select {
+		case <-stopWatch:
+		default:
+			reqCancel()
 		}
 	}()
 	disarm := false
