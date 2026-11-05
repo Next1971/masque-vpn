@@ -39,6 +39,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var everDialed = false
     private var routesApplied = false
     private var tearingDownUDP = false
+    private var tearingDownTCP = false
     private var reconnectAttempt = 0
     private var pathObs: NSKeyValueObservation?
     private var lastPathKey = ""
