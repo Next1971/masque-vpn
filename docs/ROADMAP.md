@@ -9,7 +9,7 @@
 | [v2.1.0](../../../releases/tag/v2.1.0) | GitHub Latest | Android phone/TV, Windows, Linux server, install.sh, gen-config.sh, checksums, Docker sources, and masque-setup.exe. UDP and TCP CONNECT-IP; TCP serves an HTML page to connections without a valid client certificate. |
 | [v2.1.2](../../../releases/tag/v2.1.2) | Optional TV release, not Latest | Android TV APK only. Connect stays on screen, and a silent tunnel dials again. No phone APK, MSI, or server binary. |
 | [v2.1.1](../../../releases/tag/v2.1.1) | Superseded TV build | Android TV APK only, for sets where the v2.1.0 Connect button is below the screen. Install v2.1.2 instead. |
-| iOS 2.0 | Current TestFlight client | Public [join link](https://testflight.apple.com/join/x52N41V1). Uses the private CA and connects over UDP only. TCP does not carry traffic on iOS yet. No GitHub IPA. |
+| [v2.1.1-ios](../../../releases/tag/v2.1.1-ios) | iOS TestFlight, not Latest | Public [join link](https://testflight.apple.com/join/x52N41V1). Marketing version 2.1.1, Apple build 40. UDP and TCP, traffic counters, and the same connect status as the other clients. No GitHub IPA. |
 | [v2.0.0](../../../releases/tag/v2.0.0) | Earlier experimental pre-release | First TCP CONNECT-IP experiment; fixed client MTU 1340 and automatic fallback after an unanswered UDP probe. TCP required a client certificate at the handshake and did not serve a website. Not Latest. |
 | [v1.7.1](../../../releases/tag/v1.7.1) | Previous Latest | Android phone/TV and Windows clients; UDP-only. No server binary in that release. |
 | [v1.7](../../../releases/tag/v1.7) | Older iOS TestFlight release | Apple build 20, UDP-only. Its 4 December 2026 expiry refers to that older build, not to the current iOS 2.0 build. |
@@ -77,7 +77,7 @@ This is a capability summary, not a second changelog.
 | Connectivity | QUIC keepalive, optional dual-port QUIC dialing, IPv6 QUIC transport, TCP CONNECT-IP, and documented alternate-port redirects. |
 | Operations | Experimental Windows VPS installer with certificate issuance/revocation, UDP/TCP deployment and profile QR display; server CN denylist; install.sh; checksums/attestations; Docker/Compose sources. |
 | User interface | Android/Windows icons, version display, QUIC RTT display, and TCP-session ping in v2.1.0 Android/TV/Windows clients. |
-| iOS | Public TestFlight distribution with a Packet Tunnel client and shared Go core. iOS 2.0 is UDP only for now. |
+| iOS | Public TestFlight distribution with a Packet Tunnel client and shared Go core. iOS 2.1.1 carries UDP and TCP. |
 
 The initial public v1.0 release shipped on 14 August 2026. Detailed version-by-version changes belong in the [changelog](../CHANGELOG.md).
 

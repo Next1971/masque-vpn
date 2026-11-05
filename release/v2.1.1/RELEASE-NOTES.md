@@ -4,7 +4,7 @@ Install this only when the v2.1.0 TV app shows no **Connect** button. On some se
 
 **No phone APK, Windows MSI, server binary, installer, or iOS build is attached.**
 
-iOS on TestFlight stays **UDP only**. TCP does not carry traffic on iOS yet.
+iOS is the separate [v2.1.1 (iOS)](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.1-ios) TestFlight release. It is not Latest. UDP and TCP both work there.
 
 ## Files
 

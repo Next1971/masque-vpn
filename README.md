@@ -2,7 +2,7 @@
 
 Self-hosted MASQUE CONNECT-IP VPN: your VPS, your certificate authority, one profile per device. HTTP/3 over QUIC (UDP) is the normal transport; HTTP/2 over TCP is available on the same port number. VPN access requires a valid client certificate.
 
-Clients: Android, Android TV, Windows, and [iOS 2.0 via TestFlight](https://testflight.apple.com/join/x52N41V1). No IPA is attached to GitHub Releases.
+Clients: Android, Android TV, Windows, and [iOS 2.1.1 via TestFlight](https://testflight.apple.com/join/x52N41V1). No IPA is attached to GitHub Releases.
 
 Experimental software, not a commercial VPN service or an independently security-audited product. No guarantee of bypassing any particular firewall.
 
@@ -14,13 +14,13 @@ Experimental software, not a commercial VPN service or an independently security
 - TCP: a valid client certificate plus an HTTP/2 CONNECT-IP request opens the VPN. Browsers and connections without a valid client certificate receive an HTML page, not VPN access.
 - The server uses a private-CA certificate. A browser shows a certificate warning before the page; this is not a publicly trusted HTTPS website. UDP does not serve a website.
 - Android, Android TV, Windows: Automatic / UDP only / TCP only transport selection, configurable MTU (default 1340), kill switch (off by default), daily/monthly traffic statistics, and ping during TCP sessions. QUIC ping is the smoothed QUIC RTT; do not interpret TCP ping as QUIC RTT.
-- iOS 2.0 on TestFlight is UDP only for now. TCP does not carry traffic on iOS.
+- [iOS 2.1.1](../../releases/tag/v2.1.1-ios) on TestFlight does UDP and TCP, with traffic counters and the same connect status as the other clients. It is not Latest. No IPA is attached.
 
 ### Compatibility and upgrades
 
-Existing profiles and certificates remain unchanged. A v1.7.1 client can connect to a v2.1.0 server over UDP. A v2.0.0 or v2.1.0 Android or Windows client can use UDP or TCP with this server; TCP requires a v2.0.0 or v2.1.0 server. A v2.1.0 client can still use an older server over UDP. iOS is UDP only for now.
+Existing profiles and certificates remain unchanged. A v1.7.1 client can connect to a v2.1.0 server over UDP. A v2.0.0 or v2.1.0 Android or Windows client can use UDP or TCP with this server; TCP requires a v2.0.0 or v2.1.0 server. A v2.1.0 client can still use an older server over UDP. iOS 2.1.1 uses the same server over UDP or TCP.
 
-Optional Android TV build: [v2.1.2](../../releases/tag/v2.1.2) is not Latest. It ships only `masque-tv-2.1.2.apk`. Use it instead of the v2.1.0 or v2.1.1 TV APK: Connect stays on screen, and a stalled tunnel dials again. Phone, Windows, the server, and iOS stay on v2.1.0.
+Optional Android TV build: [v2.1.2](../../releases/tag/v2.1.2) is not Latest. It ships only `masque-tv-2.1.2.apk`. Use it instead of the v2.1.0 or v2.1.1 TV APK: Connect stays on screen, and a stalled tunnel dials again. Phone, Windows, and the server stay on v2.1.0. iOS is the separate [v2.1.1 (iOS)](../../releases/tag/v2.1.1-ios) TestFlight release, also not Latest.
 
 For earlier release details, use the [changelog](CHANGELOG.md) and the corresponding release notes.
 
@@ -45,7 +45,7 @@ Generate a separate profile.masque bundle for each device; see [issuing client c
 | Android | Install the phone APK, import the profile, grant VPN permission, connect. [Android guide](android/README.md) |
 | Android TV | Install the optional v2.1.2 TV APK. Clipboard/paste-text import is available. [Android guide](android/README.md) |
 | Windows | Install the MSI (one UAC prompt), open MASQUE VPN, import the profile, connect. Daily use does not require administrator privileges; closing the window leaves the tunnel running. [Windows guide](windows/README.md) |
-| iOS | Install [iOS 2.0 through TestFlight](https://testflight.apple.com/join/x52N41V1), then import a device-specific profile. [iOS guide](ios/README.md) |
+| iOS | Install [iOS 2.1.1 through TestFlight](https://testflight.apple.com/join/x52N41V1), then import a device-specific profile. [iOS guide](ios/README.md) |
 
 ## Security and limitations
 

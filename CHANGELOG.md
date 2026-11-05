@@ -7,7 +7,19 @@ All notable changes to MASQUE VPN are documented here.
 ### Not in the v2.1.2 GitHub drop
 
 - Android phone: Dial no longer blocks the UI thread, so Connect/Disconnect still work on filtered mobile data (whitelist). The TV wake lock and silent-path redial are in the shared Android source, but no phone APK is attached to v2.1.2. Phones stay on the v2.1.0 APK.
-- iOS: Connect stays on screen; DNS retries; VPN does not drop just because other apps opened; Disconnect no longer hangs on preference save. iOS remains UDP only. TCP does not carry traffic on iOS yet.
+
+## [v2.1.1-ios] - 2026-11-05
+
+**iOS TestFlight release. Not Latest.** Latest stays [v2.1.0](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.0). Android TV stays on [v2.1.2](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.2). Tag [v2.1.1](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.1) remains the older Android TV APK. No phone APK, MSI, server binary, or IPA. Marketing version 2.1.1, Apple build 40, [TestFlight](https://testflight.apple.com/join/x52N41V1).
+
+iOS has caught up with the other clients: the same profile works over UDP and TCP.
+
+### Fixed
+
+- TCP uses the packet-tunnel socket. The handshake is no longer reset, and Connect no longer freezes the app until iOS kills it.
+- The status line stays VPN active, so long status text no longer shifts the buttons.
+- Today and Month traffic counters update while the tunnel is up.
+- After sleep, a frozen session dials again.
 
 ## [v2.1.2] - 2026-11-04
 

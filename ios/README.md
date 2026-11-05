@@ -1,20 +1,20 @@
 # MASQUE VPN — iOS client (TestFlight)
 
-The current published iOS client is iOS 2.0, available through [public TestFlight](https://testflight.apple.com/join/x52N41V1). It uses the private CA and connects to the v2.1.0 server over UDP only. TCP does not carry traffic on iOS yet. No IPA is attached to GitHub Releases. This is not an App Store availability announcement.
+The current published iOS client is iOS 2.1.1, Apple build 40, available through [public TestFlight](https://testflight.apple.com/join/x52N41V1). It uses the private CA and connects to the v2.1.0 server over UDP and TCP. Release notes: [v2.1.1 (iOS)](../../releases/tag/v2.1.1-ios). That release is not Latest. No IPA is attached to GitHub Releases. This is not an App Store availability announcement.
 
-iOS 1.7 / Apple build 20 was UDP-only as well. Its 4 December 2026 expiry is historical and must not be used as the current iOS 2.0 expiry. Check the installed build number and actual expiration in TestFlight; this guide does not assert an unverified current build number or date.
+iOS 1.7 / Apple build 20 was UDP-only. Its 4 December 2026 expiry is historical and must not be used as the current iOS 2.1.1 expiry. Check the installed build number and actual expiration in TestFlight.
 
 Swift provides the host app and Packet Tunnel Network Extension; gomobile builds Mobile.xcframework from the shared Go core. The simulator can compile UI/code but cannot validate the real VPN path; use a physical device. The project targets iPhone; check current device availability in TestFlight.
 
 ## Use
 
 1. Install Apple's TestFlight and open the [public join link](https://testflight.apple.com/join/x52N41V1).
-2. Install the current iOS 2.0 build.
+2. Install the current iOS 2.1.1 build (Apple build 40 or newer).
 3. Import a real profile.masque issued for this device; the sample is format-only. Do not reuse an active profile from another device.
 4. Allow VPN configuration when iOS asks, then connect.
 5. Verify the VPS exit address, DNS, and application traffic.
 
-Existing profiles and certificates remain unchanged. iOS connects over UDP only. Older servers can still be used over UDP.
+Existing profiles and certificates remain unchanged. iOS connects over UDP or TCP. Older servers can still be used over UDP. TCP needs a v2.0.0 or v2.1.0 server.
 
 Ping on iOS is the smoothed QUIC RTT.
 
