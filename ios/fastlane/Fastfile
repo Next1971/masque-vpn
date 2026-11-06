@@ -109,7 +109,7 @@ platform :ios do
     upload_to_testflight(
       api_key: api_key,
       skip_waiting_for_build_processing: true,
-      changelog: "2.1.1: a stalled UDP read no longer drops the tunnel after a few minutes. Connect opens a new socket instead of hanging, and a second tap no longer kills the app."
+      changelog: "2.1.1: a dead UDP or TCP socket reconnects immediately instead of sitting for a few minutes and then hanging or crashing Connect."
     )
   end
 end

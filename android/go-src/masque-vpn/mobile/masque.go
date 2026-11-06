@@ -496,25 +496,33 @@ func (t *Tunnel) FirstAddress() string {
 // the packet bridge so ReadPacket unblocks.
 func (t *Tunnel) Stop() {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.stopped {
+		t.mu.Unlock()
 		return
 	}
 	t.stopped = true
-	if t.cancel != nil {
-		t.cancel()
+	cancel := t.cancel
+	sess := t.sess
+	pipe := t.pipe
+	stream := t.stream
+	bridge := t.bridge
+	t.mu.Unlock()
+	// Close outside the lock. Session shutdown writes through the pipe, and
+	// holding mu there deadlocks the extension queue on a dead NE socket.
+	if cancel != nil {
+		cancel()
 	}
-	if t.sess != nil {
-		t.sess.Close()
+	if sess != nil {
+		sess.Close()
 	}
-	if t.pipe != nil {
-		_ = t.pipe.Close()
+	if pipe != nil {
+		_ = pipe.Close()
 	}
-	if t.stream != nil {
-		_ = t.stream.Close()
+	if stream != nil {
+		_ = stream.Close()
 	}
-	if t.bridge != nil {
-		_ = t.bridge.Close()
+	if bridge != nil {
+		_ = bridge.Close()
 	}
 }
 

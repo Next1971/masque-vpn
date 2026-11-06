@@ -11,6 +11,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private let workQueue = DispatchQueue(label: "com.next1971.masque.provider")
     private let dialQueue = DispatchQueue(label: "com.next1971.masque.dial")
     private let udpQueue = DispatchQueue(label: "com.next1971.masque.udp")
+    /// packetFlow reads and writes. NEPacketTunnelFlow is not thread-safe.
+    private let flowQueue = DispatchQueue(label: "com.next1971.masque.flow")
+    private let flowEpochLock = NSLock()
+    private var flowEpoch = 0
     /// Hands TCP bytes to Go off the Network Extension callback. deliver blocks
     /// when Go is behind; doing that on the connection callback also stalls writes.
     private let tcpDeliverQueue = DispatchQueue(label: "com.next1971.masque.tcp-deliver")
@@ -31,6 +35,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var tcpWriteErrorLogged = false
     private var stopping = false
     private var reconnecting = false
+    /// True only after the packet bridge is forwarding. Write errors during
+    /// the handshake are dial failures, not a reason to tear the tunnel down.
+    private var forwarding = false
+    private var udpGeneration = 0
+    private var tcpGeneration = 0
+    private var udpReadID = 0
     private var lastProfile: MasqueProfile?
     private var lastRemote = ""
     private var lastDialServer = ""
@@ -52,8 +62,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// Last time the extension was actually running. A big gap means iOS froze
     /// the process in sleep and QUIC/TCP keepalives did not go out.
     private var lastAlive = Date()
-    private var lastUDPDatagram = Date()
-    private var udpRearmAt = Date.distantPast
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         // A Packet Tunnel is jetsam-killed around 15 MB. Cap the Go heap before
@@ -84,6 +92,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         tcpWriteErrorLogged = false
         stopping = false
         reconnecting = false
+        forwarding = false
         everDialed = false
         zeroRTTTicks = 0
         routesApplied = false
@@ -188,7 +197,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
-        let writer = GoUDPWriter(session: session, queue: udpQueue, owner: self)
+        udpWriteErrorLogged = false
+        let writer = GoUDPWriter(session: session, queue: udpQueue, owner: self, generation: udpGeneration)
         udpWriter = writer
         var pipeErr: NSError?
         guard let pipe = MobileNewDatagramPipe(writer, serverIP, portNum, &pipeErr) else {
@@ -196,20 +206,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
         datagramPipe = pipe
-        session.setReadHandler({ [weak self] datagrams, readErr in
-            if let readErr {
-                self?.workQueue.async {
-                    // A settings update cancels in-flight reads. Do not overwrite
-                    // a live CONNECT-IP status with that cancellation.
-                    guard self?.tunnel == nil else { return }
-                    self?.recordError("UDP read: \(readErr.localizedDescription)")
-                }
-            }
-            guard let pipe = self?.datagramPipe else { return }
-            for d in datagrams ?? [] {
-                pipe.deliver(d)
-            }
-        }, maxDatagrams: 32)
+        rearmUDPRead(pipe: pipe)
 
         publishStatus("dialing QUIC \(serverIP):\(portNum)")
         dialQueue.async { [weak self] in
@@ -435,13 +432,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     /// A UDP failure while routes are being installed is the settings apply,
-    /// not a dead path. startBridge rearms the read.
+    /// not a dead path. Only a session that is already forwarding is replaced.
     private func reconnectUDPIfLive(_ reason: String) {
         workQueue.async { [weak self] in
             guard let self else { return }
-            if self.tearingDownUDP || self.reconnecting { return }
-            if self.tunnel != nil, !self.routesApplied { return }
-            if self.tunnel != nil, Date() <= self.ignorePathChangesUntil { return }
+            if self.tearingDownUDP || self.reconnecting || self.stopping { return }
+            guard self.forwarding, self.tunnel != nil else { return }
+            if Date() <= self.ignorePathChangesUntil { return }
             self.scheduleReconnect(reason)
         }
     }
@@ -658,7 +655,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                         )
                         return
                     }
-                    let writer = GoTCPWriter(connection: conn, owner: self)
+                    self.tcpWriteErrorLogged = false
+                    let writer = GoTCPWriter(connection: conn, owner: self, generation: self.tcpGeneration)
                     self.tcpWriter = writer
                     var pipeErr: NSError?
                     guard let stream = MobileNewStreamPipe(writer, target.ip, target.portNum, &pipeErr) else {
@@ -757,10 +755,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         workQueue.async { [weak self] in
             guard let self else { return }
             if let conn, self.tcpConnection !== conn { return }
-            if self.tearingDownTCP || self.reconnecting { return }
-            if self.tunnel != nil, !self.routesApplied { return }
-            if self.tunnel != nil, Date() <= self.ignorePathChangesUntil { return }
-            guard self.everDialed, self.startCompleted else { return }
+            if self.tearingDownTCP || self.reconnecting || self.stopping { return }
+            guard self.forwarding, self.tunnel != nil, self.everDialed, self.startCompleted else { return }
+            if Date() <= self.ignorePathChangesUntil { return }
             self.scheduleReconnect(reason)
         }
     }
@@ -807,6 +804,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private func teardownTCP() {
         tearingDownTCP = true
+        tcpGeneration &+= 1
         tcpReadGeneration += 1
         tcpReadPending = false
         tcpStateObs?.invalidate()
@@ -901,27 +899,40 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             do {
                 try t.startPacketBridge()
             } catch {
-                t.stop()
+                let dying = t
+                let message = error.localizedDescription
                 self.tunnel = nil
                 self.goCallback = nil
+                self.forwarding = false
                 if self.everDialed, self.startCompleted, !self.stopping {
                     self.reconnecting = false
-                    self.scheduleReconnect(error.localizedDescription)
+                    self.dialQueue.async { [weak self] in
+                        dying.stop()
+                        self?.workQueue.async {
+                            self?.scheduleReconnect(message)
+                        }
+                    }
                     return
                 }
-                self.failAfterStart(error.localizedDescription, code: 11)
+                self.failAfterStart(message, code: 11)
+                self.dialQueue.async { dying.stop() }
                 return
             }
             self.reconnectAttempt = 0
             self.reconnecting = false
+            self.forwarding = true
+            self.udpWriteErrorLogged = false
+            self.tcpWriteErrorLogged = false
             // Cellular keeps flipping defaultPath for several seconds after
             // the first packet. A second reconnect here killed the new session
             // (VPS: CONNECT from the new IP, then client shutdown).
             self.ignorePathChangesUntil = Date().addingTimeInterval(8)
             self.lastPathKey = self.pathKey(self.defaultPath)
-            self.pumpFromDevice()
-            self.pumpToDevice()
+            let epoch = self.flowEpochValue()
+            self.pumpFromDevice(epoch: epoch)
+            self.pumpToDevice(epoch: epoch)
             self.startPingTimer()
+            AppGroup.defaults.removeObject(forKey: AppGroup.defaultsLastError)
             AppGroup.defaults.set(true, forKey: AppGroup.defaultsSessionUp)
             AppGroup.defaults.synchronize()
             self.publishStatus("VPN active")
@@ -949,42 +960,45 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    /// setReadHandler stops after a cancelled read (settings apply). Arm it again.
+    /// setReadHandler stops after a cancelled read (settings apply). Arm it
+    /// again. Replacing the handler also cancels the read, so a handler must
+    /// ignore the cancellation of the handler it just replaced.
     private func rearmUDPRead(pipe: MobileDatagramPipe) {
-        guard let session = udpSession else { return }
+        guard let session = udpSession, !stopping, !tearingDownUDP else { return }
+        udpReadID += 1
+        let readID = udpReadID
         session.setReadHandler({ [weak self] datagrams, readErr in
-            if let readErr {
-                let text = readErr.localizedDescription.lowercased()
-                // A settings or path update cancels the in-flight read and
-                // does not call this handler again. Writes still leave, so
-                // the server keeps the session, but after a few minutes the
-                // client redials blind and both sides drop.
-                if text.contains("cancel") || text.contains("отмен") {
-                    self?.workQueue.async {
-                        guard let self, !self.stopping, !self.tearingDownUDP, !self.reconnecting else { return }
-                        guard self.tunnel != nil, self.udpSession?.state == .ready else { return }
-                        guard Date().timeIntervalSince(self.udpRearmAt) > 1 else { return }
-                        self.udpRearmAt = Date()
-                        self.rearmUDPRead(pipe: pipe)
-                    }
+            guard let self else { return }
+            for d in datagrams ?? [] where !d.isEmpty {
+                pipe.deliver(d)
+            }
+            guard let readErr else { return }
+            let text = readErr.localizedDescription.lowercased()
+            if text.contains("cancel") || text.contains("отмен") {
+                self.workQueue.async {
+                    guard readID == self.udpReadID else { return }
+                    guard !self.stopping, !self.tearingDownUDP, !self.reconnecting else { return }
+                    guard self.tunnel != nil, self.udpSession?.state == .ready else { return }
+                    self.rearmUDPRead(pipe: pipe)
+                }
+                return
+            }
+            self.workQueue.async {
+                guard readID == self.udpReadID else { return }
+                if self.forwarding, self.tunnel != nil, !self.reconnecting, !self.stopping {
+                    self.scheduleReconnect("UDP read: \(readErr.localizedDescription)")
                     return
                 }
-                self?.workQueue.async {
-                    guard self?.tunnel == nil else { return }
-                    self?.recordError("UDP read: \(readErr.localizedDescription)")
-                }
-            }
-            if !(datagrams ?? []).isEmpty {
-                self?.workQueue.async { self?.lastUDPDatagram = Date() }
-            }
-            for d in datagrams ?? [] {
-                pipe.deliver(d)
+                guard self.tunnel == nil, !self.stopping else { return }
+                self.recordError("UDP read: \(readErr.localizedDescription)")
             }
         }, maxDatagrams: 32)
     }
 
     private func teardownUDP() {
         tearingDownUDP = true
+        udpGeneration &+= 1
+        udpReadID += 1
         udpStateObs?.invalidate()
         udpStateObs = nil
         try? datagramPipe?.close()
@@ -996,41 +1010,56 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     /// QUIC going idle (server: "no recent network activity") used to cancel the
-    /// whole VPN. Redial on a new UDP session and keep startTunnel completed.
+    /// whole VPN. Redial on a new socket and keep startTunnel completed.
+    /// The NE socket is cancelled before Go stop: Close writes a final packet,
+    /// and doing that on a dead NWUDPSession/NWTCPConnection blocked this queue
+    /// so the next Connect never returned.
     private func scheduleReconnect(_ reason: String) {
         workQueue.async { [weak self] in
             guard let self, !self.stopping, self.startCompleted, self.everDialed else { return }
             guard let profile = self.lastProfile, !self.lastServerIP.isEmpty else { return }
             guard !self.reconnecting else { return }
             self.reconnecting = true
+            self.forwarding = false
             self.publishStatus("reconnecting: \(reason)")
             self.pingTimer?.cancel()
             self.pingTimer = nil
-            self.tunnel?.stop()
+            _ = self.invalidateFlow()
+            let dying = self.tunnel
             self.tunnel = nil
             self.goCallback = nil
             self.teardownUDP()
             self.teardownTCP()
-            MobileReleaseMemory()
-            self.waitForPhysicalPath(tries: 0) { [weak self] in
-                guard let self else { return }
-                if self.stopping {
-                    self.reconnecting = false
-                    return
-                }
-                let host = Self.host(of: profile.server)
-                var ips = Self.resolveServers(host)
-                if ips.isEmpty, !self.lastServerIP.isEmpty {
-                    ips = [self.lastServerIP]
-                }
-                self.connectCandidates(
-                    profile: profile,
-                    ips: ips,
-                    port: self.lastPort,
-                    portNum: self.lastPortNum
-                ) { msg in
-                    self.reconnecting = false
-                    self.scheduleReconnectLater(msg)
+            self.dialQueue.async { [weak self] in
+                dying?.stop()
+                MobileReleaseMemory()
+                self?.workQueue.async {
+                    guard let self else { return }
+                    if self.stopping {
+                        self.reconnecting = false
+                        return
+                    }
+                    self.waitForPhysicalPath(tries: 0) { [weak self] in
+                        guard let self else { return }
+                        if self.stopping {
+                            self.reconnecting = false
+                            return
+                        }
+                        let host = Self.host(of: profile.server)
+                        var ips = Self.resolveServers(host)
+                        if ips.isEmpty, !self.lastServerIP.isEmpty {
+                            ips = [self.lastServerIP]
+                        }
+                        self.connectCandidates(
+                            profile: profile,
+                            ips: ips,
+                            port: self.lastPort,
+                            portNum: self.lastPortNum
+                        ) { msg in
+                            self.reconnecting = false
+                            self.scheduleReconnectLater(msg)
+                        }
+                    }
                 }
             }
         }
@@ -1074,11 +1103,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 return
             }
             self.stopping = true
+            self.forwarding = false
+            self.reconnecting = false
             self.pathObs?.invalidate()
             self.pathObs = nil
             self.pingTimer?.cancel()
             self.pingTimer = nil
-            self.tunnel?.stop()
+            _ = self.invalidateFlow()
+            let dying = self.tunnel
             self.tunnel = nil
             self.goCallback = nil
             self.teardownUDP()
@@ -1092,7 +1124,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 AppGroup.defaults.set(false, forKey: AppGroup.defaultsSessionUp)
             }
             AppGroup.defaults.synchronize()
-            completionHandler()
+            self.dialQueue.async {
+                dying?.stop()
+                completionHandler()
+            }
         }
     }
 
@@ -1107,21 +1142,67 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    /// First failed datagram send only: QUIC retransmits, so this would spam.
-    fileprivate func noteTCPWriteError(_ err: Error) {
+    /// A dead NE socket reports ENOTCONN ("socket is not connected") or
+    /// ECANCELED ("operation cancelled") on the write completion. State can
+    /// still say ready/connected. Logging it and waiting for the 3-minute
+    /// QUIC idle left the tunnel black-holed; the next Connect then blocked
+    /// in Go Close on that socket.
+    fileprivate func tcpWriteFailed(generation: Int, _ err: Error) {
         workQueue.async { [weak self] in
-            guard let self, !self.tcpWriteErrorLogged else { return }
-            self.tcpWriteErrorLogged = true
-            self.recordError("TCP write failed: \(err.localizedDescription)")
+            guard let self, generation == self.tcpGeneration else { return }
+            guard self.forwarding, !self.stopping, !self.tearingDownTCP, !self.reconnecting else { return }
+            // The route install cancels in-flight writes. That is not a dead socket.
+            if Self.isBenignCancel(err), Date() <= self.ignorePathChangesUntil { return }
+            guard Self.isDeadSocket(err) || self.tcpConnection?.state != .connected else { return }
+            if !self.tcpWriteErrorLogged {
+                self.tcpWriteErrorLogged = true
+                self.recordError("TCP write failed: \(err.localizedDescription)")
+            }
+            self.scheduleReconnect("TCP socket closed")
         }
     }
 
-    fileprivate func noteUDPWriteError(_ err: Error) {
+    fileprivate func udpWriteFailed(generation: Int, _ err: Error) {
         workQueue.async { [weak self] in
-            guard let self, !self.udpWriteErrorLogged else { return }
-            self.udpWriteErrorLogged = true
-            self.recordError("UDP write failed: \(err.localizedDescription)")
+            guard let self, generation == self.udpGeneration else { return }
+            guard self.forwarding, !self.stopping, !self.tearingDownUDP, !self.reconnecting else { return }
+            // The route install cancels in-flight writes. That is not a dead socket.
+            if Self.isBenignCancel(err), Date() <= self.ignorePathChangesUntil { return }
+            guard Self.isDeadSocket(err) || self.udpSession?.state != .ready else { return }
+            if !self.udpWriteErrorLogged {
+                self.udpWriteErrorLogged = true
+                self.recordError("UDP write failed: \(err.localizedDescription)")
+            }
+            self.scheduleReconnect("UDP socket closed")
         }
+    }
+
+    /// A read rearm or the route install cancels one write. ENOTCONN does not.
+    private static func isBenignCancel(_ err: Error) -> Bool {
+        let ns = err as NSError
+        let text = ns.localizedDescription.lowercased()
+        if text.contains("not connected") || text.contains("не подключен") || text.contains("socket") || text.contains("сокет") {
+            return false
+        }
+        if ns.domain == NSPOSIXErrorDomain && ns.code == 89 { return true }
+        return text.contains("cancel") || text.contains("отмен")
+    }
+
+    /// Localized text differs by language. POSIX codes do not.
+    private static func isDeadSocket(_ err: Error) -> Bool {
+        let ns = err as NSError
+        if ns.domain == NSPOSIXErrorDomain {
+            // EPIPE, ENETDOWN, ECONNRESET, ENOTCONN, ECANCELED.
+            return ns.code == 32 || ns.code == 50 || ns.code == 54 || ns.code == 57 || ns.code == 89
+        }
+        let text = ns.localizedDescription.lowercased()
+        return text.contains("not connected")
+            || text.contains("не подключен")
+            || text.contains("socket")
+            || text.contains("сокет")
+            || text.contains("reset")
+            || text.contains("cancel")
+            || text.contains("отмен")
     }
 
     fileprivate func handleGoStatus(_ msg: String) {
@@ -1240,16 +1321,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             if total > 0 {
                 TrafficAccount.note(total: Int(total))
             }
-            // NWUDPSession stops delivering without leaving .ready. Arm the
-            // read again before the QUIC idle timer gives up on the path.
-            if let session = self.udpSession, session.state == .ready,
-               !self.reconnecting, !self.tearingDownUDP,
-               let pipe = self.datagramPipe,
-               Date().timeIntervalSince(self.lastUDPDatagram) > 20 {
-                self.lastUDPDatagram = Date()
-                self.udpRearmAt = Date()
-                self.rearmUDPRead(pipe: pipe)
-            }
         }
         timer.resume()
         pingTimer = timer
@@ -1296,25 +1367,55 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         return settings
     }
 
-    private func pumpFromDevice() {
-        packetFlow.readPackets { [weak self] packets, _ in
-            guard let self, let tunnel = self.tunnel else { return }
-            for pkt in packets {
-                _ = try? tunnel.writePacket(pkt)
+    /// Bumps the epoch so an in-flight read callback does not arm another read
+    /// after reconnect, and the blocked ReadPacket loop exits.
+    @discardableResult
+    private func invalidateFlow() -> Int {
+        var epoch = 0
+        flowQueue.sync {
+            self.flowEpochLock.lock()
+            self.flowEpoch += 1
+            epoch = self.flowEpoch
+            self.flowEpochLock.unlock()
+        }
+        return epoch
+    }
+
+    private func flowEpochValue() -> Int {
+        flowEpochLock.lock()
+        let epoch = flowEpoch
+        flowEpochLock.unlock()
+        return epoch
+    }
+
+    private func pumpFromDevice(epoch: Int) {
+        flowQueue.async { [weak self] in
+            guard let self, epoch == self.flowEpochValue(), !self.stopping else { return }
+            self.packetFlow.readPackets { [weak self] packets, _ in
+                self?.flowQueue.async {
+                    guard let self, epoch == self.flowEpochValue(), !self.stopping else { return }
+                    guard let tunnel = self.tunnel else { return }
+                    for pkt in packets {
+                        _ = try? tunnel.writePacket(pkt)
+                    }
+                    self.pumpFromDevice(epoch: epoch)
+                }
             }
-            self.pumpFromDevice()
         }
     }
 
-    private func pumpToDevice() {
+    private func pumpToDevice(epoch: Int) {
         writeQueue.async { [weak self] in
             guard let self else { return }
-            while true {
+            while epoch == self.flowEpochValue(), !self.stopping {
                 guard let tunnel = self.tunnel else { return }
                 guard let pkt = tunnel.readPacket() else { return }
                 if pkt.isEmpty { continue }
                 let proto = Self.ipProtocol(pkt)
-                self.packetFlow.writePackets([pkt], withProtocols: [proto])
+                self.flowQueue.async { [weak self] in
+                    guard let self, epoch == self.flowEpochValue(), !self.stopping else { return }
+                    self.packetFlow.writePackets([pkt], withProtocols: [proto])
+                }
             }
         }
     }
@@ -1433,25 +1534,29 @@ private final class GoTCPWriter: NSObject, MobileStreamWriterProtocol {
     private let connection: NWTCPConnection
     private let queue = DispatchQueue(label: "com.next1971.masque.tcp-write")
     private weak var owner: PacketTunnelProvider?
+    private let generation: Int
     private var pending: [Data] = []
     private var buffered = 0
     private var writing = false
     private static let maxBuffered = 1_048_576
 
-    init(connection: NWTCPConnection, owner: PacketTunnelProvider) {
+    init(connection: NWTCPConnection, owner: PacketTunnelProvider, generation: Int) {
         self.connection = connection
         self.owner = owner
+        self.generation = generation
         super.init()
     }
 
     func writeStream(_ p: Data?) throws {
         guard let data = p, !data.isEmpty else { return }
         if connection.state != .connected {
-            throw NSError(
-                domain: "masque",
-                code: 12,
-                userInfo: [NSLocalizedDescriptionKey: "TCP connection is not connected"]
+            let err = NSError(
+                domain: NSPOSIXErrorDomain,
+                code: 57,
+                userInfo: [NSLocalizedDescriptionKey: "Socket is not connected"]
             )
+            owner?.tcpWriteFailed(generation: generation, err)
+            throw err
         }
         let copy = Data(data)
         var overflow = false
@@ -1465,11 +1570,13 @@ private final class GoTCPWriter: NSObject, MobileStreamWriterProtocol {
             pumpLocked()
         }
         if overflow {
-            throw NSError(
+            let err = NSError(
                 domain: "masque",
                 code: 12,
                 userInfo: [NSLocalizedDescriptionKey: "TCP write buffer full"]
             )
+            owner?.tcpWriteFailed(generation: generation, err)
+            throw err
         }
     }
 
@@ -1483,7 +1590,7 @@ private final class GoTCPWriter: NSObject, MobileStreamWriterProtocol {
                 self.buffered = max(0, self.buffered - chunk.count)
                 self.writing = false
                 if let err {
-                    self.owner?.noteTCPWriteError(err)
+                    self.owner?.tcpWriteFailed(generation: self.generation, err)
                 }
                 self.pumpLocked()
             }
@@ -1502,31 +1609,64 @@ private final class GoUDPWriter: NSObject, MobileDatagramWriterProtocol {
     private let session: NWUDPSession
     private let queue: DispatchQueue
     private weak var owner: PacketTunnelProvider?
+    private let generation: Int
+    private let pendingLock = NSLock()
     private var pending = 0
+    /// When the send window first filled. Cleared as soon as a completion lands.
+    private var saturatedSince: Date?
     private static let maxPending = 48
 
-    init(session: NWUDPSession, queue: DispatchQueue, owner: PacketTunnelProvider) {
+    init(session: NWUDPSession, queue: DispatchQueue, owner: PacketTunnelProvider, generation: Int) {
         self.session = session
         self.queue = queue
         self.owner = owner
+        self.generation = generation
         super.init()
     }
 
     func writeDatagram(_ p: Data?) throws {
         guard let data = p, !data.isEmpty else { return }
+        if session.state != .ready {
+            let err = NSError(
+                domain: NSPOSIXErrorDomain,
+                code: 57,
+                userInfo: [NSLocalizedDescriptionKey: "Socket is not connected"]
+            )
+            owner?.udpWriteFailed(generation: generation, err)
+            throw err
+        }
+        pendingLock.lock()
+        if pending >= Self.maxPending {
+            let now = Date()
+            if saturatedSince == nil { saturatedSince = now }
+            let stuck = now.timeIntervalSince(saturatedSince ?? now) > 2
+            pendingLock.unlock()
+            // A short burst is dropped: QUIC retransmits. Two seconds stuck at
+            // the cap means completions stopped and keepalives will not leave.
+            if !stuck { return }
+            let err = NSError(
+                domain: NSPOSIXErrorDomain,
+                code: 57,
+                userInfo: [NSLocalizedDescriptionKey: "Socket is not connected"]
+            )
+            owner?.udpWriteFailed(generation: generation, err)
+            throw err
+        }
+        saturatedSince = nil
+        pending += 1
+        pendingLock.unlock()
+
+        let gen = generation
         queue.async { [weak self] in
             guard let self else { return }
-            // Unbounded writeDatagram during a speedtest balloons the
-            // extension heap and iOS jetsams the process (~15 MB).
-            if self.pending >= Self.maxPending { return }
-            self.pending += 1
             self.session.writeDatagram(data) { [weak self] err in
-                self?.queue.async {
-                    guard let self else { return }
-                    self.pending = max(0, self.pending - 1)
-                    if let err {
-                        self.owner?.noteUDPWriteError(err)
-                    }
+                guard let self else { return }
+                self.pendingLock.lock()
+                self.pending = max(0, self.pending - 1)
+                if self.pending < Self.maxPending { self.saturatedSince = nil }
+                self.pendingLock.unlock()
+                if let err {
+                    self.owner?.udpWriteFailed(generation: gen, err)
                 }
             }
         }
