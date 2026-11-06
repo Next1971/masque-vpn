@@ -82,6 +82,7 @@ final class VPNManager: ObservableObject {
 
     private func applyTunnelStage(_: String) {
         statusText = "Status: VPN active"
+        lastError = nil
         showDisconnecting = false
         setBusy(false)
     }
@@ -122,8 +123,12 @@ final class VPNManager: ObservableObject {
         if !killSwitch && !connected {
             AppGroup.defaults.set(false, forKey: AppGroup.defaultsKillSwitchArmed)
             AppGroup.defaults.set(false, forKey: AppGroup.defaultsSessionUp)
-            prefs.async { [weak self] in
-                self?.releaseSystemKillSwitch()
+            enqueueNE { [weak self] finish in
+                guard let self else {
+                    finish()
+                    return
+                }
+                self.releaseSystemKillSwitch(finish: finish)
             }
         }
     }
@@ -186,8 +191,12 @@ final class VPNManager: ObservableObject {
             AppGroup.defaults.set(false, forKey: AppGroup.defaultsSessionUp)
         }
 
-        prefs.async { [weak self] in
-            self?.startTunnel(server: profile.server, attempt: 0)
+        enqueueNE { [weak self] finish in
+            guard let self else {
+                finish()
+                return
+            }
+            self.startTunnel(server: profile.server, attempt: 0, finish: finish)
         }
     }
 
@@ -201,13 +210,53 @@ final class VPNManager: ObservableObject {
         killSwitchRetryAttempt = 0
         AppGroup.defaults.set(false, forKey: AppGroup.defaultsKillSwitchArmed)
         AppGroup.defaults.set(false, forKey: AppGroup.defaultsSessionUp)
-        prefs.async { [weak self] in
-            self?.stopReleasingKillSwitch()
+        enqueueNE { [weak self] finish in
+            guard let self else {
+                finish()
+                return
+            }
+            self.stopReleasingKillSwitch(finish: finish)
         }
     }
 
     private func clampMTU(_ v: Int) -> Int {
         min(1500, max(1280, v))
+    }
+
+    /// load/save/start/stop must not overlap. A second call while the first
+    /// save is in flight deadlocks the main thread and the third crashes
+    /// inside NetworkExtension.
+    private typealias NEOp = (@escaping () -> Void) -> Void
+    private var neSerial = 0
+    private var neInFlight = false
+    private var neQueue: [NEOp] = []
+
+    private func enqueueNE(_ op: @escaping NEOp) {
+        prefs.async { [weak self] in
+            guard let self else { return }
+            self.neQueue.append(op)
+            self.drainNE()
+        }
+    }
+
+    private func drainNE() {
+        guard !neInFlight, !neQueue.isEmpty else { return }
+        neInFlight = true
+        neSerial += 1
+        let token = neSerial
+        let op = neQueue.removeFirst()
+        let finish = { [weak self] in
+            self?.prefs.async {
+                guard let self, self.neSerial == token else { return }
+                self.neInFlight = false
+                self.neSerial += 1
+                self.drainNE()
+            }
+        }
+        prefs.asyncAfter(deadline: .now() + 30) {
+            finish()
+        }
+        op(finish)
     }
 
     /// The extension can die without a final status change, so busy is never
@@ -226,21 +275,26 @@ final class VPNManager: ObservableObject {
         }
     }
 
-    private func startTunnel(server: String, attempt: Int) {
+    private func startTunnel(server: String, attempt: Int, finish: @escaping () -> Void) {
         prepareManager(server: server) { [weak self] result in
-            guard let self else { return }
+            guard let self else {
+                finish()
+                return
+            }
             switch result {
             case .failure(let err):
                 DispatchQueue.main.async {
                     self.busy = false
                     self.lastError = err.localizedDescription
                     self.refreshProfileStatus()
+                    finish()
                 }
             case .success(let mgr):
                 do {
                     try mgr.connection.startVPNTunnel()
                     DispatchQueue.main.async {
                         self.applyConnectionStatus(from: mgr.connection)
+                        finish()
                     }
                 } catch {
                     let ns = error as NSError
@@ -248,38 +302,43 @@ final class VPNManager: ObservableObject {
                        ns.code == NEVPNError.configurationStale.rawValue,
                        attempt < 2 {
                         self.cachedManager = nil
-                        self.startTunnel(server: server, attempt: attempt + 1)
+                        self.startTunnel(server: server, attempt: attempt + 1, finish: finish)
                         return
                     }
                     if ns.domain == NEVPNErrorDomain,
                        ns.code == NEVPNError.configurationStale.rawValue ||
                        ns.code == NEVPNError.configurationInvalid.rawValue {
-                        self.recreateManager(server: server, attempt: attempt)
+                        self.recreateManager(server: server, attempt: attempt, finish: finish)
                         return
                     }
                     DispatchQueue.main.async {
                         self.busy = false
                         self.lastError = error.localizedDescription
                         self.refreshProfileStatus()
+                        finish()
                     }
                 }
             }
         }
     }
 
-    private func recreateManager(server: String, attempt: Int) {
+    private func recreateManager(server: String, attempt: Int, finish: @escaping () -> Void) {
         reloadManager { [weak self] mgr in
-            guard let self else { return }
+            guard let self else {
+                finish()
+                return
+            }
             let finishFail: (Error) -> Void = { err in
                 DispatchQueue.main.async {
                     self.busy = false
                     self.lastError = err.localizedDescription
                     self.refreshProfileStatus()
+                    finish()
                 }
             }
             guard let mgr else {
                 if attempt < 2 {
-                    self.startTunnel(server: server, attempt: attempt + 1)
+                    self.startTunnel(server: server, attempt: attempt + 1, finish: finish)
                 } else {
                     finishFail(NSError(
                         domain: "masque",
@@ -297,7 +356,7 @@ final class VPNManager: ObservableObject {
                         return
                     }
                     if attempt < 2 {
-                        self.startTunnel(server: server, attempt: attempt + 1)
+                        self.startTunnel(server: server, attempt: attempt + 1, finish: finish)
                     } else {
                         finishFail(NSError(
                             domain: "masque",
@@ -313,7 +372,14 @@ final class VPNManager: ObservableObject {
     /// load → mutate → save → loadAll (fresh) before start.
     private func prepareManager(server: String, completion: @escaping (Result<NETunnelProviderManager, Error>) -> Void) {
         reloadManager { [weak self] existing in
-            guard let self else { return }
+            guard let self else {
+                completion(.failure(NSError(
+                    domain: "masque",
+                    code: 5,
+                    userInfo: [NSLocalizedDescriptionKey: "VPN manager went away"]
+                )))
+                return
+            }
             let mgr = existing ?? NETunnelProviderManager()
             // Apple: must load before the first save after launch / on a new manager.
             mgr.loadFromPreferences { loadErr in
@@ -376,12 +442,16 @@ final class VPNManager: ObservableObject {
 
     private func reloadManager(completion: @escaping (NETunnelProviderManager?) -> Void) {
         NETunnelProviderManager.loadAllFromPreferences { [weak self] list, _ in
-            self?.prefs.async {
+            guard let self else {
+                completion(nil)
+                return
+            }
+            self.prefs.async {
                 let match = (list ?? []).first {
                     ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier
                         == VPNManager.providerBundleID
                 }
-                self?.cachedManager = match
+                self.cachedManager = match
                 completion(match)
             }
         }
@@ -438,8 +508,12 @@ final class VPNManager: ObservableObject {
             if !AppGroup.defaults.bool(forKey: AppGroup.defaultsKillSwitch) {
                 AppGroup.defaults.set(false, forKey: AppGroup.defaultsKillSwitchArmed)
                 AppGroup.defaults.set(false, forKey: AppGroup.defaultsSessionUp)
-                prefs.async { [weak self] in
-                    self?.releaseSystemKillSwitch()
+                enqueueNE { [weak self] finish in
+                    guard let self else {
+                        finish()
+                        return
+                    }
+                    self.releaseSystemKillSwitch(finish: finish)
                 }
             } else if considerKillSwitchRearm() {
                 return
@@ -484,8 +558,8 @@ final class VPNManager: ObservableObject {
             }
             self.busy = true
             self.statusText = "Status: reconnecting"
-            self.prefs.async {
-                self.startTunnel(server: profile.server, attempt: 0)
+            self.enqueueNE { finish in
+                self.startTunnel(server: profile.server, attempt: 0, finish: finish)
             }
         }
         return true
@@ -496,18 +570,26 @@ final class VPNManager: ObservableObject {
         guard AppGroup.defaults.bool(forKey: AppGroup.defaultsKillSwitchArmed) else { return }
         guard !AppGroup.defaults.bool(forKey: AppGroup.defaultsSessionUp) else { return }
         AppGroup.defaults.set(false, forKey: AppGroup.defaultsKillSwitchArmed)
-        prefs.async { [weak self] in
-            self?.releaseSystemKillSwitch()
+        enqueueNE { [weak self] finish in
+            guard let self else {
+                finish()
+                return
+            }
+            self.releaseSystemKillSwitch(finish: finish)
         }
     }
 
-    private func stopReleasingKillSwitch() {
+    private func stopReleasingKillSwitch(finish: @escaping () -> Void) {
         reloadManager { [weak self] mgr in
-            guard let self else { return }
+            guard let self else {
+                finish()
+                return
+            }
             guard let mgr else {
                 DispatchQueue.main.async {
                     self.busy = false
                     self.refreshProfileStatus()
+                    finish()
                 }
                 return
             }
@@ -522,6 +604,7 @@ final class VPNManager: ObservableObject {
                                     DispatchQueue.main.async {
                                         self.busy = false
                                         self.refreshProfileStatus()
+                                        finish()
                                     }
                                 }
                             }
@@ -533,15 +616,23 @@ final class VPNManager: ObservableObject {
     }
 
     /// Clear a leftover system block. No save when the flag is already off.
-    private func releaseSystemKillSwitch() {
+    private func releaseSystemKillSwitch(finish: @escaping () -> Void) {
         reloadManager { [weak self] mgr in
-            guard let self, let mgr else { return }
+            guard let self, let mgr else {
+                finish()
+                return
+            }
             mgr.loadFromPreferences { _ in
                 self.prefs.async {
                     guard let proto = mgr.protocolConfiguration as? NETunnelProviderProtocol,
-                          proto.includeAllNetworks else { return }
+                          proto.includeAllNetworks else {
+                        finish()
+                        return
+                    }
                     self.setIncludeAllNetworks(false, on: mgr)
-                    mgr.saveToPreferences { _ in }
+                    mgr.saveToPreferences { _ in
+                        finish()
+                    }
                 }
             }
         }
