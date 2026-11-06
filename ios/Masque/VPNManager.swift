@@ -245,7 +245,7 @@ final class VPNManager: ObservableObject {
         neSerial += 1
         let token = neSerial
         let op = neQueue.removeFirst()
-        let finish = { [weak self] in
+        let finish: () -> Void = { [weak self] in
             self?.prefs.async {
                 guard let self, self.neSerial == token else { return }
                 self.neInFlight = false
