@@ -1,19 +1,24 @@
 # MASQUE VPN — Android and Android TV
 
-Android clients use Kotlin, VpnService, and a shared Go core packaged as masque.aar through gomobile. The published v2.1.0 clients support HTTP/3 CONNECT-IP over QUIC/UDP and HTTP/2 CONNECT-IP over TLS/TCP.
+Android clients use Kotlin, VpnService, and a shared Go core packaged as masque.aar through gomobile. The published **v2.1.3** clients support HTTP/3 CONNECT-IP over QUIC/UDP and HTTP/2 CONNECT-IP over TLS/TCP. The server stays **v2.1.0**.
+
+## What changed in v2.1.3
+
+- **Phone:** Connect no longer freezes the app after a connect attempt on filtered mobile data (whitelist). In v2.1.0, Dial ran on the UI thread and the handshake could block Connect/Disconnect until it finished. v2.1.3 runs Dial on a worker thread and lets Disconnect cancel an in-flight handshake. `versionName` 2.1.3, `versionCode` 29.
+- **TV:** Same Dial/Disconnect fix. Also includes the v2.1.2 keep-alive (partial wake lock and Wi-Fi lock; redial if the path goes silent) and the v2.1.1 Connect layout that stays on a 540dp screen. `versionName` 2.1.3-tv, `versionCode` 29.
 
 ## Install a published APK
 
-1. Download masque-phone-2.1.0.apk from [v2.1.0](../../releases/tag/v2.1.0). For Android TV, install masque-tv-2.1.2.apk from the optional [v2.1.2](../../releases/tag/v2.1.2) release instead of the v2.1.0 or v2.1.1 TV APK. v2.1.2 is not Latest and does not replace the phone APK.
+1. Download masque-phone-2.1.3.apk and masque-tv-2.1.3.apk from [v2.1.3](../../releases/tag/v2.1.3). Install over the previous flavor; phone and TV packages stay distinct.
 2. Allow installation from the source used to open the APK, then install the correct flavor.
 3. Import a real profile.masque issued for this device. The bundled sample is a format example, not working credentials.
 4. Grant VPN permission. On phones, allow the battery-optimization exemption if requested.
 5. Choose Automatic, UDP only, or TCP only; leave MTU at the default 1340 initially. Connect.
 6. Check that the public exit address is your VPS address. Disconnect using the app.
 
-The kill switch is optional and off by default. v2.1.0 also provides day/month traffic statistics and ping during TCP sessions. QUIC ping is the smoothed QUIC RTT; TCP ping is not QUIC RTT. Automatic is not a fastest-transport benchmark.
+The kill switch is optional and off by default. Day/month traffic statistics and ping during TCP sessions are unchanged. QUIC ping is the smoothed QUIC RTT; TCP ping is not QUIC RTT. Automatic is not a fastest-transport benchmark.
 
-Use one profile per device. Existing profiles and certificates remain unchanged. Older servers remain usable over UDP; TCP requires a v2.0.0 or v2.1.0 server. Prefer the current v2.1.0 server for the documented TCP website behavior.
+Use one profile per device. Existing profiles and certificates remain unchanged. Keep the v2.1.0 server. Older servers remain usable over UDP; TCP requires a v2.0.0 or v2.1.0 server.
 
 ### Phone
 
@@ -46,7 +51,7 @@ These are the checked main-branch settings, not an assertion that every publishe
 | compileSdk / targetSdk / minSdk | 36 / 34 / 24 |
 | NDK | 29.0.13599879 |
 
-At this documentation update, main still declares versionName 2.0.0 and versionCode 25 in app/build.gradle.kts. That is separate from the published v2.1.0 assets. For release reproduction, inspect the v2.1.0 tag and its workflow rather than assuming main is the release tree.
+app/build.gradle.kts on this tree declares versionName 2.1.3 and versionCode 29 (TV suffix `-tv`). For an older published APK, inspect that release tag rather than assuming main matches the file you installed.
 
 ## Build from source
 

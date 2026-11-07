@@ -2,28 +2,32 @@
 
 MASQUE VPN is an experimental, self-hosted VPN using MASQUE CONNECT-IP with client-certificate authentication. Run the server on your own VPS and issue a separate profile for each device.
 
-Current release: [v2.1.0](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.0). Clients are available for Android, Android TV, Windows, and [iOS 2.0 through TestFlight](https://testflight.apple.com/join/x52N41V1). No IPA is attached to GitHub Releases.
+Current GitHub Latest: [v2.1.3](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.3) (Android phone, Android TV, Windows). The published server stays [v2.1.0](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.0). iOS is [2.1.1 on TestFlight](https://testflight.apple.com/join/x52N41V1). No IPA is attached to GitHub Releases.
 
-## What changed in v2.1.0
+## What changed in v2.1.3 (clients)
+
+- Android phone: Connect no longer freezes on filtered mobile data (whitelist).
+- Android TV: that fix plus the earlier on-screen Connect button and keep-alive after sleep.
+- Windows: reconnect after sleep; MSI updates the running service; version shown in the window.
+
+## What changed in v2.1.0 (server, still current)
 
 - HTTP/3 CONNECT-IP over QUIC/UDP remains the normal transport.
 - HTTP/2 CONNECT-IP over TCP uses the same port number. A valid client certificate and a CONNECT-IP request are required for VPN access.
 - A browser or a TCP connection without a valid client certificate receives an HTML page, not a VPN tunnel. The private-CA server certificate produces a browser warning. UDP does not serve a website.
 - Android, Android TV, and Windows offer Automatic / UDP only / TCP only, configurable MTU (default 1340), kill switch (off by default), day/month traffic statistics, and ping on TCP sessions.
-- iOS 2.0 on TestFlight is UDP only for now. TCP does not carry traffic on iOS.
+- iOS 2.1.1 on TestFlight does UDP and TCP. It is not part of the v2.1.3 GitHub client drop.
 
 ## Start here
 
-1. Read the [repository README](https://github.com/Next1971/masque-vpn#readme) and [release notes](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.0).
+1. Read the [repository README](https://github.com/Next1971/masque-vpn#readme) and [v2.1.3 release notes](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.3). Keep the [v2.1.0 server](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.0).
 2. Choose an installation path in the [server guide](https://github.com/Next1971/masque-vpn/blob/main/server/README.md): manual SSH, experimental Docker Compose, or the experimental Windows VPS Setup Helper.
 3. [Issue a separate configuration bundle for each device](https://github.com/Next1971/masque-vpn/blob/main/docs/CLIENTS.md). Keep profiles and private keys private.
 4. Follow the relevant client guide: [Android / Android TV](https://github.com/Next1971/masque-vpn/blob/main/android/README.md), [Windows](https://github.com/Next1971/masque-vpn/blob/main/windows/README.md), or [iOS](https://github.com/Next1971/masque-vpn/blob/main/ios/README.md).
 
 ## Compatibility and upgrades
 
-Profiles and certificates do not change in v2.1.0. Older UDP clients, including v1.7.1, still work with the v2.1.0 server over UDP. TCP on Android and Windows requires a v2.0.0 or v2.1.0 server. A v2.1.0 client still reaches older servers over UDP. iOS is UDP only for now.
-
-On Android TV, install the optional [v2.1.2](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.2) release. It is an Android TV APK only and is not Latest. Phone, Windows, and the server stay on v2.1.0.
+Profiles and certificates do not change. v2.1.3 clients use the v2.1.0 server. Older UDP clients, including v1.7.1, still work with that server over UDP. TCP requires a v2.0.0 or v2.1.0 server. iOS 2.1.1 on TestFlight uses the same server over UDP or TCP.
 
 install.sh is a fresh-install path and refuses to overwrite an existing CA, configuration, or service. Read the server documentation before upgrading; do not regenerate the CA just to update the server binary.
 

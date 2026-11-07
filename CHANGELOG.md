@@ -4,10 +4,20 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
-### Not in the v2.1.2 GitHub drop
+## [v2.1.3] - 2026-11-07
 
-- Android phone: Dial no longer blocks the UI thread, so Connect/Disconnect still work on filtered mobile data (whitelist). The TV wake lock and silent-path redial are in the shared Android source, but no phone APK is attached to v2.1.2. Phones stay on the v2.1.0 APK.
-- iOS: Connect stays on screen; DNS retries; VPN does not drop just because other apps opened; Disconnect no longer hangs on preference save. iOS remains UDP only. TCP does not carry traffic on iOS yet.
+**GitHub Latest. Client-only.** Replaces Latest [v2.1.0](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.0) for Android phone, Android TV, and Windows. The published **server stays v2.1.0**. No Linux binary, `install.sh`, Docker zip, or `masque-setup.exe` in this drop. iOS stays on [TestFlight 2.1.1](https://testflight.apple.com/join/x52N41V1).
+
+### Fixed
+
+- Android phone: Dial no longer blocks the UI thread. On filtered mobile data (whitelist) Connect no longer freezes the app, and Disconnect still works while a handshake is in flight. `versionCode` 29, version `2.1.3`.
+- Android TV: the same Dial/Disconnect fix, on top of the v2.1.2 wake lock and silent-path redial and the v2.1.1 Connect layout. `versionCode` 29, version `2.1.3-tv`.
+- Windows: the tunnel rebuilds after sleep instead of sitting dead until a manual Connect. Double-clicking a newer MSI stops the old service, replaces the files, and starts the new service. The GUI shows `v2.1.3`.
+
+### Compatibility
+
+- Profiles and certificates do not change. Keep the v2.1.0 server.
+- A v2.1.3 client reaches a v2.1.0 server over UDP and TCP.
 
 ## [v2.1.2] - 2026-11-04
 

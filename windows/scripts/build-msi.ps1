@@ -1,6 +1,8 @@
 # Build masque.msi with WiX (wix.exe). Requires: dist\ binaries from build.ps1.
 $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..")
+. (Join-Path $PSScriptRoot "version.ps1")
+$Version = Get-MasqueVersion
 
 $dotnetTools = Join-Path $env:USERPROFILE ".dotnet\tools"
 if (Test-Path $dotnetTools) {
@@ -22,6 +24,6 @@ foreach ($f in @("masque-svc.exe", "masque-gui.exe", "vpn-client.exe", "wintun.d
 }
 
 # -acceptEula wix7: required by WiX v7 OSMF (https://wixtoolset.org/osmf/). Harmless no-op on v5.
-& $wix build -acceptEula wix7 .\installer\masque.wxs -bindpath bin=dist -out dist\masque.msi -arch x64
+& $wix build -acceptEula wix7 .\installer\masque.wxs -d ProductVersion=$Version -bindpath bin=dist -out dist\masque.msi -arch x64
 if ($LASTEXITCODE -ne 0) { throw "wix build failed with exit $LASTEXITCODE" }
-Write-Host "MSI: dist\masque.msi"
+Write-Host "MSI: dist\masque.msi ($Version)"

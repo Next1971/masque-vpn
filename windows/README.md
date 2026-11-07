@@ -1,18 +1,24 @@
 # MASQUE VPN — Windows client
 
-The published v2.1.0 Windows client supports HTTP/3 CONNECT-IP over QUIC/UDP and HTTP/2 CONNECT-IP over TLS/TCP, with private-CA client authentication and a Wintun adapter.
+The published **v2.1.3** Windows client supports HTTP/3 CONNECT-IP over QUIC/UDP and HTTP/2 CONNECT-IP over TLS/TCP, with private-CA client authentication and a Wintun adapter. The server stays **v2.1.0**.
 
 A LocalSystem service owns the tunnel; the Fyne GUI imports profiles and sends commands over a named pipe. Installation requires elevation, but normal GUI use does not. Closing the window leaves the tunnel running.
 
+## What changed in v2.1.3
+
+- After sleep, the service rebuilds the Wintun adapter, bypass route, and MASQUE session. v2.1.0 left a dead tunnel until you pressed Connect.
+- Double-clicking a newer MSI stops the old service, replaces the files, and starts the new service. Profiles under %ProgramData%\MASQUE stay in place.
+- The main window shows **v2.1.3**.
+
 ## Install from a release
 
-1. Download masque-2.1.0.msi from [v2.1.0](../../releases/tag/v2.1.0).
-2. Run it and approve the installation UAC prompt. The installation includes MasqueVpn, wintun.dll, masque-gui.exe, and the debug console client under C:\Program Files\MASQUE.
-3. Open MASQUE VPN from the Start menu as a normal user.
-4. Import a device-specific profile.masque. See [issuing client configurations](../docs/CLIENTS.md).
+1. Download masque-2.1.3.msi from [v2.1.3](../../releases/tag/v2.1.3).
+2. Run it and approve the UAC prompt. That is the update: you do not copy `masque-svc.exe` by hand.
+3. Open MASQUE VPN from the Start menu as a normal user and confirm the version line is v2.1.3.
+4. Import a device-specific profile.masque if this machine does not already have one. See [issuing client configurations](../docs/CLIENTS.md).
 5. Select Automatic, UDP only, or TCP only. Start with MTU 1340, then connect and verify the VPS exit address.
 
-The kill switch is off by default. v2.1.0 provides day/month traffic statistics and ping on TCP sessions. On QUIC, ping is smoothed QUIC RTT; TCP ping must not be described as QUIC RTT. Automatic is not a fastest-transport benchmark.
+The kill switch is off by default. Day/month traffic statistics and ping on TCP sessions are unchanged. On QUIC, ping is smoothed QUIC RTT; TCP ping must not be described as QUIC RTT. Automatic is not a fastest-transport benchmark.
 
 Use Disconnect to stop the tunnel; hiding/closing the GUI is not Disconnect. Profiles are stored under %ProgramData%\MASQUE\ rather than beside the EXE. Tray controls talk to the same service.
 
@@ -20,7 +26,7 @@ Prefer the single-file profile.masque format. The older TOML-plus-certs format r
 
 ### Compatibility
 
-Existing profiles and certificates remain unchanged. A v2.1.0 client can use an older server over UDP. TCP requires a v2.0.0 or v2.1.0 server; the HTML response to unauthenticated TCP connections belongs to v2.1.0. Older UDP clients can still reach the current server over UDP.
+Existing profiles and certificates remain unchanged. Keep the v2.1.0 server. A v2.1.3 client can use that server over UDP or TCP. TCP requires a v2.0.0 or v2.1.0 server; the HTML response to unauthenticated TCP connections belongs to the v2.1.0 server. Older UDP clients can still reach that server over UDP.
 
 ## Install the server from Windows (masque-setup.exe)
 

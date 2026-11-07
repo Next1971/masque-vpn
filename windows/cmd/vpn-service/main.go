@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows/svc"
-	"golang.org/x/sys/windows/svc/debug"
 	"golang.org/x/sys/windows/svc/eventlog"
 
 	"masque-client/internal/engine"
 	"masque-client/internal/ipc"
 	"masque-client/internal/store"
+	"masque-client/internal/version"
 )
 
 const svcName = "MasqueVpn"
@@ -35,7 +35,7 @@ func main() {
 		log.Fatalf("IsWindowsService: %v", err)
 	}
 	if *console || !isSvc {
-		if err := run(debug.New(svcName)); err != nil {
+		if err := run(nil); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -47,22 +47,53 @@ func main() {
 
 func setupLog() {
 	dir := store.Dir()
-	_ = os.MkdirAll(dir, 0700)
-	f, err := os.OpenFile(filepath.Join(dir, "masque-svc.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		eventNote(fmt.Sprintf("MASQUE log directory: %v", err))
+		return
+	}
+	path := filepath.Join(dir, "masque-svc.log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
+		eventNote(fmt.Sprintf("MASQUE log file: %v", err))
 		return
 	}
 	log.SetOutput(io.MultiWriter(os.Stderr, f))
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
+func eventNote(msg string) {
+	if el, err := eventlog.Open(svcName); err == nil {
+		_ = el.Info(1, msg)
+		el.Close()
+	}
+}
+
 type masqueService struct{}
+
+// Power broadcast values from WinUser.h. Resume is delivered twice: once
+// automatically, then again if an interactive user is logged on.
+const (
+	pbtApmResumeCritical  = 6
+	pbtApmResumeSuspend   = 7
+	pbtApmResumeAutomatic = 18
+)
+
+func powerResume(eventType uint32) bool {
+	switch eventType {
+	case pbtApmResumeAutomatic, pbtApmResumeSuspend, pbtApmResumeCritical:
+		return true
+	default:
+		return false
+	}
+}
 
 func (m *masqueService) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (bool, uint32) {
 	s <- svc.Status{State: svc.StartPending}
+	resume := make(chan string, 1)
 	errCh := make(chan error, 1)
-	go func() { errCh <- run(nil) }()
-	s <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
+	go func() { errCh <- run(resume) }()
+	const accepts = svc.AcceptStop | svc.AcceptShutdown | svc.AcceptPowerEvent
+	s <- svc.Status{State: svc.Running, Accepts: accepts}
 
 	for {
 		select {
@@ -79,23 +110,36 @@ func (m *masqueService) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<-
 			case svc.Stop, svc.Shutdown:
 				s <- svc.Status{State: svc.StopPending}
 				os.Exit(0)
+			case svc.PowerEvent:
+				if powerResume(c.EventType) {
+					msg := fmt.Sprintf("power resume (%d)", c.EventType)
+					log.Printf("%s", msg)
+					select {
+					case resume <- msg:
+					default:
+					}
+				}
 			}
 		}
 	}
 }
 
-type runner interface {
-	// debug.Log implements this subset
-}
-
-func run(_ debug.Log) error {
+func run(resume <-chan string) error {
 	if el, err := eventlog.Open(svcName); err == nil {
-		_ = el.Info(1, "MASQUE VPN service starting")
+		_ = el.Info(1, "MASQUE VPN "+version.Label()+" service starting")
 		el.Close()
 	}
+	log.Printf("MASQUE VPN %s starting", version.Label())
 
 	hub := ipc.NewHub()
 	eng := engine.New(hub)
+	if resume != nil {
+		go func() {
+			for why := range resume {
+				eng.NotifyResume(why)
+			}
+		}()
+	}
 
 	ln, err := ipc.Listen()
 	if err != nil {
