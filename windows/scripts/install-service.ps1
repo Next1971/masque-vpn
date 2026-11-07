@@ -20,9 +20,10 @@ New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 Copy-Item -Force (Join-Path $dist "*") $installDir
 $svcExe = Join-Path $installDir "masque-svc.exe"
 
+Get-Process masque-gui -ErrorAction SilentlyContinue | Stop-Process -Force
 $existing = Get-Service -Name "MasqueVpn" -ErrorAction SilentlyContinue
 if ($existing) {
-    if ($existing.Status -eq "Running") { Stop-Service MasqueVpn -Force }
+    if ($existing.Status -ne "Stopped") { Stop-Service MasqueVpn -Force }
     sc.exe delete MasqueVpn | Out-Null
     Start-Sleep -Seconds 1
 }

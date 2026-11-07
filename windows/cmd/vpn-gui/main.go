@@ -21,6 +21,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"masque-client/internal/ipc"
+	"masque-client/internal/version"
 )
 
 //go:embed icon.png
@@ -30,9 +31,9 @@ func main() {
 	a := app.NewWithID("com.masque.vpn")
 	icon := fyne.NewStaticResource("icon.png", iconPNG)
 	a.SetIcon(icon)
-	w := a.NewWindow("MASQUE VPN")
+	w := a.NewWindow("MASQUE VPN " + version.Label())
 	w.SetIcon(icon)
-	w.Resize(fyne.NewSize(480, 440))
+	w.Resize(fyne.NewSize(480, 460))
 
 	status := widget.NewLabel("Checking service…")
 	status.Wrapping = fyne.TextWrapWord
@@ -98,8 +99,11 @@ func main() {
 		showSettings(w)
 	})
 
+	ver := widget.NewLabel(version.Label())
+	ver.Importance = widget.LowImportance
 	w.SetContent(container.NewPadded(container.NewVBox(
 		widget.NewRichTextFromMarkdown("## MASQUE VPN"),
+		ver,
 		status,
 		ping,
 		traffic,

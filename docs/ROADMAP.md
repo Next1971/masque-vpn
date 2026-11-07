@@ -1,15 +1,16 @@
 # Roadmap
 
-> Status snapshot: 2026-10-25. This document covers current release status, project decisions, and future work. See [CHANGELOG.md](../CHANGELOG.md) and [GitHub Releases](../../../releases) for detailed release history. Release notes take precedence over older platform-guide introductions that still describe v1.7.1 as Latest.
+> Status snapshot: 2026-11-07. This document covers current release status, project decisions, and future work. See [CHANGELOG.md](../CHANGELOG.md) and [GitHub Releases](../../../releases) for detailed release history. Release notes take precedence over older platform-guide introductions.
 
 ## Current releases
 
 | Release | Status | Scope |
 |---|---|---|
-| [v2.1.0](../../../releases/tag/v2.1.0) | GitHub Latest | Android phone/TV, Windows, Linux server, install.sh, gen-config.sh, checksums, Docker sources, and masque-setup.exe. UDP and TCP CONNECT-IP; TCP serves an HTML page to connections without a valid client certificate. |
-| [v2.1.2](../../../releases/tag/v2.1.2) | Optional TV release, not Latest | Android TV APK only. Connect stays on screen, and a silent tunnel dials again. No phone APK, MSI, or server binary. |
-| [v2.1.1](../../../releases/tag/v2.1.1) | Superseded TV build | Android TV APK only, for sets where the v2.1.0 Connect button is below the screen. Install v2.1.2 instead. |
-| iOS 2.0 | Current TestFlight client | Public [join link](https://testflight.apple.com/join/x52N41V1). Uses the private CA and connects over UDP only. TCP does not carry traffic on iOS yet. No GitHub IPA. |
+| [v2.1.3](../../../releases/tag/v2.1.3) | GitHub Latest, clients only | Android phone APK, Android TV APK, Windows MSI. Phone whitelist freeze, TV keep-alive, Windows sleep reconnect and MSI service upgrade. No server binary. |
+| [v2.1.0](../../../releases/tag/v2.1.0) | Current server | Linux server, install.sh, gen-config.sh, checksums, Docker sources, and masque-setup.exe. UDP and TCP CONNECT-IP; TCP serves an HTML page to connections without a valid client certificate. Keep this server with v2.1.3 clients. |
+| [v2.1.2](../../../releases/tag/v2.1.2) | Superseded TV build | Android TV APK only. Install v2.1.3 instead. |
+| [v2.1.1](../../../releases/tag/v2.1.1) | Superseded TV build | Android TV APK only. Install v2.1.3 instead. |
+| iOS 2.1.1 | Current TestFlight client | Public [join link](https://testflight.apple.com/join/x52N41V1). UDP and TCP. No GitHub IPA. |
 | [v2.0.0](../../../releases/tag/v2.0.0) | Earlier experimental pre-release | First TCP CONNECT-IP experiment; fixed client MTU 1340 and automatic fallback after an unanswered UDP probe. TCP required a client certificate at the handshake and did not serve a website. Not Latest. |
 | [v1.7.1](../../../releases/tag/v1.7.1) | Previous Latest | Android phone/TV and Windows clients; UDP-only. No server binary in that release. |
 | [v1.7](../../../releases/tag/v1.7) | Older iOS TestFlight release | Apple build 20, UDP-only. Its 4 December 2026 expiry refers to that older build, not to the current iOS 2.0 build. |

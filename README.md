@@ -6,23 +6,29 @@ Clients: Android, Android TV, Windows, and [iOS 2.1.1 via TestFlight](https://te
 
 Experimental software, not a commercial VPN service or an independently security-audited product. No guarantee of bypassing any particular firewall.
 
-## Current release: v2.1.0
+## Current release: v2.1.3 (clients) · server v2.1.0
 
-[Download v2.1.0](../../releases/tag/v2.1.0) · [Latest release](../../releases/latest) · [Changelog](CHANGELOG.md)
+[Download v2.1.3](../../releases/tag/v2.1.3) · [Latest release](../../releases/latest) · [Changelog](CHANGELOG.md)
 
-Android phone, Windows, and the server: **v2.1.0**. Android TV: **[v2.1.2](../../releases/tag/v2.1.2)**. iOS: **[2.1.1](../../releases/tag/v2.1.1-ios)** from [TestFlight](https://testflight.apple.com/join/x52N41V1).
+**Clients in Latest:** Android phone, Android TV, and Windows **v2.1.3**. **Server stays [v2.1.0](../../releases/tag/v2.1.0)** — do not replace the VPS binary for this release. iOS: **[2.1.1](../../releases/tag/v2.1.1-ios)** on [TestFlight](https://testflight.apple.com/join/x52N41V1). No IPA.
 
-- Server: HTTP/3 CONNECT-IP over UDP and HTTP/2 CONNECT-IP over TCP on the same port number.
+### What changed in the clients
+
+- Android phone: Connect no longer freezes the app on filtered mobile data (whitelist). Dial is off the UI thread; Disconnect still works during the handshake.
+- Android TV: that same Dial fix, plus the earlier on-screen Connect button and keep-alive/redial after sleep.
+- Windows: the tunnel comes back after sleep without a manual Connect. Installing a newer MSI updates the running service. The window shows the version number.
+
+### Server (unchanged)
+
+- HTTP/3 CONNECT-IP over UDP and HTTP/2 CONNECT-IP over TCP on the same port number.
 - TCP: a valid client certificate plus an HTTP/2 CONNECT-IP request opens the VPN. Browsers and connections without a valid client certificate receive an HTML page, not VPN access.
 - The server uses a private-CA certificate. A browser shows a certificate warning before the page; this is not a publicly trusted HTTPS website. UDP does not serve a website.
-- Android, Android TV, Windows: Automatic / UDP only / TCP only transport selection, configurable MTU (default 1340), kill switch (off by default), daily/monthly traffic statistics, and ping during TCP sessions. QUIC ping is the smoothed QUIC RTT; do not interpret TCP ping as QUIC RTT.
-- [iOS 2.1.1](../../releases/tag/v2.1.1-ios) on TestFlight does UDP and TCP. It is not Latest. No IPA is attached.
+
+Android, Android TV, and Windows still offer Automatic / UDP only / TCP only, configurable MTU (default 1340), kill switch (off by default), daily/monthly traffic statistics, and ping during TCP sessions. QUIC ping is the smoothed QUIC RTT; do not interpret TCP ping as QUIC RTT. [iOS 2.1.1](../../releases/tag/v2.1.1-ios) on TestFlight does UDP and TCP. It is not this Latest client drop.
 
 ### Compatibility and upgrades
 
-Existing profiles and certificates remain unchanged. A v1.7.1 client can connect to a v2.1.0 server over UDP. A v2.0.0 or v2.1.0 Android or Windows client can use UDP or TCP with this server; TCP requires a v2.0.0 or v2.1.0 server. A v2.1.0 client can still use an older server over UDP. iOS 2.1.1 uses the same server over UDP or TCP.
-
-Optional Android TV build: [v2.1.2](../../releases/tag/v2.1.2) is not Latest. It ships only `masque-tv-2.1.2.apk`. Use it instead of the v2.1.0 or v2.1.1 TV APK: Connect stays on screen, and a stalled tunnel dials again. Phone, Windows, and the server stay on v2.1.0. iOS is [2.1.1](../../releases/tag/v2.1.1-ios).
+Existing profiles and certificates remain unchanged. Install the v2.1.3 APK or MSI over the previous client. Keep the v2.1.0 server. A v1.7.1 client can still connect to that server over UDP. TCP requires a v2.0.0 or v2.1.0 server. iOS 2.1.1 uses the same server over UDP or TCP.
 
 For earlier release details, use the [changelog](CHANGELOG.md) and the corresponding release notes.
 
@@ -34,9 +40,9 @@ For earlier release details, use the [changelog](CHANGELOG.md) and the correspon
 | Docker Compose | Experimental; host networking, NET_ADMIN, /dev/net/tun; sources in masque-docker-2.1.0.zip, image tag masque-vpn-server:2.1.0 | [Docker guide](server/README.md#docker) |
 | Windows VPS Setup Helper | Experimental; masque-setup.exe with the Linux server binary beside it; v2.1.0 installs UDP and TCP | [Setup Helper guide](windows/README.md#install-the-server-from-windows-masque-setupexe) |
 
-The release includes phone/TV APKs, Windows MSI, masque-setup.exe, Linux amd64/arm64 server binaries, install.sh, gen-config.sh, SHA256SUMS, and Docker sources. The Docker image is not supplied as a tarball.
+v2.1.3 attaches the phone APK, TV APK, and Windows MSI only. Server binaries, `install.sh`, `gen-config.sh`, Docker sources, and `masque-setup.exe` remain on [v2.1.0](../../releases/tag/v2.1.0). The Docker image is not supplied as a tarball.
 
-install.sh is for a new installation: it verifies SHA256SUMS and refuses to replace an existing CA, configuration, or service. Do not treat it as an in-place upgrade command. Follow the [server guide](server/README.md) for deployment details.
+install.sh is for a new server installation: it verifies SHA256SUMS and refuses to replace an existing CA, configuration, or service. Do not treat it as an in-place upgrade command. Follow the [server guide](server/README.md) for deployment details.
 
 ## Connect a device
 
@@ -44,9 +50,9 @@ Generate a separate profile.masque bundle for each device; see [issuing client c
 
 | Platform | Start here |
 |---|---|
-| Android | Install the phone APK, import the profile, grant VPN permission, connect. [Android guide](android/README.md) |
-| Android TV | Install the optional v2.1.2 TV APK. Clipboard/paste-text import is available. [Android guide](android/README.md) |
-| Windows | Install the MSI (one UAC prompt), open MASQUE VPN, import the profile, connect. Daily use does not require administrator privileges; closing the window leaves the tunnel running. [Windows guide](windows/README.md) |
+| Android | Install the v2.1.3 phone APK, import the profile, grant VPN permission, connect. [Android guide](android/README.md) |
+| Android TV | Install the v2.1.3 TV APK. Clipboard/paste-text import is available. [Android guide](android/README.md) |
+| Windows | Install the v2.1.3 MSI (one UAC prompt). It replaces the previous service automatically. Open MASQUE VPN, import the profile, connect. Daily use does not require administrator privileges; closing the window leaves the tunnel running. [Windows guide](windows/README.md) |
 | iOS | Install [iOS 2.1.1 through TestFlight](https://testflight.apple.com/join/x52N41V1), then import a device-specific profile. [iOS guide](ios/README.md) |
 
 ## Security and limitations

@@ -3,6 +3,9 @@
 # Run: powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..")
+. (Join-Path $PSScriptRoot "version.ps1")
+$Version = Get-MasqueVersion
+$FileVersion = "$Version.0"
 New-Item -ItemType Directory -Force -Path dist | Out-Null
 
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) { throw "Go not found in PATH" }
@@ -19,7 +22,7 @@ if (Test-Path $ico) {
     foreach ($pkg in @("cmd\vpn-gui", "cmd\vpn-setup", "cmd\vpn-service", "cmd\vpn-client")) {
         $manifest = if ($pkg -eq "cmd\vpn-gui") { "gui" } else { "cli" }
         Push-Location $pkg
-        go run github.com/tc-hib/go-winres@latest simply --icon $ico --arch amd64 --manifest $manifest --product-name "MASQUE VPN" --file-description "MASQUE VPN" --product-version "2.1.0.0" --file-version "2.1.0.0"
+        go run github.com/tc-hib/go-winres@latest simply --icon $ico --arch amd64 --manifest $manifest --product-name "MASQUE VPN" --file-description "MASQUE VPN" --product-version $FileVersion --file-version $FileVersion
         if ($LASTEXITCODE -ne 0) { Pop-Location; throw "go-winres failed in $pkg" }
         Pop-Location
     }
