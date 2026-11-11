@@ -54,6 +54,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var tearingDownUDP = false
     private var tearingDownTCP = false
     private var reconnectAttempt = 0
+    /// Failed connects blamed on a closed path. Retried before the VPN is torn down.
+    private var pathClosedRetries = 0
     private var pathObs: NSKeyValueObservation?
     private var lastPathKey = ""
     private var lastPhysicalIP = ""
@@ -96,6 +98,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         everDialed = false
         zeroRTTTicks = 0
         routesApplied = false
+        pathClosedRetries = 0
         AppGroup.defaults.removeObject(forKey: AppGroup.defaultsLastError)
 
         guard let profile = ProfileStore.load() else {
@@ -109,7 +112,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
         let host = Self.host(of: profile.server)
         let port = Self.port(of: profile.server)
-        let ips = Self.resolveServers(host)
+        let ips = serverIPs(for: host)
         let serverIP = ips.first
         let remote = serverIP ?? "127.0.0.1"
 
@@ -129,7 +132,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         lastProfile = profile
         lastRemote = remote
         lastDialServer = Self.dialServer(serverIP, port)
-        lastServerIP = serverIP
+        rememberServerIP(serverIP)
         lastPort = port
         lastPortNum = portNum
         lastPathKey = pathKey(defaultPath)
@@ -150,10 +153,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     return
                 }
                 self.finishStart(nil)
-                // Let the exclude-route path settle. Binding from: physicalIP:0
-                // (build 11) made NWUDPSession jump to .failed immediately.
-                self.workQueue.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                    guard let self else { return }
+                // A path that just closed still has the old address. Opening UDP
+                // then leaves the session in .preparing for several seconds.
+                // Wait until the path can actually send, then dial.
+                self.waitForPhysicalPath(tries: 0) { [weak self] in
+                    guard let self, !self.stopping else { return }
                     self.connectCandidates(
                         profile: profile,
                         ips: ips,
@@ -168,8 +172,29 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     /// Fail startTunnel if it is still open; otherwise tear the tunnel down.
+    /// A closed path often recovers in a couple of seconds. Cancelling on the
+    /// first such error is what put "path closed" on screen and made the next
+    /// Connect look idle until a later attempt worked.
     private func failAfterStart(_ msg: String, code: Int) {
-        recordError(msg)
+        if AppGroup.isPathClosed(msg), pathClosedRetries < 2, !stopping, let profile = lastProfile {
+            pathClosedRetries += 1
+            publishStatus("waiting for network…")
+            waitForPhysicalPath(tries: 0) { [weak self] in
+                guard let self, !self.stopping else { return }
+                let host = Self.host(of: profile.server)
+                self.connectCandidates(
+                    profile: profile,
+                    ips: self.serverIPs(for: host),
+                    port: self.lastPort,
+                    portNum: self.lastPortNum
+                ) { retryMsg in
+                    self.failAfterStart(retryMsg, code: code)
+                }
+            }
+            return
+        }
+        pathClosedRetries = 0
+        recordError(AppGroup.isPathClosed(msg) ? "network is not ready" : msg)
         teardownUDP()
         teardownTCP()
         let err = NSError(
@@ -884,7 +909,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         rememberAssigned(t)
         let used = Self.host(of: dialServer)
         if !used.isEmpty {
-            lastServerIP = used
+            rememberServerIP(used)
             lastRemote = used
         }
 
@@ -919,6 +944,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 return
             }
             self.reconnectAttempt = 0
+            self.pathClosedRetries = 0
             self.reconnecting = false
             self.forwarding = true
             self.udpWriteErrorLogged = false
@@ -1031,7 +1057,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self.teardownUDP()
             self.teardownTCP()
             self.dialQueue.async { [weak self] in
-                dying?.stop()
+                self?.stopGo(dying)
                 MobileReleaseMemory()
                 self?.workQueue.async {
                     guard let self else { return }
@@ -1046,13 +1072,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                             return
                         }
                         let host = Self.host(of: profile.server)
-                        var ips = Self.resolveServers(host)
-                        if ips.isEmpty, !self.lastServerIP.isEmpty {
-                            ips = [self.lastServerIP]
-                        }
                         self.connectCandidates(
                             profile: profile,
-                            ips: ips,
+                            ips: self.serverIPs(for: host),
                             port: self.lastPort,
                             portNum: self.lastPortNum
                         ) { msg in
@@ -1117,6 +1139,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self.teardownTCP()
             AppGroup.defaults.set(0, forKey: AppGroup.defaultsPing)
             AppGroup.defaults.set("Disconnected", forKey: AppGroup.defaultsStatus)
+            if let stuck = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError),
+               AppGroup.isPathClosed(stuck) {
+                AppGroup.defaults.removeObject(forKey: AppGroup.defaultsLastError)
+            }
             // A crash or a network drop leaves sessionUp set so the app can
             // block and reconnect. Disconnect, and turning the VPN off in
             // Settings, clears it so the block does not stick.
@@ -1125,7 +1151,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             }
             AppGroup.defaults.synchronize()
             self.dialQueue.async {
-                dying?.stop()
+                self.stopGo(dying)
                 completionHandler()
             }
         }
@@ -1237,12 +1263,49 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     fileprivate func handleGoError(_ msg: String) {
         workQueue.async { [weak self] in
             guard let self else { return }
+            // The pump cannot redial a socket Swift owns. "path closed" only
+            // means "open a new one". Saving it made the app show a red error
+            // after the tunnel was already gone.
+            if AppGroup.isPathClosed(msg) {
+                if !self.stopping {
+                    self.scheduleReconnect(msg)
+                }
+                return
+            }
             if self.stopping {
                 self.recordError(msg)
                 return
             }
             self.scheduleReconnect(msg)
         }
+    }
+
+    /// Close can block on a dead Network Extension socket. The next Connect
+    /// does not start until stopTunnel's completion runs, so don't wait.
+    private func stopGo(_ tunnel: MobileTunnel?) {
+        let sem = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            tunnel?.stop()
+            sem.signal()
+        }
+        _ = sem.wait(timeout: .now() + 1)
+    }
+
+    /// DNS after a path loss can sit in getaddrinfo for several seconds.
+    /// A previous handshake's address is enough to dial while that finishes.
+    private func serverIPs(for host: String) -> [String] {
+        let cached = AppGroup.defaults.string(forKey: AppGroup.defaultsLastServerIP) ?? lastServerIP
+        let ips = Self.resolveServers(host, timeout: cached.isEmpty ? 3 : 1)
+        if ips.isEmpty {
+            return cached.isEmpty ? [] : [cached]
+        }
+        return Self.prefer(cached, in: ips)
+    }
+
+    private func rememberServerIP(_ ip: String) {
+        guard !ip.isEmpty else { return }
+        lastServerIP = ip
+        AppGroup.defaults.set(ip, forKey: AppGroup.defaultsLastServerIP)
     }
 
     private func recordError(_ msg: String) {
@@ -1475,8 +1538,31 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     /// A and AAAA. IPv6 is listed first, matching the shared client core.
-    /// A literal address is returned as itself.
-    private static func resolveServers(_ host: String) -> [String] {
+    /// A literal address is returned as itself. timeout caps a stuck resolver
+    /// after the network path has just closed.
+    private static func resolveServers(_ host: String, timeout: TimeInterval) -> [String] {
+        if host.isEmpty { return [] }
+        var v6buf = in6_addr()
+        if host.withCString({ inet_pton(AF_INET6, $0, &v6buf) }) == 1 {
+            return [host]
+        }
+        var v4buf = in_addr()
+        if host.withCString({ inet_pton(AF_INET, $0, &v4buf) }) == 1 {
+            return [host]
+        }
+        let box = ResolveBox()
+        let sem = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            box.ips = resolveServersBlocking(host)
+            sem.signal()
+        }
+        if sem.wait(timeout: .now() + timeout) == .timedOut {
+            return []
+        }
+        return box.ips
+    }
+
+    private static func resolveServersBlocking(_ host: String) -> [String] {
         var v6buf = in6_addr()
         if host.withCString({ inet_pton(AF_INET6, $0, &v6buf) }) == 1 {
             return [host]
@@ -1524,6 +1610,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
         return NSNumber(value: AF_INET)
     }
+}
+
+private final class ResolveBox {
+    var ips: [String] = []
 }
 
 /// Go calls writeStream on its HTTP/2 thread and will not read until the call

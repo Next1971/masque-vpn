@@ -370,19 +370,31 @@ func (s *Session) Abandon(reason string) {
 func (s *Session) closeReason(reason string) {
 	s.closeOnce.Do(func() {
 		close(s.done)
-		if s.ipconn != nil {
-			s.ipconn.Close() // sends CONNECT-IP close → server calls Release
-		}
-		if s.qconn != nil {
-			s.qconn.CloseWithError(0, reason)
-		}
-		if s.tcpConn != nil {
-			_ = s.tcpConn.Close()
-		}
-		// Shared PacketConn (iOS NE UDP session) outlives a single QUIC
-		// session so reconnect can reuse it. Only close sockets we opened.
-		if s.ownUDP && s.udpConn != nil {
-			s.udpConn.Close()
+		// A dead NE socket makes CloseWithError wait on a write that will
+		// not complete. iOS then will not start the next tunnel until this
+		// returns, so Connect sits idle for several seconds.
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			if s.ipconn != nil {
+				_ = s.ipconn.Close() // sends CONNECT-IP close → server calls Release
+			}
+			if s.qconn != nil {
+				_ = s.qconn.CloseWithError(0, reason)
+			}
+			if s.tcpConn != nil {
+				_ = s.tcpConn.Close()
+			}
+			// Shared PacketConn (iOS NE UDP session) outlives a single QUIC
+			// session so reconnect can reuse it. Only close sockets we opened.
+			if s.ownUDP && s.udpConn != nil {
+				_ = s.udpConn.Close()
+			}
+		}()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			log.Printf("session close still waiting: %s", reason)
 		}
 		log.Printf("session closed: %s", reason)
 	})
