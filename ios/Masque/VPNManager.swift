@@ -21,6 +21,10 @@ final class VPNManager: ObservableObject {
     private var showDisconnecting = false
     private var killSwitchRetryPending = false
     private var killSwitchRetryAttempt = 0
+    /// True once this Connect has been reported as connecting or connected.
+    /// A leftover "disconnected" from the tunnel that just died must not
+    /// clear the new attempt and paint "profile ready" again.
+    private var connectProgress = false
 
     private var observer: NSObjectProtocol?
     private var pingTimer: Timer?
@@ -92,10 +96,7 @@ final class VPNManager: ObservableObject {
             if !connected && !busy {
                 // Keep a failure on screen: "profile ready" used to wipe the
                 // reason the tunnel just died.
-                let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
-                if !tunnelErr.isEmpty {
-                    lastError = tunnelErr
-                }
+                showTunnelError(AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? "")
                 statusText = "Status: profile ready"
             }
         } else {
@@ -183,8 +184,12 @@ final class VPNManager: ObservableObject {
         ProfileStore.saveMTU(mtu)
 
         userStop = false
+        connectProgress = false
         busy = true
         statusText = "Status: starting…"
+        // Drop the stale "path closed" before the extension starts, or the
+        // 2s refresh paints it back over the new attempt.
+        AppGroup.defaults.removeObject(forKey: AppGroup.defaultsLastError)
         let arm = AppGroup.defaults.bool(forKey: AppGroup.defaultsKillSwitch)
         AppGroup.defaults.set(arm, forKey: AppGroup.defaultsKillSwitchArmed)
         if !arm {
@@ -204,6 +209,7 @@ final class VPNManager: ObservableObject {
     /// with includeAllNetworks still set leaves the phone with no internet.
     private func beginUserStop() {
         userStop = true
+        connectProgress = false
         showDisconnecting = true
         busy = true
         killSwitchRetryPending = false
@@ -270,12 +276,85 @@ final class VPNManager: ObservableObject {
             guard let self, self.busy, !self.connected else { return }
             self.busy = false
             let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
-            self.lastError = tunnelErr.isEmpty ? "Connect timed out" : tunnelErr
+            if tunnelErr.isEmpty || AppGroup.isPathClosed(tunnelErr) {
+                self.lastError = "Connect timed out"
+            } else {
+                self.lastError = tunnelErr
+            }
             self.refreshProfileStatus()
         }
     }
 
     private func startTunnel(server: String, attempt: Int, finish: @escaping () -> Void) {
+        // The saved profile is already what we want after a path loss.
+        // load → save → loadAll → load is several seconds, which is the
+        // gap where Connect looks like it did nothing.
+        if attempt == 0 {
+            reloadManager { [weak self] existing in
+                guard let self else {
+                    finish()
+                    return
+                }
+                if let existing, self.configMatches(existing, server: server) {
+                    self.startSaved(existing, server: server, finish: finish)
+                    return
+                }
+                self.startPrepared(server: server, attempt: 0, finish: finish)
+            }
+            return
+        }
+        startPrepared(server: server, attempt: attempt, finish: finish)
+    }
+
+    private func configMatches(_ mgr: NETunnelProviderManager, server: String) -> Bool {
+        guard mgr.isEnabled,
+              let proto = mgr.protocolConfiguration as? NETunnelProviderProtocol,
+              proto.providerBundleIdentifier == VPNManager.providerBundleID,
+              proto.serverAddress == server else { return false }
+        let armed = AppGroup.defaults.bool(forKey: AppGroup.defaultsKillSwitchArmed)
+        return proto.includeAllNetworks == armed
+    }
+
+    private func startSaved(_ mgr: NETunnelProviderManager, server: String, finish: @escaping () -> Void) {
+        mgr.loadFromPreferences { [weak self] loadErr in
+            self?.prefs.async {
+                guard let self else {
+                    finish()
+                    return
+                }
+                if loadErr != nil || !self.configMatches(mgr, server: server) {
+                    self.startPrepared(server: server, attempt: 0, finish: finish)
+                    return
+                }
+                do {
+                    try mgr.connection.startVPNTunnel()
+                    self.cachedManager = mgr
+                    DispatchQueue.main.async {
+                        self.applyConnectionStatus(from: mgr.connection)
+                        finish()
+                    }
+                } catch {
+                    let ns = error as NSError
+                    if ns.domain == NEVPNErrorDomain,
+                       ns.code == NEVPNError.configurationStale.rawValue ||
+                       ns.code == NEVPNError.configurationInvalid.rawValue {
+                        self.cachedManager = nil
+                        self.startPrepared(server: server, attempt: 0, finish: finish)
+                        return
+                    }
+                    DispatchQueue.main.async {
+                        self.busy = false
+                        self.connectProgress = false
+                        self.lastError = error.localizedDescription
+                        self.refreshProfileStatus()
+                        finish()
+                    }
+                }
+            }
+        }
+    }
+
+    private func startPrepared(server: String, attempt: Int, finish: @escaping () -> Void) {
         prepareManager(server: server) { [weak self] result in
             guard let self else {
                 finish()
@@ -459,6 +538,9 @@ final class VPNManager: ObservableObject {
 
     private func applyConnectionStatus(from connection: NEVPNConnection?) {
         if let connection {
+            if let current = cachedManager?.connection, connection !== current {
+                return
+            }
             publish(status: connection.status)
             return
         }
@@ -471,6 +553,7 @@ final class VPNManager: ObservableObject {
     private func publish(status: NEVPNStatus) {
         switch status {
         case .connected:
+            connectProgress = true
             connected = true
             userStop = false
             killSwitchRetryAttempt = 0
@@ -484,16 +567,20 @@ final class VPNManager: ObservableObject {
                 statusText = "Status: \(stage.isEmpty ? "connecting" : stage)"
             }
         case .connecting, .reasserting:
+            connectProgress = true
             connected = false
             showDisconnecting = false
             setBusy(true)
             statusText = "Status: connecting"
         case .disconnecting:
+            if busy && !userStop && !connectProgress { return }
             connected = false
             showDisconnecting = true
             setBusy(true)
             statusText = "Status: disconnecting"
         default:
+            if busy && !userStop && !connectProgress { return }
+            connectProgress = false
             connected = false
             showDisconnecting = false
             pingText = "Ping: —"
@@ -520,12 +607,24 @@ final class VPNManager: ObservableObject {
             } else {
                 releaseIfNeverUp()
             }
-            let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
-            if !tunnelErr.isEmpty {
-                lastError = tunnelErr
-            }
+            showTunnelError(AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? "")
             refreshProfileStatus()
         }
+    }
+
+    /// "path closed" is the pump asking for a new socket, not a reason to
+    /// leave on screen after the tunnel has already dropped.
+    private func showTunnelError(_ raw: String) {
+        if raw.isEmpty || AppGroup.isPathClosed(raw) {
+            if AppGroup.isPathClosed(raw) {
+                AppGroup.defaults.removeObject(forKey: AppGroup.defaultsLastError)
+            }
+            if let current = lastError, AppGroup.isPathClosed(current) {
+                lastError = nil
+            }
+            return
+        }
+        lastError = raw
     }
 
     /// After a real session, a drop with the kill switch armed reconnects and
@@ -653,11 +752,11 @@ final class VPNManager: ObservableObject {
         guard connected else {
             if considerKillSwitchRearm() { return }
             let tunnelErr = AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? ""
-            if !tunnelErr.isEmpty, lastError != tunnelErr {
-                lastError = tunnelErr
+            if !busy {
+                showTunnelError(tunnelErr)
             }
             // Show how far the extension got: starting / opening UDP / dialing QUIC.
-            if busy, tunnelErr.isEmpty {
+            if busy, tunnelErr.isEmpty || AppGroup.isPathClosed(tunnelErr) {
                 let stage = AppGroup.defaults.string(forKey: AppGroup.defaultsStatus) ?? ""
                 if tunnelUp(stage) {
                     connected = true

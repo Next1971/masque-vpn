@@ -13,7 +13,7 @@ enum AppGroup {
     static let defaultsStatus = "status"
     static let defaultsPing = "pingMs"
     static let defaultsLastError = "lastError"
-    /// Last VPN server IP that completed a handshake. Used when DNS is slow.
+    /// Last server address we dialed. Used when DNS stalls after the path closes.
     static let defaultsLastServerIP = "lastServerIP"
     static let defaultsTrafficDay = "trafficDay"
     static let defaultsTrafficMonth = "trafficMonth"
@@ -31,6 +31,12 @@ enum AppGroup {
 
     static var certsDir: URL? {
         containerURL?.appendingPathComponent(profileRelative, isDirectory: true)
+    }
+
+    /// Go asks Swift for a new socket with this text. It is not a failure to show.
+    static func isPathClosed(_ msg: String) -> Bool {
+        let t = msg.lowercased()
+        return t.contains("path closed") || t.contains("path is closed") || t.contains("path was closed")
     }
 }
 
