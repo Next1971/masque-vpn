@@ -19,13 +19,14 @@ object VpnStatus {
             m.startsWith("error:") && !m.contains("kill switch") -> false
             m.contains("kill switch") -> true
             m == "connected" || m.startsWith("connected ") || m.startsWith("vpn active") -> true
-            m.startsWith("reconnect") -> true
+            m.startsWith("reconnect") || m.startsWith("restoring") -> true
             m == "forwarding started" -> true
             else -> previous
         }
     }
 
     fun pingLabel(msg: String): String? {
+        if (msg.startsWith("Restoring")) return "Ping: —"
         val match = Regex("""ping (\d+) ms""", RegexOption.IGNORE_CASE).find(msg)
         return match?.let { "Ping: ${it.groupValues[1]} ms" }
     }

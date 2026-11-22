@@ -1,0 +1,24 @@
+Hello App Review,
+
+The app does include VPN features. It is a client for a self-hosted MASQUE VPN (HTTP/3 CONNECT-IP). The developer does not operate a VPN service and does not collect, store, or sell VPN traffic or user data.
+
+What user information is the app collecting using VPN?
+None by the developer. The iOS app does not send VPN payloads, IP logs, DNS queries, identifiers, or analytics to us. When the user taps Connect, IP traffic is sent only to the MASQUE server named in the profile they imported — a machine they (or their family) run. For this review that host is the dedicated demo server 144.31.19.23, which we operate only so reviewers can test Connect. It is not a production or commercial network.
+
+On device, the app stores only the imported profile (server address and certificates) and local settings such as MTU, in the app’s App Group. That data does not leave the device except as needed to open the tunnel to the configured server.
+
+For what purposes are you collecting this information?
+We are not collecting it. There is no developer-side logging, advertising, analytics, account system, or crash reporter. The only purpose of the VPN path is to move the user’s own traffic to their own server so it can exit to the internet from that VPS. We have no planned uses of VPN-derived personal data because we do not receive it.
+
+The review demo server exists solely so App Review can import the attached profile and confirm the tunnel comes up. We do not use review-device traffic for advertising, profiling, or resale. After review we will revoke the demo client certificate.
+
+Will the data be shared with any third parties?
+No data is shared by us with third parties. We have no data brokers, ad networks, analytics SDKs, or authentication/payment providers in the app.
+
+Tunnel DNS in the demo profile is 1.1.1.1 (Cloudflare public DNS) as the resolver inside the tunnel only. That is the user’s (or reviewer) traffic to a public resolver via the VPN server, not a data-sharing arrangement we operate.
+
+If a user points the app at their own VPS, that server’s operator — not the App Store developer — decides whether the VPS logs anything. The App Store listing and privacy policy state that we do not collect data: https://github.com/Next1971/masque-vpn/blob/main/docs/privacy.html
+
+Sign-in required: No. Please use the attached review.zip (review.masque): Import Profile → Connect → Allow VPN.
+
+Please let us know if you need anything else.

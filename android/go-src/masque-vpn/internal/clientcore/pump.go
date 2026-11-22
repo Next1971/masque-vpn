@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -24,11 +25,14 @@ const (
 // The TUN reader is started once: a second Session.Run on the same fd would
 // steal packets. Used by the Android gomobile bridge.
 type Pump struct {
-	mu     sync.RWMutex
-	sess   *Session
-	dev    tun.Device
-	tunErr error
-	bytes  atomic.Int64
+	mu          sync.RWMutex
+	wmu         sync.Mutex
+	sess        *Session
+	dev         tun.Device
+	tunErr      error
+	bytes       atomic.Int64
+	inbound     atomic.Bool
+	dataWatchOn atomic.Bool
 }
 
 func NewPump(sess *Session, dev tun.Device) *Pump {
@@ -36,6 +40,15 @@ func NewPump(sess *Session, dev tun.Device) *Pump {
 		sess.AttachTUN(dev)
 	}
 	return &Pump{sess: sess, dev: dev}
+}
+
+// EnableDataWatch turns on the ICMP data-plane check. Android can replace
+// the session when it fails. iOS cannot open a new socket from here, so it
+// leaves the check off and keeps the QUIC silence watch only.
+func (p *Pump) EnableDataWatch() {
+	if p != nil {
+		p.dataWatchOn.Store(true)
+	}
 }
 
 // Bytes is tunnel IP traffic since this pump started, both directions.
@@ -205,10 +218,72 @@ func (p *Pump) watchPath(ctx context.Context, sess *Session) {
 	}
 }
 
+func (p *Pump) markInbound() { p.inbound.Store(true) }
+
+func (p *Pump) takeInbound() bool { return p.inbound.Swap(false) }
+
+func (p *Pump) writePacket(sess *Session, pkt []byte) error {
+	if sess == nil || sess.ipconn == nil {
+		return fmt.Errorf("no session")
+	}
+	p.wmu.Lock()
+	defer p.wmu.Unlock()
+	_, err := sess.ipconn.WritePacket(pkt)
+	return err
+}
+
+// watchData sends an ICMP echo through the live session every probe window.
+// QUIC keepalives can still arrive after the CONNECT-IP data plane has
+// stopped, so packet counters are not the signal. Two windows with no
+// tunnel IP at all abandon the session; the caller then runs the ladder.
+func (p *Pump) watchData(ctx context.Context, sess *Session) {
+	if sess == nil || sess.ipconn == nil {
+		return
+	}
+	v4, _ := SplitAssigned(sess.AssignedPrefixes)
+	if !v4.IsValid() {
+		return
+	}
+	gw := tunnelGateway4(v4.Addr())
+	tick := time.NewTicker(tunnelProbeEvery)
+	defer tick.Stop()
+	var watch dataWatch
+	var sent bool
+	var seq uint16
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-sess.done:
+			return
+		case <-tick.C:
+			if sent && watch.observe(p.takeInbound()) {
+				log.Printf("tunnel data probe missed %d times; restoring", tunnelProbeMissLimit)
+				sess.Abandon("tunnel data stopped")
+				return
+			}
+			sent = true
+			seq++
+			if err := p.writePacket(sess, icmpEchoRequest(v4.Addr(), gw, seq)); err != nil {
+				return
+			}
+		}
+	}
+}
+
 func (p *Pump) readConn(ctx context.Context, sess *Session) error {
 	watchCtx, watchCancel := context.WithCancel(ctx)
 	defer watchCancel()
+	p.inbound.Store(false)
 	go p.watchPath(watchCtx, sess)
+	if p.dataWatchOn.Load() {
+		go p.watchData(watchCtx, sess)
+	}
+
+	gw := netip.Addr{}
+	if v4, _ := SplitAssigned(sess.AssignedPrefixes); v4.IsValid() {
+		gw = tunnelGateway4(v4.Addr())
+	}
 
 	mtu, err := p.dev.MTU()
 	if err != nil || mtu <= 0 {
@@ -224,9 +299,14 @@ func (p *Pump) readConn(ctx context.Context, sess *Session) error {
 		if err != nil {
 			return fmt.Errorf("conn read: %w", err)
 		}
+		pkt := buf[tunOffset : tunOffset+n]
+		p.markInbound()
+		if gw.IsValid() && ourEchoReply(pkt, gw) {
+			continue
+		}
 		inCount++
 		if Verbose && inCount <= 6 {
-			vlog("conn→TUN packet #%d: %s (%d bytes)", inCount, describePkt(buf[tunOffset:tunOffset+n]), n)
+			vlog("conn→TUN packet #%d: %s (%d bytes)", inCount, describePkt(pkt), n)
 		}
 		if _, err := p.dev.Write([][]byte{buf[:tunOffset+n]}, tunOffset); err != nil {
 			p.setTunErr(err)
@@ -276,7 +356,7 @@ func (p *Pump) readTUN(ctx context.Context) {
 			if drop, _ := prepareOutgoing(pkt, sess.AssignedPrefixes); drop {
 				continue
 			}
-			if _, err := sess.ipconn.WritePacket(pkt); err != nil {
+			if err := p.writePacket(sess, pkt); err != nil {
 				break
 			}
 			p.addBytes(len(pkt))

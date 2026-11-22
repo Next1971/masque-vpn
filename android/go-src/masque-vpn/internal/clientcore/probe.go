@@ -58,6 +58,10 @@ func tunnelGateway4(client netip.Addr) netip.Addr {
 	return netip.AddrFrom4(b)
 }
 
+// icmpEchoID marks probes this client sent. Replies with this id are the
+// data-plane check and are not written to the TUN.
+const icmpEchoID uint16 = 0x1234
+
 func icmpEchoRequest(src, dst netip.Addr, seq uint16) []byte {
 	const ipHdrLen = 20
 	const icmpLen = 8
@@ -76,7 +80,8 @@ func icmpEchoRequest(src, dst netip.Addr, seq uint16) []byte {
 	putChecksum(b[:ipHdrLen], 10)
 	icmp := b[ipHdrLen:]
 	icmp[0] = 8
-	icmp[4], icmp[5] = 0x12, 0x34
+	icmp[4] = byte(icmpEchoID >> 8)
+	icmp[5] = byte(icmpEchoID & 0xff)
 	icmp[6] = byte(seq >> 8)
 	icmp[7] = byte(seq)
 	putChecksum(icmp, 2)
@@ -93,6 +98,16 @@ func icmpEchoReplyFrom(pkt []byte, from netip.Addr) bool {
 	}
 	src := netip.AddrFrom4([4]byte{pkt[12], pkt[13], pkt[14], pkt[15]})
 	return src == from && pkt[ihl] == 0
+}
+
+// ourEchoReply is an ICMP echo reply to a probe this client sent.
+func ourEchoReply(pkt []byte, from netip.Addr) bool {
+	if !icmpEchoReplyFrom(pkt, from) {
+		return false
+	}
+	ihl := int(pkt[0]&0x0f) * 4
+	id := uint16(pkt[ihl+4])<<8 | uint16(pkt[ihl+5])
+	return id == icmpEchoID
 }
 
 func putChecksum(b []byte, offset int) {

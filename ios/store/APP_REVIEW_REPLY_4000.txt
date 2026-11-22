@@ -1,0 +1,53 @@
+Hello App Review,
+
+This reply provides the Guideline 2.1 information you requested. MASQUE is a complete, public App Store client for a self-hosted VPN. It is not a prototype, not an employee-only tool, and not a commercial VPN with shared servers. The user runs their own server and imports a .masque profile they created.
+
+This account is new to App Review. TestFlight external testing of the iOS client was already approved. We tested the flow on a physical iPhone.
+
+1) Screen recording
+An iPhone screen recording is attached. It starts at launch: Import Profile → Connect → Allow VPN → “VPN active” and Ping → Disconnect.
+
+The current binary is iPhone-only. We do not have an iPad and are not declaring iPad as a destination.
+
+No accounts, no user-generated content, no In-App Purchases.
+
+2) Purpose and audience
+Purpose: connect an iPhone to a MASQUE server the user already runs, over HTTP/3 CONNECT-IP (RFC 9484) with mutual TLS.
+
+Audience: people who operate their own VPS and want the same profile as Android/Windows. Not a single company. Not a public VPN brand.
+
+Value: traffic exits at the user’s machine. They keep the CA. We do not operate customer VPN servers, see traffic, or run accounts.
+
+Source: https://github.com/Next1971/masque-vpn
+Privacy: https://github.com/Next1971/masque-vpn/blob/main/docs/privacy.html
+
+3) How to use (no login)
+Sign-in required: No. Demo server is review-only (not production).
+
+Also attach review.zip (review.masque). Save it to Files on the review device.
+
+1. Launch MASQUE.
+2. Import Profile → review.masque.
+3. Keep default MTU.
+4. Connect → Allow the VPN configuration.
+5. Status: “VPN active”; Ping shows ms.
+6. Disconnect.
+
+Demo host: 144.31.19.23 UDP 443 (IPv4). One profile per device.
+
+4) External services
+- User’s own MASQUE server (this review: 144.31.19.23)
+- iOS Packet Tunnel (Apple API)
+- Demo profile DNS: 1.1.1.1 (tunnel resolver only)
+
+No analytics, ads, crash SDKs, auth, payments, or AI. GitHub is docs/source only; the app does not call it at runtime.
+
+5) Regions
+Same features worldwide. No geo-blocked content or regional backends. The tunnel works if the demo (or user) UDP server is reachable.
+
+6) Regulated / licensed material
+Not a carrier, bank, health, gambling, or streaming service. No licensed third-party media.
+
+We do not sell VPN subscriptions. Encryption is standard TLS/QUIC (exempt). ITSAppUsesNonExemptEncryption = false. We wrote this open-source client and server.
+
+Happy to provide another clip or profile if needed.
