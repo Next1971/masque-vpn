@@ -1,0 +1,106 @@
+App Review — Guideline 2.1 reply (paste into Resolution Center AND App Review Information → Notes).
+
+Record a screen video on a physical iPhone (see shot list at the bottom). Attach the .mp4 in the reply. Keep review.zip attached in App Review Information.
+
+==============================================================================
+REPLY TEXT
+==============================================================================
+
+Hello App Review,
+
+Thank you for the request. MASQUE is a complete, publicly distributed iOS client for a self-hosted VPN. It is not an unreleased prototype, not an employee-only internal tool, and not a commercial VPN service with shared servers. Anyone can download it from the App Store. To use the tunnel, the user runs their own MASQUE server (typically on a VPS they control) and imports a profile file they created.
+
+This account is new to App Review. TestFlight external testing of this same build was already approved. The flow below was tested on a physical iPhone running a current iOS release.
+
+---
+
+1) Screen recording
+
+A screen recording from a physical iPhone is attached to this reply. It starts at app launch and shows the typical flow: import a .masque profile → Connect → iOS VPN permission → status “VPN active” and a ping value → Disconnect.
+
+This resubmission is iPhone-only (TARGETED_DEVICE_FAMILY = iPhone). We do not have a physical iPad and are not declaring iPad as a destination. Please review the attached iPhone recording as the typical user flow.
+
+The app has:
+- No account registration, login, or account deletion
+- No user-generated content, reporting, or blocking
+- No paid content, subscriptions, or In-App Purchases
+
+---
+
+2) Purpose and target audience
+
+Purpose: let a person who already operates a MASQUE VPN server connect an iPhone to that server over HTTP/3 (IETF MASQUE CONNECT-IP, RFC 9484) with mutual TLS.
+
+Problem it solves: there was no App Store iOS client for this self-hosted stack. Android, Android TV, and Windows clients already exist. iOS users had to use TestFlight.
+
+Target audience: individuals and families who run their own VPS and want the same profile format on iOS. It is not aimed at a single company, and it is not a public VPN brand with shared endpoints.
+
+Value: traffic exits at the user’s own machine. The user keeps the certificate authority. The app developer does not operate VPN servers for customers, does not see user traffic, and does not run accounts.
+
+Open source: https://github.com/Next1971/masque-vpn
+Privacy policy: https://github.com/Next1971/masque-vpn/blob/main/docs/privacy.html
+
+---
+
+3) How to set up and use the main features (demo for review)
+
+There is no login. Sign-in required: No.
+
+A dedicated review-only server is running for this submission (not a production network). Profile files:
+
+- Attachment: review.zip (contains review.masque)
+- Unpack the zip, save review.masque to Files on the review device
+
+Steps:
+1. Launch MASQUE.
+2. Tap Import Profile and choose review.masque.
+3. Leave MTU at the default.
+4. Tap Connect. When iOS asks to add a VPN configuration, tap Allow.
+5. Status should become “VPN active” and Ping should show a millisecond value.
+6. Tap Disconnect to tear the tunnel down.
+
+The review profile points at IPv4 UDP 443 on host 144.31.19.23. One profile is for one device; do not import the same bundle on a second device at the same time.
+
+---
+
+4) External services used for core functionality
+
+- The user’s own MASQUE VPN server (self-hosted QUIC/HTTP/3 CONNECT-IP). For this review, that is the dedicated demo host 144.31.19.23.
+- iOS Network Extension (Packet Tunnel) — Apple platform API, not a third-party SDK.
+- DNS inside the demo profile is 1.1.1.1 (Cloudflare public DNS) as the tunnel DNS resolver only.
+
+The app does not use third-party analytics, advertising, crash reporters, authentication providers, payment processors, or AI services. GitHub hosts source code and documentation; the app does not call GitHub at runtime.
+
+---
+
+5) Regional differences
+
+The app functions the same in all regions. There is no geo-blocked content, no region-specific feature flags, and no localized backend. Connectivity depends only on whether the user’s (or this demo) UDP server is reachable from the device network.
+
+---
+
+6) Regulated industry / protected material
+
+This is a personal self-hosted VPN client. It is not a licensed telecom carrier, bank, health, gambling, or streaming service. It does not embed protected third-party media or trademarks that require a license.
+
+The developer does not sell VPN subscriptions or operate a shared VPN network. Encryption used is standard TLS/QUIC (exempt encryption). Export compliance in the binary is ITSAppUsesNonExemptEncryption = false.
+
+We are authorized to distribute this client because we wrote it; the server software and iOS app are the same open-source project.
+
+Please let us know if you need a longer recording or another demo profile.
+
+==============================================================================
+SCREEN RECORDING SHOT LIST (physical iPhone, latest iOS, Control Center → Screen Recording)
+==============================================================================
+
+0. Start recording from Springboard (home screen), then tap MASQUE.
+1. Show launch: title MASQUE, “Status: profile not configured”.
+2. Import Profile → pick review.masque from Files → “Status: profile ready”.
+3. Connect → Allow VPN.
+4. Hold on “Status: VPN active” and a Ping value (several seconds).
+5. Optional but useful: switch to Safari, open https://ifconfig.me and show 144.31.19.23, then return to MASQUE.
+6. Disconnect. Stop recording.
+
+Do not show the production VPS, other apps’ passwords, or the contents of the .masque file.
+
+Upload the .mp4 in Resolution Center when you reply. Also paste the REPLY TEXT into App Review Information → Notes so later submissions keep it.

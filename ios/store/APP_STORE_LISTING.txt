@@ -1,0 +1,78 @@
+App Store Connect — copy/paste.
+Limits: subtitle 30, promotional text 170, description 4000, keywords 100.
+
+============================================================
+RUSSIAN (основная витрина)
+============================================================
+
+Название (30)
+MASQUE VPN
+
+Подзаголовок (30)
+VPN на вашем сервере
+
+Рекламный текст (170)
+Свой VPN на вашем VPS. Туннель HTTP/3, вход только по вашим сертификатам. Импортируйте тот же profile.masque, что на Android и Windows.
+
+Описание
+MASQUE — клиент для своего VPN-сервера. Вы поднимаете сервер на VPS, выпускаете профили только своим устройствам и импортируете файл profile.masque на iPhone или iPad.
+
+Это не коммерческий VPN и не публичные серверы. Трафик выходит с вашей машины. Ключи и сертификаты остаются у вас. Разработчик приложения не видит ваш трафик и не ведёт аккаунты.
+
+Как подключиться
+1. Установите MASQUE-сервер по инструкции на GitHub.
+2. Выпустите отдельный профиль именно для этого устройства.
+3. В приложении нажмите Import Profile и выберите файл .masque.
+4. Нажмите Connect и разрешите конфигурацию VPN в iOS.
+
+Что внутри
+• Транспорт HTTP/3 (IETF MASQUE CONNECT-IP) и взаимный TLS
+• Тот же формат профиля, что у клиентов Android и Windows
+• На устройстве хранятся только импортированный профиль и настройки вроде MTU
+• Один профиль — одно устройство: не используйте bundle, который уже подключён на другом клиенте
+
+Важно
+Приложение экспериментальное и не проходило сторонний аудит безопасности. Оно не обещает анонимность и не обещает обход конкретного национального фильтра. Исходный код открыт: https://github.com/Next1971/masque-vpn
+
+Политика конфиденциальности: https://next1971.github.io/masque-vpn/privacy.html
+
+Ключевые слова (100)
+vpn,masque,http3,quic,сервер,туннель,прокси,self-hosted,vps,сертификат
+
+============================================================
+ENGLISH
+============================================================
+
+Name (30)
+MASQUE VPN
+
+Subtitle (30)
+VPN on your own server
+
+Promotional text (170)
+Your VPN on your VPS. HTTP/3 tunnel, access only with certificates you signed. Import the same profile.masque you use on Android and Windows.
+
+Description
+MASQUE is a client for a VPN server you run yourself. You install the server on a VPS you control, issue profiles only to your own devices, and import a profile.masque file on iPhone or iPad.
+
+This is not a commercial VPN brand and not a shared public network. Traffic exits at your machine. You keep the keys and certificates. The app developer cannot see your traffic and does not run user accounts.
+
+How to connect
+1. Set up a MASQUE server using the GitHub documentation.
+2. Issue a separate profile for this device.
+3. In the app, tap Import Profile and choose the .masque file.
+4. Tap Connect and allow the VPN configuration in iOS.
+
+What’s included
+• HTTP/3 transport (IETF MASQUE CONNECT-IP) with mutual TLS
+• The same profile format as the Android and Windows clients
+• Only the imported profile and local settings such as MTU are stored on device
+• One profile per device: do not reuse a bundle that is already connected on another client
+
+Notes
+This app is experimental and has not been independently security-audited. It does not promise anonymity or the ability to bypass any particular national firewall. Source code: https://github.com/Next1971/masque-vpn
+
+Privacy policy: https://next1971.github.io/masque-vpn/privacy.html
+
+Keywords (100)
+vpn,masque,http3,quic,self-hosted,server,tunnel,vps,certificate,proxy
