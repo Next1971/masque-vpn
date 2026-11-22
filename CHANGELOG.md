@@ -4,6 +4,10 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- masque-setup.exe: the embedded install script defaulted to downloading the v2.0.0 server when no Linux binary sat beside the EXE. It now defaults to v2.1.0, like `server/install.sh`. The v2.1.0 release asset was replaced on 22 November 2026 and `SHA256SUMS` carries the new hash. The wizard layout also fits smaller 14-inch displays.
+
 ## [v2.1.3] - 2026-11-07
 
 **GitHub Latest. Client-only.** Replaces Latest [v2.1.0](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.0) for Android phone, Android TV, and Windows. The published **server stays v2.1.0**. No Linux binary, `install.sh`, Docker zip, or `masque-setup.exe` in this drop. iOS stays on [TestFlight 2.1.1](https://testflight.apple.com/join/x52N41V1).
