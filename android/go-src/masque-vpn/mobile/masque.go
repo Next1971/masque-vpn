@@ -57,6 +57,8 @@ type Tunnel struct {
 	pipe       *DatagramPipe
 	stream     *StreamPipe
 	pump       *clientcore.Pump
+	plan       clientcore.RecoverPlan
+	dataWatch  bool
 }
 
 // AssignedAddr returns the server-assigned IPv4/IPv6 address (without prefix
@@ -354,7 +356,10 @@ func dial(cfg *Config, cb Callback, pipe *DatagramPipe, stream *StreamPipe) (*Tu
 			cb.OnStatus("assigned " + sess.AssignedPrefixes[0].String())
 		}
 	}
-	t := &Tunnel{sess: sess, prof: prof, ctx: ctx, cancel: cancel, cb: cb, pipe: pipe, stream: stream}
+	t := &Tunnel{
+		sess: sess, prof: prof, ctx: ctx, cancel: cancel, cb: cb,
+		pipe: pipe, stream: stream, plan: clientcore.NewRecoverPlan(prof.Transport),
+	}
 	rememberAssigned(t, sess)
 	return t, nil
 }
@@ -401,6 +406,9 @@ func (t *Tunnel) startWithDevice(dev tun.Device, readyMsg string) error {
 	t.mu.Unlock()
 
 	pump := clientcore.NewPump(sess, dev)
+	if t.dataWatch {
+		pump.EnableDataWatch()
+	}
 	t.mu.Lock()
 	t.pump = pump
 	t.mu.Unlock()
@@ -413,9 +421,6 @@ func (t *Tunnel) startWithDevice(dev tun.Device, readyMsg string) error {
 
 func (t *Tunnel) runPump(ctx context.Context, pump *clientcore.Pump, prof *clientcore.Profile, cb Callback) {
 	err := pump.Run(ctx, func(ctx context.Context) (*clientcore.Session, error) {
-		if cb != nil {
-			cb.OnStatus("reconnecting")
-		}
 		// Swift owns the socket. Redialing on the same NWUDPSession writes a
 		// second handshake the server accepts, then the unread reply dies at
 		// the 15s handshake timeout and Connect stays stuck. A new socket has
@@ -430,44 +435,18 @@ func (t *Tunnel) runPump(ctx context.Context, pump *clientcore.Pump, prof *clien
 			}
 			return nil, err
 		}
-		s, err := connectSession(ctx, prof, t.pipe, nil)
+		s, err := t.restoreSession(ctx, prof, cb)
 		if err != nil {
 			return nil, err
 		}
-		t.mu.Lock()
-		if t.stopped {
-			t.mu.Unlock()
-			s.Close()
-			return nil, context.Canceled
-		}
-		prev := t.lastAddr
-		newAddr := ""
-		if len(s.AssignedPrefixes) > 0 {
-			newAddr = s.AssignedPrefixes[0].Addr().String()
-		}
-		cancel := t.cancel
-		if prev != "" && newAddr != "" && prev != newAddr {
-			t.mu.Unlock()
-			log.Printf("assigned address changed %s -> %s; requesting TUN rebuild", prev, newAddr)
-			s.Close()
-			if cb != nil {
-				cb.OnStatus("assigned-ip-changed")
-			}
-			if cancel != nil {
-				cancel()
-			}
-			return nil, context.Canceled
-		}
-		t.sess = s
-		rememberAssigned(t, s)
-		t.mu.Unlock()
 		if cb != nil {
 			via := ""
 			if s.DialAddr != "" {
 				via = " via " + s.DialAddr
 			}
-			if newAddr != "" {
-				cb.OnStatus("reconnected" + via + ", assigned " + newAddr)
+			addr := assignedHost(s)
+			if addr != "" {
+				cb.OnStatus("reconnected" + via + ", assigned " + addr)
 			} else {
 				cb.OnStatus("reconnected" + via)
 			}
@@ -484,6 +463,101 @@ func (t *Tunnel) runPump(ctx context.Context, pump *clientcore.Pump, prof *clien
 	if err != nil && !errors.Is(err, context.Canceled) && cb != nil {
 		cb.OnError(err.Error())
 	}
+}
+
+// restoreSession dials the next transport and returns it only after an ICMP
+// echo crosses the new session. The status callback runs before that echo
+// so Android can protect and bind the new socket first. Automatic mode
+// tries UDP once, then TCP. TCP stays selected after it has carried data.
+func (t *Tunnel) restoreSession(ctx context.Context, prof *clientcore.Profile, cb Callback) (*clientcore.Session, error) {
+	t.mu.Lock()
+	t.sess = nil
+	t.mu.Unlock()
+	if cb != nil {
+		cb.OnStatus("reconnecting")
+	}
+	steps := t.plan.Steps()
+	var last error
+	for _, step := range steps {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		log.Printf("restore: trying %s", step)
+		next := *prof
+		next.Transport = step
+		s, err := connectSession(ctx, &next, nil, nil)
+		if err != nil {
+			last = err
+			log.Printf("restore: %s dial failed: %v", step, err)
+			continue
+		}
+		if err := t.publishSession(s, cb); err != nil {
+			return nil, err
+		}
+		// Protect/bind the new fd before any tunnel packet is written.
+		if cb != nil {
+			cb.OnStatus("reconnecting")
+		}
+		if err := s.ProbeGateway(3 * time.Second); err != nil {
+			last = err
+			log.Printf("restore: %s data check failed: %v", step, err)
+			t.dropSession(s)
+			continue
+		}
+		t.plan.ConfirmTCP(step)
+		log.Printf("restore: %s data ok", step)
+		return s, nil
+	}
+	if last == nil {
+		last = fmt.Errorf("restore failed")
+	}
+	return nil, last
+}
+
+func (t *Tunnel) publishSession(s *clientcore.Session, cb Callback) error {
+	t.mu.Lock()
+	if t.stopped {
+		t.mu.Unlock()
+		s.Close()
+		return context.Canceled
+	}
+	prev := t.lastAddr
+	newAddr := assignedHost(s)
+	cancel := t.cancel
+	if prev != "" && newAddr != "" && prev != newAddr {
+		t.mu.Unlock()
+		log.Printf("assigned address changed %s -> %s; requesting TUN rebuild", prev, newAddr)
+		s.Close()
+		if cb != nil {
+			cb.OnStatus("assigned-ip-changed")
+		}
+		if cancel != nil {
+			cancel()
+		}
+		return context.Canceled
+	}
+	t.sess = s
+	rememberAssigned(t, s)
+	t.mu.Unlock()
+	return nil
+}
+
+func (t *Tunnel) dropSession(s *clientcore.Session) {
+	t.mu.Lock()
+	if t.sess == s {
+		t.sess = nil
+	}
+	t.mu.Unlock()
+	if s != nil {
+		s.Close()
+	}
+}
+
+func assignedHost(s *clientcore.Session) string {
+	if s == nil || len(s.AssignedPrefixes) == 0 {
+		return ""
+	}
+	return s.AssignedPrefixes[0].Addr().String()
 }
 
 // FirstAddress returns the first server-assigned address as a string.

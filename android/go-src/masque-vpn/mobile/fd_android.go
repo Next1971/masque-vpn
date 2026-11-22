@@ -15,6 +15,7 @@ import (
 // The fd is consumed once. If the QUIC session dies, the same TUN is kept
 // and a new session is dialed; OnError is only used if the TUN itself fails.
 func (t *Tunnel) StartWithFD(fd int) error {
+	t.dataWatch = true
 	dev, name, err := tun.CreateUnmonitoredTUNFromFD(fd)
 	if err != nil {
 		return fmt.Errorf("create TUN from fd %d: %w", fd, err)
@@ -55,9 +56,14 @@ func Connect(cfg *Config, fd int, cb Callback) (*Tunnel, error) {
 		}
 	}
 
-	t := &Tunnel{sess: sess, prof: prof, ctx: ctx, cancel: cancel, cb: cb, started: true}
+	t := &Tunnel{
+		sess: sess, prof: prof, ctx: ctx, cancel: cancel, cb: cb, started: true,
+		plan:      clientcore.NewRecoverPlan(prof.Transport),
+		dataWatch: true,
+	}
 	rememberAssigned(t, sess)
 	pump := clientcore.NewPump(sess, dev)
+	pump.EnableDataWatch()
 	t.mu.Lock()
 	t.pump = pump
 	t.mu.Unlock()

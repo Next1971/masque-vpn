@@ -27,4 +27,11 @@ func TestICMPEchoReplyFrom(t *testing.T) {
 	if icmpEchoReplyFrom(req, src) {
 		t.Fatal("reply source is not the client")
 	}
+	if !ourEchoReply(req, gw) {
+		t.Fatal("expected our probe reply")
+	}
+	req[ihl+4] = 0
+	if ourEchoReply(req, gw) {
+		t.Fatal("foreign echo id is not our probe")
+	}
 }

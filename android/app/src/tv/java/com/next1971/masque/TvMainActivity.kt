@@ -208,7 +208,12 @@ class TvMainActivity : ComponentActivity() {
         if (MasqueVpnService.isRunning) {
             connected = true
             connecting = false
-            statusView.text = "Status: VPN active"
+            statusView.text = if (MasqueVpnService.restoring) {
+                "Status: Restoring connection…"
+            } else {
+                "Status: VPN active"
+            }
+            if (MasqueVpnService.restoring) pingView.text = "Ping: —"
             connectBtn.text = "Disconnect"
         } else if (!connecting) {
             connected = false

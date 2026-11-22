@@ -49,6 +49,12 @@ class MasqueVpnService : VpnService() {
         var isRunning: Boolean = false
             private set
 
+        // True while a dead data plane is being replaced. The ping tick must
+        // not paint the last RTT as a live tunnel during that window.
+        @Volatile
+        var restoring: Boolean = false
+            private set
+
         const val TUN_ADDR_FALLBACK = "10.8.0.254"
         // Server still assigns a CONNECT-IP /32. VpnService needs /24 on-link
         // or some OEMs source packets from Wi-Fi (192.168.x.x); the server
@@ -82,6 +88,12 @@ class MasqueVpnService : VpnService() {
             try {
                 ProfileStore.noteTraffic(this@MasqueVpnService, t.trafficBytes())
             } catch (_: Exception) {
+            }
+            if (restoring) {
+                broadcast("Restoring connection…")
+                updateNotification("Restoring connection…")
+                rttHandler.postDelayed(this, 2000)
+                return
             }
             val text = if (ms > 0) "VPN active · ping $ms ms" else "VPN active"
             broadcast(text)
@@ -175,11 +187,23 @@ class MasqueVpnService : VpnService() {
                     vpnWorker.execute { rebuildTunnel() }
                     return
                 }
-                broadcast(msg ?: "")
-                updateNotification(msg ?: "Connected")
                 if (msg != null && msg.startsWith("reconnect")) {
                     underlying?.let { applyUnderlying(it) } ?: protectUdp()
                 }
+                if (msg != null && msg.startsWith("reconnecting")) {
+                    restoring = true
+                    broadcast("Restoring connection…")
+                    updateNotification("Restoring connection…")
+                    return
+                }
+                if (msg != null && msg.startsWith("reconnected")) {
+                    restoring = false
+                    broadcast("VPN active")
+                    updateNotification("VPN active")
+                    return
+                }
+                broadcast(msg ?: "")
+                updateNotification(msg ?: "Connected")
             }
             override fun onError(msg: String?) {
                 Log.e(TAG, "fatal: $msg")
@@ -192,6 +216,7 @@ class MasqueVpnService : VpnService() {
             }
         }
 
+        restoring = false
         var lastError = "tunnel did not pass traffic"
         for (attempt in 1..3) {
             if (userStop) return
@@ -501,6 +526,7 @@ class MasqueVpnService : VpnService() {
     private fun tearDownTunnel(stopService: Boolean) {
         synchronized(vpnLock) {
             isRunning = false
+            restoring = false
             retryPosted = false
             releaseLocks()
             rttHandler.removeCallbacks(rttTick)
