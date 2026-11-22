@@ -33,7 +33,7 @@ func main() {
 	a.SetIcon(icon)
 	w := a.NewWindow("MASQUE server setup (experimental)")
 	w.SetIcon(icon)
-	w.Resize(fyne.NewSize(680, 920))
+	w.Resize(fyne.NewSize(660, 700))
 
 	sshHost := widget.NewEntry()
 	sshHost.SetPlaceHolder("VPS IP or hostname")
@@ -53,7 +53,7 @@ func main() {
 
 	logBox := widget.NewMultiLineEntry()
 	logBox.Wrapping = fyne.TextWrapWord
-	logBox.SetMinRowsVisible(12)
+	logBox.SetMinRowsVisible(8)
 
 	portSelect := widget.NewSelect([]string{}, nil)
 	portSelect.PlaceHolder = "Connect first"
@@ -418,14 +418,10 @@ func main() {
 		widget.NewRichTextFromMarkdown("## MASQUE VPS installer (experimental)\n\n**Test / pre-release.** This can break a VPS or leak a root password if you use it carelessly. Do not treat it as a finished product. Compromised client CNs can be revoked (denylist + service restart)."),
 		widget.NewLabel("Ubuntu 22.04/24.04/26.04 or Debian 12, as root. If MASQUE is already installed, Connect skips install and opens key issuance."),
 		widget.NewForm(
-			widget.NewFormItem("SSH host", sshHost),
-			widget.NewFormItem("SSH port", sshPort),
-			widget.NewFormItem("User", sshUser),
-			widget.NewFormItem("Password", password),
-			widget.NewFormItem("Private key", container.NewBorder(nil, nil, nil, pickKey, keyPath)),
-			widget.NewFormItem("Key passphrase", keyPass),
-			widget.NewFormItem("Public host (TLS)", publicHost),
-			widget.NewFormItem("Linux server binary", container.NewBorder(nil, nil, nil, pickBin, binPath)),
+			widget.NewFormItem("SSH host and port", container.NewGridWithColumns(2, sshHost, sshPort)),
+			widget.NewFormItem("User and password", container.NewGridWithColumns(2, sshUser, password)),
+			widget.NewFormItem("Private key and passphrase", container.NewGridWithColumns(2, container.NewBorder(nil, nil, nil, pickKey, keyPath), keyPass)),
+			widget.NewFormItem("Public host (TLS) and Linux server binary", container.NewGridWithColumns(2, publicHost, container.NewBorder(nil, nil, nil, pickBin, binPath))),
 		),
 		connectBtn,
 		widget.NewLabel("Listen port is UDP and TCP together. Candidates: 443, 2053, 8443, 41234. If UDP or TCP is already taken, Confirm asks whether to continue or pick another port."),
@@ -550,11 +546,11 @@ func showProfileQR(w fyne.Window, profile []byte) {
 	}
 	pic := canvas.NewImageFromImage(img)
 	pic.FillMode = canvas.ImageFillContain
-	pic.SetMinSize(fyne.NewSize(440, 440))
+	pic.SetMinSize(fyne.NewSize(330, 330))
 	note := widget.NewLabel("This code is the profile, including the private key. Scan it in the MASQUE app on an Android phone or iPhone. The file is still saved. Android TV and the Windows client use the file.")
 	note.Wrapping = fyne.TextWrapWord
 	d := dialog.NewCustom("Scan profile", "Close", container.NewVBox(note, pic), w)
-	d.Resize(fyne.NewSize(520, 700))
+	d.Resize(fyne.NewSize(460, 580))
 	d.Show()
 }
 
