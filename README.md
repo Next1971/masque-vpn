@@ -1,5 +1,8 @@
 # MASQUE VPN
 
+[![Donate Bitcoin](https://img.shields.io/badge/Donate-Bitcoin-F7931A?logo=bitcoin&logoColor=white)](DONATE.md#bitcoin-btc)
+[![Donate Monero](https://img.shields.io/badge/Donate-Monero-FF6600?logo=monero&logoColor=white)](DONATE.md#monero-xmr)
+
 Self-hosted MASQUE CONNECT-IP VPN: your VPS, your certificate authority, one profile per device. HTTP/3 over QUIC (UDP) is the normal transport; HTTP/2 over TCP is available on the same port number. VPN access requires a valid client certificate.
 
 Clients: Android, Android TV, Windows, and [iOS 2.1.1 via TestFlight](https://testflight.apple.com/join/x52N41V1). No IPA is attached to GitHub Releases.
@@ -86,5 +89,10 @@ The Go server and shared client core live in android/go-src/masque-vpn/ (module 
 - [Contributing](CONTRIBUTING.md)
 - [Report a bug](../../issues/new/choose)
 - [Discussions](../../discussions)
+- [Support the project](DONATE.md)
 
 Versioned documentation beside the code is the source of truth for exact commands and configuration formats.
+
+## Support the project
+
+MASQUE VPN is developed independently. If it is useful to you, you can support its development with [Bitcoin or Monero](DONATE.md).
