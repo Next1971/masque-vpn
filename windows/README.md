@@ -24,6 +24,12 @@ Use Disconnect to stop the tunnel; hiding/closing the GUI is not Disconnect. Pro
 
 Prefer the single-file profile.masque format. The older TOML-plus-certs format remains documented for console debugging below; no unverified removal date is promised here.
 
+### Multiple profiles
+
+The GUI stores several imported profiles and connects with the selected one. Each profile lives in its own directory under %ProgramData%\MASQUE\profiles\; a single active-profile pointer selects what Connect uses. Re-importing a bundle with the same server name and client certificate updates that entry in place instead of creating a duplicate, and a pre-2.2 single-profile install migrates automatically on first use.
+
+Pick the active profile in the GUI dropdown. Switching to another profile while connected disconnects the current session first, after a confirmation. Delete profile removes the stored certificates from this PC; it does not revoke anything on the server. Transport, MTU, kill switch, autoconnect, and traffic statistics are per-device settings and stay global across profiles.
+
 ### Compatibility
 
 Existing profiles and certificates remain unchanged. Keep the v2.1.0 server. A v2.1.3 client can use that server over UDP or TCP. TCP requires a v2.0.0 or v2.1.0 server; the HTML response to unauthenticated TCP connections belongs to the v2.1.0 server. Older UDP clients can still reach that server over UDP.

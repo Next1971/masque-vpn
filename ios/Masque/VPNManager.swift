@@ -14,6 +14,10 @@ final class VPNManager: ObservableObject {
     @Published var killSwitch = false
     @Published var trafficText = "Today: 0.0 MB\nMonth: 0.0 MB"
     @Published var lastError: String?
+    @Published var profiles: [ProfileStore.ProfileInfo] = []
+    /// Set when a switch was requested while the tunnel was up; applied when
+    /// the disconnect finishes (see publish).
+    private var pendingSwitchID: String?
 
     /// User tapped Disconnect or cancel. Stops the kill-switch retry.
     private var userStop = false
@@ -92,12 +96,14 @@ final class VPNManager: ObservableObject {
     }
 
     func refreshProfileStatus() {
+        refreshProfiles()
         if ProfileStore.isConfigured() {
             if !connected && !busy {
                 // Keep a failure on screen: "profile ready" used to wipe the
                 // reason the tunnel just died.
                 showTunnelError(AppGroup.defaults.string(forKey: AppGroup.defaultsLastError) ?? "")
-                statusText = "Status: profile ready"
+                let name = ProfileStore.activeName()
+                statusText = name.isEmpty ? "Status: profile ready" : "Status: profile ready · \(name)"
             }
         } else {
             statusText = "Status: profile not configured"
@@ -134,8 +140,38 @@ final class VPNManager: ObservableObject {
         }
     }
 
+    /// Syncs the picker with what ProfileStore has on disk.
+    func refreshProfiles() {
+        profiles = ProfileStore.list()
+    }
+
+    /// Switches the active profile. With the tunnel up it disconnects first
+    /// and applies the switch when the stop finishes (see publish).
+    func switchProfile(to info: ProfileStore.ProfileInfo) {
+        if connected || busy {
+            pendingSwitchID = info.id
+            statusText = "Status: disconnecting"
+            beginUserStop()
+            return
+        }
+        applySwitch(to: info)
+    }
+
+    private func applySwitch(to info: ProfileStore.ProfileInfo) {
+        if ProfileStore.setActive(info.id) {
+            lastError = nil
+        }
+        refreshProfileStatus()
+    }
+
+    func deleteProfile(_ info: ProfileStore.ProfileInfo) {
+        _ = ProfileStore.delete(info.id)
+        refreshProfileStatus()
+    }
+
     func importFile(url: URL) {
         lastError = nil
+        pendingSwitchID = nil
         let accessed = url.startAccessingSecurityScopedResource()
         defer {
             if accessed { url.stopAccessingSecurityScopedResource() }
@@ -151,6 +187,7 @@ final class VPNManager: ObservableObject {
 
     func importText(_ text: String) {
         lastError = nil
+        pendingSwitchID = nil
         do {
             try ProfileStore.importText(text)
             refreshProfileStatus()
@@ -588,6 +625,13 @@ final class VPNManager: ObservableObject {
                 userStop = false
                 killSwitchRetryPending = false
                 setBusy(false)
+                if let pid = pendingSwitchID {
+                    pendingSwitchID = nil
+                    if let info = profiles.first(where: { $0.id == pid }) {
+                        applySwitch(to: info)
+                        return
+                    }
+                }
                 refreshProfileStatus()
                 return
             }

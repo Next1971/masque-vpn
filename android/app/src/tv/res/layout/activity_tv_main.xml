@@ -79,12 +79,47 @@
             android:maxLines="2"
             android:layout_marginBottom="14dp" />
 
+        <!-- Profile picker row: Connect stays the first control; the spinner
+             is one D-pad Up away from it. The row keeps the column inside the
+             ~460dp budget; ScrollView remains the overflow fallback. -->
+        <LinearLayout
+            android:layout_width="520dp"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="10dp">
+
+            <Spinner
+                android:id="@+id/tvProfileSpinner"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="1"
+                android:background="@drawable/tv_button_background"
+                android:paddingLeft="12dp"
+                android:nextFocusDown="@+id/tvBtnConnect"
+                android:nextFocusRight="@+id/tvBtnDeleteProfile" />
+
+            <Button
+                android:id="@+id/tvBtnDeleteProfile"
+                style="@style/TvScreenButton"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:layout_marginStart="10dp"
+                android:minWidth="0dp"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:text="Delete"
+                android:nextFocusLeft="@+id/tvProfileSpinner"
+                android:nextFocusDown="@+id/tvBtnConnect" />
+        </LinearLayout>
+
         <Button
             android:id="@+id/tvBtnConnect"
             style="@style/TvScreenButton.Primary"
             android:layout_width="520dp"
             android:layout_height="wrap_content"
             android:text="Connect"
+            android:nextFocusUp="@+id/tvProfileSpinner"
             android:nextFocusDown="@+id/tvBtnClipboard"
             android:layout_marginBottom="10dp" />
 

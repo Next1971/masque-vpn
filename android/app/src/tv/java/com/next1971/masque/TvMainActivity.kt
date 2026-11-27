@@ -11,8 +11,11 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -33,6 +36,10 @@ class TvMainActivity : ComponentActivity() {
     private lateinit var pingView: TextView
     private lateinit var trafficView: TextView
     private lateinit var connectBtn: Button
+    private lateinit var profileSpinner: Spinner
+    private lateinit var deleteProfileBtn: Button
+    private var profiles: List<ProfileInfo> = emptyList()
+    private var activeLabel: String? = null
     private var connected = false
     private var connecting = false
 
@@ -72,7 +79,60 @@ class TvMainActivity : ComponentActivity() {
         pingView = findViewById(R.id.tvPing)
         trafficView = findViewById(R.id.tvTraffic)
         connectBtn = findViewById(R.id.tvBtnConnect)
+        profileSpinner = findViewById(R.id.tvProfileSpinner)
+        deleteProfileBtn = findViewById(R.id.tvBtnDeleteProfile)
         findViewById<TextView>(R.id.tvVersion).text = appVersionLabel()
+
+        profileSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val label = (parent?.adapter as? ArrayAdapter<String>)?.getItem(position) ?: return
+                if (label == activeLabel) return // programmatic set, or already active
+                val info = profiles.getOrNull(position) ?: return
+                if (info.isActive) return
+                val switch = {
+                    if (MasqueVpnService.isRunning) {
+                        startService(
+                            Intent(this@TvMainActivity, MasqueVpnService::class.java)
+                                .setAction(MasqueVpnService.ACTION_DISCONNECT)
+                        )
+                    }
+                    ProfileStore.setActive(this@TvMainActivity, info.id)
+                    refreshUi()
+                    toast("Active profile: ${info.name}")
+                }
+                if (connected || connecting) {
+                    AlertDialog.Builder(this@TvMainActivity, R.style.Theme_MasqueTv_Dialog)
+                        .setTitle("Switch profile")
+                        .setMessage("Switching to \"${info.name}\" disconnects the current VPN session.")
+                        .setPositiveButton("Switch") { _, _ -> switch() }
+                        .setNegativeButton("Cancel") { _, _ -> refreshProfiles() }
+                        .show()
+                } else {
+                    switch()
+                }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+        deleteProfileBtn.setOnClickListener {
+            val info = profiles.getOrNull(profileSpinner.selectedItemPosition) ?: return@setOnClickListener
+            AlertDialog.Builder(this, R.style.Theme_MasqueTv_Dialog)
+                .setTitle("Delete profile")
+                .setMessage(
+                    "Delete profile \"${info.name}\"? Its certificates are removed from this device. " +
+                        "The profile file you imported stays where it is."
+                )
+                .setPositiveButton("Delete") { _, _ ->
+                    if (ProfileStore.delete(this, info.id)) {
+                        toast("Profile deleted")
+                    } else {
+                        toast("Unable to delete profile")
+                    }
+                    refreshUi()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
 
         val pasteBtn = findViewById<Button>(R.id.tvBtnPaste)
         val clipboardBtn = findViewById<Button>(R.id.tvBtnClipboard)
@@ -83,6 +143,8 @@ class TvMainActivity : ComponentActivity() {
         setupTvFocusAnimation(pasteBtn)
         setupTvFocusAnimation(clipboardBtn)
         setupTvFocusAnimation(connectBtn)
+        setupTvFocusAnimation(profileSpinner)
+        setupTvFocusAnimation(deleteProfileBtn)
 
         val settingsBtn = findViewById<Button>(R.id.tvBtnSettings)
         settingsBtn.setOnClickListener { ClientSettings.show(this) }
@@ -173,7 +235,11 @@ class TvMainActivity : ComponentActivity() {
 
     private fun applyProfile(text: String) {
         ProfileStore.import(this, text)
-            .onSuccess { toast("Profile imported"); if (!MasqueVpnService.isRunning) refresh() }
+            .onSuccess {
+                val name = ProfileStore.activeName(this)
+                toast(if (name.isNotEmpty()) "Profile imported: $name" else "Profile imported")
+                if (!MasqueVpnService.isRunning) refresh()
+            }
             .onFailure { toast("Profile error: ${it.message}") }
     }
 
@@ -205,6 +271,7 @@ class TvMainActivity : ComponentActivity() {
 
     private fun refreshUi() {
         trafficView.text = ProfileStore.trafficLabel(this)
+        refreshProfiles()
         if (MasqueVpnService.isRunning) {
             connected = true
             connecting = false
@@ -224,8 +291,30 @@ class TvMainActivity : ComponentActivity() {
     }
 
     private fun refresh() {
-        val ok = ProfileStore.isConfigured(this)
-        statusView.text = if (ok) "Status: profile ready" else "Status: profile not configured"
+        val name = ProfileStore.activeName(this)
+        statusView.text = if (name.isNotEmpty()) "Status: profile ready · $name" else "Status: profile not configured"
+    }
+
+    /** Syncs the profile picker with what ProfileStore has on disk. The
+     *  onItemSelected handler ignores the programmatic set because the label it
+     *  receives then equals activeLabel. Delete is disabled while the VPN
+     *  service owns a session, so an active profile is never removed under it. */
+    private fun refreshProfiles() {
+        profiles = ProfileStore.list(this)
+        val labels = profiles.map { labelFor(it) }
+        activeLabel = profiles.firstOrNull { it.isActive }?.let { labelFor(it) }
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        profileSpinner.adapter = adapter
+        val idx = profiles.indexOfFirst { it.isActive }
+        if (idx >= 0) profileSpinner.setSelection(idx, false)
+        deleteProfileBtn.isEnabled = idx >= 0 && !MasqueVpnService.isRunning
+    }
+
+    /** Duplicate profile names get the server address appended. */
+    private fun labelFor(info: ProfileInfo): String {
+        val dup = profiles.count { it.name == info.name } > 1
+        return if (dup && info.server.isNotEmpty()) "${info.name} — ${info.server}" else info.name
     }
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()

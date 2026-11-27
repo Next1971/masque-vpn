@@ -3,6 +3,12 @@ import Foundation
 enum AppGroup {
     static let id = "group.com.next1971.masque"
     static let profileRelative = "certs"
+    /// Stored profiles live one directory each under profiles\<id>\; the
+    /// activeProfile default names the one Connect uses.
+    static let profilesRelative = "profiles"
+    static let defaultsActiveProfile = "activeProfile"
+    /// Set after the pre-2.2 single-profile install was copied into profiles\.
+    static let defaultsMigratedProfiles = "migratedProfiles"
     static let defaultsMTU = "mtu"
     static let defaultsTransport = "transport"
     static let defaultsKillSwitch = "killSwitch"
@@ -31,6 +37,10 @@ enum AppGroup {
 
     static var certsDir: URL? {
         containerURL?.appendingPathComponent(profileRelative, isDirectory: true)
+    }
+
+    static var profilesDir: URL? {
+        containerURL?.appendingPathComponent(profilesRelative, isDirectory: true)
     }
 
     /// Go asks Swift for a new socket with this text. It is not a failure to show.

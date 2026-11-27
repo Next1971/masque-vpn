@@ -27,6 +27,12 @@ import (
 //go:embed icon.png
 var iconPNG []byte
 
+var (
+	profileSel *widget.Select
+	deleteBtn  *widget.Button
+	selProgram bool // true while refresh writes the selection programmatically
+)
+
 func main() {
 	a := app.NewWithID("com.masque.vpn")
 	icon := fyne.NewStaticResource("icon.png", iconPNG)
@@ -99,6 +105,70 @@ func main() {
 		showSettings(w)
 	})
 
+	profileSel = widget.NewSelect([]string{}, nil)
+	profileSel.PlaceHolder = "No profile"
+	profileSel.OnChanged = func(label string) {
+		if label == "" || selProgram {
+			return
+		}
+		infos, err := fetchProfiles()
+		if err != nil {
+			return
+		}
+		info, ok := findProfile(infos, label)
+		if !ok || info.Active {
+			return // the picker was set to the active profile; nothing to switch
+		}
+		switchTo := func() {
+			if _, err := ipc.RoundTrip(ipc.Request{Cmd: ipc.CmdDisconnect}); err != nil {
+				dialog.ShowError(err, w)
+				return
+			}
+			if _, err := ipc.RoundTrip(ipc.Request{Cmd: ipc.CmdSetActive, ProfileID: info.ID}); err != nil {
+				dialog.ShowError(err, w)
+				return
+			}
+			refresh(status, detail, ping, traffic, auto)
+		}
+		resp, serr := ipc.RoundTrip(ipc.Request{Cmd: ipc.CmdStatus})
+		if serr == nil && (resp.State == ipc.StateConnecting || resp.State == ipc.StateConnected || resp.State == ipc.StateReconnecting) {
+			dialog.NewConfirm("Switch profile",
+				fmt.Sprintf("Switching to %q disconnects the current VPN session.", label),
+				func(ok bool) {
+					if ok {
+						switchTo()
+						return
+					}
+					refresh(status, detail, ping, traffic, auto) // snap the picker back
+				}, w).Show()
+			return
+		}
+		switchTo()
+	}
+	deleteBtn = widget.NewButton("Delete profile", func() {
+		infos, err := fetchProfiles()
+		if err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		info, ok := findProfile(infos, profileSel.Selected)
+		if !ok {
+			return
+		}
+		dialog.NewConfirm("Delete profile",
+			fmt.Sprintf("Delete profile %q? Its certificates are removed from this PC. The profile file you imported stays where it is.", info.Name),
+			func(ok bool) {
+				if !ok {
+					return
+				}
+				if _, err := ipc.RoundTrip(ipc.Request{Cmd: ipc.CmdDeleteProfile, ProfileID: info.ID}); err != nil {
+					dialog.ShowError(err, w)
+					return
+				}
+				refresh(status, detail, ping, traffic, auto)
+			}, w).Show()
+	})
+
 	ver := widget.NewLabel(version.Label())
 	ver.Importance = widget.LowImportance
 	w.SetContent(container.NewPadded(container.NewVBox(
@@ -109,7 +179,8 @@ func main() {
 		traffic,
 		detail,
 		layout.NewSpacer(),
-		importBtn,
+		profileSel,
+		container.NewGridWithColumns(2, importBtn, deleteBtn),
 		container.NewGridWithColumns(2, connectBtn, disconnectBtn),
 		settingsBtn,
 		auto,
@@ -149,6 +220,9 @@ func refresh(status, detail, ping, traffic *widget.Label, auto *widget.Check) {
 	if resp.AssignedIP != "" {
 		line += "  (" + resp.AssignedIP + ")"
 	}
+	if resp.ProfileName != "" {
+		line += " · " + resp.ProfileName
+	}
 	if !resp.Configured {
 		line += " — import a profile first"
 	}
@@ -165,6 +239,70 @@ func refresh(status, detail, ping, traffic *widget.Label, auto *widget.Check) {
 	traffic.SetText(fmt.Sprintf("Today: %s\nMonth: %s", formatMB(resp.DayBytes), formatMB(resp.MonthBytes)))
 	detail.SetText(resp.Detail)
 	auto.SetChecked(resp.Autoconnect)
+	refreshProfiles(resp)
+}
+
+// refreshProfiles syncs the picker with the profiles the service has stored.
+func refreshProfiles(st *ipc.Response) {
+	infos, err := fetchProfiles()
+	if err != nil {
+		return
+	}
+	labels := make([]string, 0, len(infos))
+	active := ""
+	for _, i := range infos {
+		l := profileLabel(i, infos)
+		labels = append(labels, l)
+		if i.Active {
+			active = l
+		}
+	}
+	selProgram = true
+	defer func() { selProgram = false }()
+	if len(labels) == 0 {
+		profileSel.ClearSelected()
+		profileSel.Options = nil
+		profileSel.PlaceHolder = "No profile"
+		deleteBtn.Disable()
+		return
+	}
+	profileSel.Options = labels
+	if profileSel.Selected != active {
+		profileSel.SetSelected(active)
+	}
+	deleteBtn.Enable()
+}
+
+func fetchProfiles() ([]ipc.ProfileInfo, error) {
+	resp, err := ipc.RoundTrip(ipc.Request{Cmd: ipc.CmdListProfiles})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Profiles, nil
+}
+
+// findProfile maps a picker label back to its profile. Labels disambiguate
+// duplicate names with the server address.
+func findProfile(infos []ipc.ProfileInfo, label string) (ipc.ProfileInfo, bool) {
+	for _, i := range infos {
+		if profileLabel(i, infos) == label {
+			return i, true
+		}
+	}
+	return ipc.ProfileInfo{}, false
+}
+
+func profileLabel(info ipc.ProfileInfo, all []ipc.ProfileInfo) string {
+	n := 0
+	for _, o := range all {
+		if o.Name == info.Name {
+			n++
+		}
+	}
+	if n > 1 && info.Server != "" {
+		return info.Name + " — " + info.Server
+	}
+	return info.Name
 }
 
 func showSettings(w fyne.Window) {
