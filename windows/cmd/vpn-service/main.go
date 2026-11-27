@@ -201,9 +201,53 @@ func handle(eng *engine.Engine, req ipc.Request) ipc.Response {
 		MTU:         snap.MTU,
 		DayBytes:    snap.DayBytes,
 		MonthBytes:  snap.MonthBytes,
+		ProfileName: snap.ProfileName,
 	}
 	switch req.Cmd {
 	case ipc.CmdStatus:
+		return resp
+	case ipc.CmdListProfiles:
+		infos, err := eng.ListProfiles()
+		if err != nil {
+			resp.OK = false
+			resp.Error = err.Error()
+			return resp
+		}
+		out := make([]ipc.ProfileInfo, 0, len(infos))
+		for _, i := range infos {
+			out = append(out, ipc.ProfileInfo{ID: i.ID, Name: i.Name, Server: i.Server, Active: i.Active})
+		}
+		resp.Profiles = out
+		return resp
+	case ipc.CmdSetActive:
+		if req.ProfileID == "" {
+			resp.OK = false
+			resp.Error = "missing profile_id"
+			return resp
+		}
+		if err := eng.SetActiveProfile(req.ProfileID); err != nil {
+			resp.OK = false
+			resp.Error = err.Error()
+			return resp
+		}
+		snap = eng.Snapshot()
+		resp.Detail = snap.Detail
+		resp.ProfileName = snap.ProfileName
+		return resp
+	case ipc.CmdDeleteProfile:
+		if req.ProfileID == "" {
+			resp.OK = false
+			resp.Error = "missing profile_id"
+			return resp
+		}
+		if err := eng.DeleteProfile(req.ProfileID); err != nil {
+			resp.OK = false
+			resp.Error = err.Error()
+			return resp
+		}
+		snap = eng.Snapshot()
+		resp.Detail = snap.Detail
+		resp.ProfileName = snap.ProfileName
 		return resp
 	case ipc.CmdImport:
 		if err := eng.Import(req.Text, req.Filename, req.CA, req.Cert, req.Key); err != nil {

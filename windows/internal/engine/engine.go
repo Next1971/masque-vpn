@@ -46,6 +46,7 @@ type Status struct {
 	MTU         int
 	DayBytes    int64
 	MonthBytes  int64
+	ProfileName string
 }
 
 type Engine struct {
@@ -94,6 +95,7 @@ func (e *Engine) Snapshot() Status {
 	s.KillSwitch = st.KillSwitch
 	s.Transport = st.EffectiveTransport()
 	s.MTU = st.EffectiveMTU()
+	s.ProfileName = store.ActiveName()
 	s.RTTMs = 0
 	var total int64
 	if e.pump != nil && (s.State == ipc.StateConnected || s.State == ipc.StateReconnecting) {
@@ -126,6 +128,7 @@ func (e *Engine) set(state, detail, ip string) {
 	e.status.Configured = store.Configured()
 	e.status.Autoconnect = st.Autoconnect
 	e.status.KillSwitch = st.KillSwitch
+	e.status.ProfileName = store.ActiveName()
 	snap := e.status
 	cb := e.onChange
 	hub := e.hub
@@ -138,7 +141,7 @@ func (e *Engine) set(state, detail, ip string) {
 			OK: true, State: snap.State, Detail: snap.Detail,
 			Configured: snap.Configured, Autoconnect: snap.Autoconnect,
 			KillSwitch: snap.KillSwitch, AssignedIP: snap.AssignedIP,
-			RTTMs: snap.RTTMs,
+			RTTMs: snap.RTTMs, ProfileName: snap.ProfileName,
 		})
 	}
 }
@@ -153,7 +156,46 @@ func (e *Engine) Import(text, filename, ca, cert, key string) error {
 	if err := store.Import(text, filename, ca, cert, key); err != nil {
 		return err
 	}
-	e.set(ipc.StateDisconnected, "profile imported", "")
+	e.set(ipc.StateDisconnected, "profile imported: "+store.ActiveName(), "")
+	return nil
+}
+
+// ListProfiles returns every stored profile for the GUI picker.
+func (e *Engine) ListProfiles() ([]store.Info, error) {
+	return store.List()
+}
+
+// SetActiveProfile switches the profile Connect uses. Switching while a
+// session is up is refused; the GUI disconnects first (after confirming).
+func (e *Engine) SetActiveProfile(id string) error {
+	e.mu.Lock()
+	busy := e.cancel != nil
+	e.mu.Unlock()
+	if busy {
+		return fmt.Errorf("disconnect before switching profiles")
+	}
+	if err := store.SetActive(id); err != nil {
+		return err
+	}
+	e.set(ipc.StateDisconnected, "active profile: "+store.ActiveName(), "")
+	return nil
+}
+
+// DeleteProfile removes one stored profile. The active profile cannot be
+// deleted while its session is up; deleting the active profile otherwise
+// reactivates the first remaining one.
+func (e *Engine) DeleteProfile(id string) error {
+	e.mu.Lock()
+	busy := e.cancel != nil
+	e.mu.Unlock()
+	if active, err := store.ActiveID(); busy && err == nil && active == id {
+		return fmt.Errorf("disconnect before deleting the active profile")
+	}
+	if err := store.Delete(id); err != nil {
+		return err
+	}
+	s := e.Snapshot()
+	e.set(s.State, s.Detail, s.AssignedIP)
 	return nil
 }
 

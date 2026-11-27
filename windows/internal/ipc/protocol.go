@@ -7,6 +7,9 @@ const (
 	CmdConnect        = "connect"
 	CmdDisconnect     = "disconnect"
 	CmdStatus         = "status"
+	CmdListProfiles   = "list_profiles"
+	CmdSetActive      = "set_active"
+	CmdDeleteProfile  = "delete_profile"
 	CmdSetAutoconnect = "set_autoconnect"
 	CmdSetKillSwitch  = "set_kill_switch"
 	CmdSetTransport   = "set_transport"
@@ -29,26 +32,37 @@ type Request struct {
 	CA          string `json:"ca,omitempty"`
 	Cert        string `json:"cert,omitempty"`
 	Key         string `json:"key,omitempty"`
+	ProfileID   string `json:"profile_id,omitempty"`
 	Autoconnect *bool  `json:"autoconnect,omitempty"`
 	KillSwitch  *bool  `json:"kill_switch,omitempty"`
 	Transport   string `json:"transport,omitempty"`
 	MTU         int    `json:"mtu,omitempty"`
 }
 
+// ProfileInfo mirrors one stored profile for pickers in the GUI.
+type ProfileInfo struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Server string `json:"server"`
+	Active bool   `json:"active"`
+}
+
 type Response struct {
-	ID          uint64 `json:"id"`
-	OK          bool   `json:"ok"`
-	Error       string `json:"error,omitempty"`
-	Event       string `json:"event,omitempty"`
-	State       string `json:"state"`
-	Detail      string `json:"detail,omitempty"`
-	Configured  bool   `json:"configured"`
-	Autoconnect bool   `json:"autoconnect"`
-	KillSwitch  bool   `json:"kill_switch"`
-	AssignedIP  string `json:"assigned_ip,omitempty"`
-	RTTMs       int64  `json:"rtt_ms,omitempty"`
-	Transport   string `json:"transport,omitempty"`
-	MTU         int    `json:"mtu,omitempty"`
-	DayBytes    int64  `json:"day_bytes,omitempty"`
-	MonthBytes  int64  `json:"month_bytes,omitempty"`
+	ID          uint64        `json:"id"`
+	OK          bool          `json:"ok"`
+	Error       string        `json:"error,omitempty"`
+	Event       string        `json:"event,omitempty"`
+	State       string        `json:"state"`
+	Detail      string        `json:"detail,omitempty"`
+	Configured  bool          `json:"configured"`
+	Autoconnect bool          `json:"autoconnect"`
+	KillSwitch  bool          `json:"kill_switch"`
+	AssignedIP  string        `json:"assigned_ip,omitempty"`
+	RTTMs       int64         `json:"rtt_ms,omitempty"`
+	Transport   string        `json:"transport,omitempty"`
+	MTU         int           `json:"mtu,omitempty"`
+	DayBytes    int64         `json:"day_bytes,omitempty"`
+	MonthBytes  int64         `json:"month_bytes,omitempty"`
+	ProfileName string        `json:"profile_name,omitempty"`
+	Profiles    []ProfileInfo `json:"profiles,omitempty"`
 }
