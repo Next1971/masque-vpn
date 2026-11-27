@@ -12,14 +12,6 @@ struct MasqueProfile {
     var mtu: Int
 }
 
-/// One stored profile, for pickers in the host app.
-struct ProfileInfo {
-    var id: String
-    var name: String
-    var server: String
-    var isActive: Bool
-}
-
 /// Several profiles can be stored at once, one directory each under
 /// profiles\<id>\ in the App Group; the activeProfile default names the one
 /// Connect uses. Transport, MTU, and kill switch stay per-device settings.
@@ -27,6 +19,14 @@ struct ProfileInfo {
 /// profiles\ on first use; the legacy files stay in place so an older app
 /// build keeps working after a rollback.
 enum ProfileStore {
+    /// One stored profile, for pickers in the host app.
+    struct ProfileInfo {
+        var id: String
+        var name: String
+        var server: String
+        var isActive: Bool
+    }
+
     static func isConfigured() -> Bool {
         activeID() != nil
     }
