@@ -3,12 +3,14 @@ package com.next1971.masque
 import android.content.Context
 import android.util.Log
 import java.io.File
+import java.security.MessageDigest
 import java.util.Calendar
 import java.util.Locale
 
 /**
  * ProfileStore — parses the MASQUE profile and writes certificates to internal
- * app storage.
+ * app storage. Several profiles can be stored at once; one of them is the
+ * active profile that Connect uses.
  *
  * Profile format (.masque / .toml, self-contained, with inline PEM):
  *
@@ -38,8 +40,11 @@ import java.util.Locale
  *   """
  *
  * Kotlin parses this file (a minimal TOML parser for only the required keys and
- * triple quotes), writes ca/cert/key to files/certs/, and passes the paths to Go.
- * This lets the core, which reads certificates from paths, work unchanged.
+ * triple quotes), writes ca/cert/key into files/profiles/<id>/, and passes the
+ * paths to Go. This lets the core, which reads certificates from paths, work
+ * unchanged. files/profiles/active_id in SharedPreferences names the active
+ * profile. Transport, MTU, kill switch, and traffic counters are per-device
+ * settings and stay global.
  */
 data class Profile(
     val server: String,
@@ -51,10 +56,18 @@ data class Profile(
     val keyPath: String,
 )
 
+/** One stored profile, for pickers. */
+data class ProfileInfo(
+    val id: String,
+    val name: String,
+    val server: String,
+    val isActive: Boolean,
+)
+
 object ProfileStore {
     private const val TAG = "MasqueProfile"
     private const val PREFS = "masque"
-    private const val KEY_CONFIGURED = "configured"
+    private const val KEY_ACTIVE = "active_id"
     private const val KEY_KILL_SWITCH = "kill_switch"
     private const val KEY_TRANSPORT = "transport"
     private const val KEY_MTU = "mtu"
@@ -157,16 +170,133 @@ object ProfileStore {
         return "%04d-%02d".format(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1)
     }
 
-    fun isConfigured(ctx: Context): Boolean =
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_CONFIGURED, false) &&
-            File(certsDir(ctx), "server.txt").exists()
+    // --- stored profiles ---
 
-    private fun certsDir(ctx: Context): File =
-        File(ctx.filesDir, "certs").apply { mkdirs() }
+    fun isConfigured(ctx: Context): Boolean = activeId(ctx) != null
 
-    /** Imports a profile from file content, writes certificates, and saves metadata. */
+    /** Display name of the active profile, or "" when none is stored. */
+    fun activeName(ctx: Context): String = load(ctx)?.serverName ?: ""
+
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    private fun profilesDir(ctx: Context): File = File(ctx.filesDir, "profiles").apply { mkdirs() }
+
+    private fun profileDir(ctx: Context, id: String): File = File(profilesDir(ctx), id)
+
+    /** Profile ids sorted by name; a directory counts only with server.txt inside. */
+    private fun storedIds(ctx: Context): List<String> =
+        profilesDir(ctx).listFiles { f -> f.isDirectory && File(f, "server.txt").exists() }
+            ?.map { it.name }
+            ?.sorted()
+            ?: emptyList()
+
+    private fun activeId(ctx: Context): String? {
+        migrate(ctx)
+        val ids = storedIds(ctx)
+        if (ids.isEmpty()) return null
+        val saved = prefs(ctx).getString(KEY_ACTIVE, null)
+        if (saved != null && ids.contains(saved)) return saved
+        // Stale pointer (deleted profile): fall back to the first one.
+        prefs(ctx).edit().putString(KEY_ACTIVE, ids.first()).apply()
+        return ids.first()
+    }
+
+    /** Switches the active profile. Returns false when the id is not stored. */
+    fun setActive(ctx: Context, id: String): Boolean {
+        migrate(ctx)
+        if (!File(profileDir(ctx, id), "server.txt").exists()) return false
+        prefs(ctx).edit().putString(KEY_ACTIVE, id).apply()
+        return true
+    }
+
+    /** Removes one stored profile. Deleting the active one reactivates the first remaining. */
+    fun delete(ctx: Context, id: String): Boolean {
+        migrate(ctx)
+        val dir = profileDir(ctx, id)
+        if (!File(dir, "server.txt").exists()) return false
+        val wasActive = prefs(ctx).getString(KEY_ACTIVE, null) == id
+        if (!dir.deleteRecursively()) return false
+        if (wasActive) {
+            val ids = storedIds(ctx)
+            if (ids.isNotEmpty()) {
+                prefs(ctx).edit().putString(KEY_ACTIVE, ids.first()).apply()
+            } else {
+                prefs(ctx).edit().remove(KEY_ACTIVE).apply()
+            }
+        }
+        return true
+    }
+
+    fun list(ctx: Context): List<ProfileInfo> {
+        migrate(ctx)
+        val active = prefs(ctx).getString(KEY_ACTIVE, null)
+        return storedIds(ctx).map { id ->
+            val lines = runCatching { File(profileDir(ctx, id), "server.txt").readLines() }
+                .getOrDefault(emptyList())
+            ProfileInfo(
+                id = id,
+                name = lines.getOrNull(1)?.trim()?.ifEmpty { null } ?: "(invalid)",
+                server = lines.getOrNull(0)?.trim() ?: "",
+                isActive = id == active,
+            )
+        }.sortedBy { it.name }
+    }
+
+    /** The id derives from the server name plus the client certificate hash, so
+     *  re-importing the same bundle updates that entry instead of duplicating
+     *  it, and two devices on one server stay separate profiles. */
+    fun profileId(name: String, certPem: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(certPem.trim().toByteArray())
+        val hash = digest.joinToString("") { "%02x".format(it) }.take(8)
+        return slugify(name) + "-" + hash
+    }
+
+    private fun slugify(s: String): String {
+        val sb = StringBuilder()
+        for (ch in s.trim().lowercase()) {
+            sb.append(if (ch in 'a'..'z' || ch in '0'..'9') ch else '-')
+        }
+        var out = sb.toString().trim('-')
+        if (out.length > 40) out = out.take(40).trim('-')
+        return out.ifEmpty { "profile" }
+    }
+
+    /** Moves a pre-2.2 single-profile install (files/certs/) into
+     *  files/profiles/<id>/ and activates it. The legacy server.txt is removed
+     *  after a successful move, so a rerun finds nothing to migrate. */
+    fun migrate(ctx: Context) {
+        val legacyDir = File(ctx.filesDir, "certs")
+        val legacy = File(legacyDir, "server.txt")
+        if (!legacy.exists()) return
+        runCatching {
+            val lines = legacy.readLines()
+            if (lines.size < 3) return
+            val server = lines[0].trim()
+            val name = lines[1].trim()
+            val dns = lines[2].trim()
+            val alt = if (lines.size >= 4) lines[3].trim().toIntOrNull() ?: 0 else 0
+            val cert = File(legacyDir, "client.crt").readText()
+            val id = profileId(name, cert)
+            val dir = profileDir(ctx, id)
+            dir.mkdirs()
+            File(legacyDir, "ca.crt").copyTo(File(dir, "ca.crt"), overwrite = true)
+            File(legacyDir, "client.crt").copyTo(File(dir, "client.crt"), overwrite = true)
+            File(legacyDir, "client.key").copyTo(File(dir, "client.key"), overwrite = true)
+            File(dir, "server.txt").writeText("$server\n$name\n$dns\n$alt\n")
+            prefs(ctx).edit().putString(KEY_ACTIVE, id).apply()
+            legacy.delete()
+            File(legacyDir, "ca.crt").delete()
+            File(legacyDir, "client.crt").delete()
+            File(legacyDir, "client.key").delete()
+            Log.i(TAG, "migrated legacy profile to $id")
+        }.onFailure { Log.e(TAG, "migration failed", it) }
+    }
+
+    /** Imports a profile from file content, writes certificates under its id,
+     *  and makes it the active profile. */
     fun import(ctx: Context, content: String): Result<Unit> {
         return try {
+            migrate(ctx)
             val server = extractValue(content, "address")
                 ?: extractValue(content, "server")
                 ?: return Result.failure(IllegalArgumentException("missing server.address"))
@@ -177,14 +307,14 @@ object ProfileStore {
             val cert = extractBlock(content, "cert") ?: return Result.failure(IllegalArgumentException("missing tls.cert"))
             val key = extractBlock(content, "key") ?: return Result.failure(IllegalArgumentException("missing tls.key"))
 
-            val dir = certsDir(ctx)
+            val dir = profileDir(ctx, profileId(name, cert))
+            dir.mkdirs()
             File(dir, "ca.crt").writeText(ca.trim() + "\n")
             File(dir, "client.crt").writeText(cert.trim() + "\n")
             File(dir, "client.key").writeText(key.trim() + "\n")
             File(dir, "server.txt").writeText("$server\n$name\n$dns\n$altPort\n")
+            prefs(ctx).edit().putString(KEY_ACTIVE, dir.name).apply()
 
-            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putBoolean(KEY_CONFIGURED, true).apply()
             Log.i(TAG, "profile imported: server=$server name=$name dns=$dns alt_port=$altPort")
             Result.success(Unit)
         } catch (e: Exception) {
@@ -193,8 +323,10 @@ object ProfileStore {
         }
     }
 
+    /** Loads the active profile, or null when none is stored. */
     fun load(ctx: Context): Profile? {
-        val dir = certsDir(ctx)
+        val id = activeId(ctx) ?: return null
+        val dir = profileDir(ctx, id)
         val meta = File(dir, "server.txt")
         if (!meta.exists()) return null
         val lines = meta.readLines()
