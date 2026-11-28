@@ -64,17 +64,12 @@ The release scope is committed to these two items. A day within the month is not
 
 No committed release numbers or dates are assigned to the items below.
 
-- [ ] Windows: before connecting, detect another VPN that already owns the default route. Ask whether to continue: another VPN is already connected, and continuing builds a tunnel inside a tunnel («Уже подключен другой VPN. Вы действительно хотите сделать туннель в туннеле?»). Connect only after confirmation. Do not disconnect the other VPN. The Windows GUI is English, so the dialog copy should match that UI. If the user confirms, pin the MASQUE server bypass to the physical gateway. Checked before `CreateTUN`.
-- [ ] Android status-bar VPN indicator: no client change yet. NekoBox (`MatsuriDayo/NekoBoxForAndroid`) does not draw the system key. Its `VpnService` is `foregroundServiceType="systemExempted"`, `Builder.setConfigureIntent` is set, and the `service-vpn` channel is `IMPORTANCE_MIN` so the app notification stays out of the system key's way. The mark that stays visible on Samsung is the ongoing notification icon: solid pink vector `ic_service_active` (`#fb7299`), not a white silhouette. MASQUE uses `specialUse`, no configure intent, `IMPORTANCE_LOW`, and a white hdpi-only shield. Decide later whether to follow NekoBox or another client; do not change the Android client until then.
-- [ ] iOS status-bar VPN label and nested-VPN behavior: wait for tester reports before any packet-tunnel change.
+- [ ] Windows: before connecting, detect another VPN that already owns the default route. Ask whether to continue: another VPN is already connected, and continuing builds a tunnel inside a tunnel. Connect only after confirmation. Do not disconnect the other VPN. The Windows GUI is English, so the dialog copy should match that UI. If the user confirms, pin the MASQUE server bypass to the physical gateway. Checked before `CreateTUN`
 
 - [ ] Expand troubleshooting documentation and platform-specific FAQs; remove stale release-status and transport descriptions from server and client guides and Wiki pages.
-- [ ] Add or complete current-session upload/download counters across Android phone/TV, Windows, and iOS, separate from the day/month statistics delivered on Android/TV/Windows. The original proposal counts tunnel IP packets in the shared pump and resets the session totals on Disconnect; confirm existing implementation coverage before changing it. No server or protocol change is intended.
-- [ ] Add user-selected app exclusions on Android phone using VpnService.Builder.addDisallowedApplication. The MASQUE package itself remains excluded. Apply changes on the next Connect. Android TV is not included; excluded apps are outside the tunnel and its kill switch.
-- [ ] Complete and document end-to-end QR profile import for phone clients. The v2.1.0 Windows installer already displays a profile QR code; this does not by itself confirm scanner support on every phone client. TV and Windows retain file/paste import.
-- [ ] Maintain iOS TestFlight distribution and publish replacement builds before their actual expiry dates. Record the current build number and expiry from TestFlight; do not reuse the older v1.7 build's date for iOS 2.0.
 
-Client and installer design work may happen in any branch and is not tied to a version number. Play / F-Droid listing work follows the agreed visual snapshot; no publication date is committed here.
+- [ ] Add user-selected app exclusions on Android phone using VpnService.Builder.addDisallowedApplication. The MASQUE package itself remains excluded. Apply changes on the next Connect. Android TV is not included; excluded apps are outside the tunnel and its kill switch.
+
 
 ## Delivered foundation
 
@@ -89,7 +84,7 @@ This is a capability summary, not a second changelog.
 | Connectivity | QUIC keepalive, optional dual-port QUIC dialing, IPv6 QUIC transport, TCP CONNECT-IP, and documented alternate-port redirects. |
 | Operations | Experimental Windows VPS installer with certificate issuance/revocation, UDP/TCP deployment and profile QR display; server CN denylist; install.sh; checksums/attestations; Docker/Compose sources. |
 | User interface | Android/Windows icons, version display, QUIC RTT display, and TCP-session ping in v2.1.0 Android/TV/Windows clients. |
-| iOS | Public TestFlight distribution with a Packet Tunnel client and shared Go core. iOS 2.0 is UDP only for now. |
+| iOS | Public TestFlight distribution with a Packet Tunnel client and shared Go core.  |
 
 The initial public v1.0 release shipped on 14 August 2026. Detailed version-by-version changes belong in the [changelog](../CHANGELOG.md).
 
