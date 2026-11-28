@@ -19,8 +19,9 @@ permissions:
 jobs:
   linux-server:
     name: Linux server + checksums + Sigstore
-    # v1.7 is iOS TestFlight only. v1.7.1 is APK + MSI only: do not attach a new server binary.
-    if: ${{ github.ref != 'refs/tags/v1.7' && github.ref != 'refs/tags/v1.7.1' && (github.event_name != 'workflow_dispatch' || (github.event.inputs.tag != 'v1.7' && github.event.inputs.tag != 'v1.7.1')) }}
+    # v1.7 is iOS TestFlight only. v1.7.1 and v2.2.0 are client-only drops (the published
+    # server stays v2.1.0): do not attach a new server binary.
+    if: ${{ github.ref != 'refs/tags/v1.7' && github.ref != 'refs/tags/v1.7.1' && github.ref != 'refs/tags/v2.2.0' && (github.event_name != 'workflow_dispatch' || (github.event.inputs.tag != 'v1.7' && github.event.inputs.tag != 'v1.7.1' && github.event.inputs.tag != 'v2.2.0')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
