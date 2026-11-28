@@ -1,15 +1,17 @@
 # MASQUE VPN — Android and Android TV
 
-Android clients use Kotlin, VpnService, and a shared Go core packaged as masque.aar through gomobile. The published **v2.1.3** clients support HTTP/3 CONNECT-IP over QUIC/UDP and HTTP/2 CONNECT-IP over TLS/TCP. The server stays **v2.1.0**.
+Android clients use Kotlin, VpnService, and a shared Go core packaged as masque.aar through gomobile. The published **v2.2.0** clients support HTTP/3 CONNECT-IP over QUIC/UDP and HTTP/2 CONNECT-IP over TLS/TCP. The server stays **v2.1.0**.
 
-## What changed in v2.1.3
+## What changed in v2.2.0
 
-- **Phone:** Connect no longer freezes the app after a connect attempt on filtered mobile data (whitelist). In v2.1.0, Dial ran on the UI thread and the handshake could block Connect/Disconnect until it finished. v2.1.3 runs Dial on a worker thread and lets Disconnect cancel an in-flight handshake. `versionName` 2.1.3, `versionCode` 29.
-- **TV:** Same Dial/Disconnect fix. Also includes the v2.1.2 keep-alive (partial wake lock and Wi-Fi lock; redial if the path goes silent) and the v2.1.1 Connect layout that stays on a 540dp screen. `versionName` 2.1.3-tv, `versionCode` 29.
+- **Phone and TV:** multiple profiles. Each imported profile lives in its own directory under `files/profiles/`, one active-profile pointer selects what Connect uses, and the profile id combines the server name with the client certificate hash — re-importing a bundle updates that entry instead of duplicating it. A pre-2.2 single-profile install migrates automatically. Transport, MTU, kill switch, and traffic counters stay global. `versionName` 2.2.0 / 2.2.0-tv, `versionCode` 30.
+- **Phone:** a profile spinner with a Delete button; switching profiles while connected disconnects the current session after a confirmation.
+- **TV:** the same storage with a compact picker row one D-pad press above Connect; Connect stays the first control, and Delete is disabled while the service owns a session.
+- Dependency updates since v2.1.3: connect-ip-go 0.7.0 with quic-go v0.65.0, golang.org/x/net 0.63.0, golang.org/x/sys 0.50.0, Android Gradle plugin 9.5.2, Gradle wrapper 9.9.1.
 
 ## Install a published APK
 
-1. Download masque-phone-2.1.3.apk and masque-tv-2.1.3.apk from [v2.1.3](../../releases/tag/v2.1.3). Install over the previous flavor; phone and TV packages stay distinct.
+1. Download masque-phone-2.2.0.apk and masque-tv-2.2.0.apk from [v2.2.0](../../releases/tag/v2.2.0). Install over the previous flavor; phone and TV packages stay distinct.
 2. Allow installation from the source used to open the APK, then install the correct flavor.
 3. Import a real profile.masque issued for this device. The bundled sample is a format example, not working credentials.
 4. Grant VPN permission. On phones, allow the battery-optimization exemption if requested.
@@ -51,7 +53,7 @@ These are the checked main-branch settings, not an assertion that every publishe
 | compileSdk / targetSdk / minSdk | 36 / 34 / 24 |
 | NDK | 29.0.13599879 |
 
-app/build.gradle.kts on this tree declares versionName 2.1.3 and versionCode 29 (TV suffix `-tv`). For an older published APK, inspect that release tag rather than assuming main matches the file you installed.
+app/build.gradle.kts on this tree declares versionName 2.2.0 and versionCode 30 (TV suffix `-tv`). For an older published APK, inspect that release tag rather than assuming main matches the file you installed.
 
 ## Build from source
 

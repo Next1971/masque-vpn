@@ -1,6 +1,6 @@
 # MASQUE VPN — iOS client (TestFlight)
 
-The current published iOS client is **[2.1.1](../../releases/tag/v2.1.1-ios)** on [public TestFlight](https://testflight.apple.com/join/x52N41V1). GitHub **Latest v2.1.3** is Android and Windows clients only; it does not attach an IPA. iOS 2.1.1 uses the private CA and the **v2.1.0** server over UDP and TCP. This is not an App Store availability announcement.
+iOS 2.2.0 ships through the [public TestFlight](https://testflight.apple.com/join/x52N41V1) by 7 December 2026; the published TestFlight build stays 2.1.1 until then. GitHub **Latest v2.2.0** is Android and Windows clients plus the masque-setup.exe helper; it does not attach an IPA. iOS 2.1.1 uses the private CA and the **v2.1.0** server over UDP and TCP. This is not an App Store availability announcement.
 
 iOS 1.7 / Apple build 20 was UDP-only as well. Its 4 December 2026 expiry is historical and must not be used as the current iOS 2.0 expiry. Check the installed build number and actual expiration in TestFlight; this guide does not assert an unverified current build number or date.
 

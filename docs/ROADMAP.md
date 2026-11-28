@@ -6,7 +6,8 @@
 
 | Release | Status | Scope |
 |---|---|---|
-| [v2.1.3](../../../releases/tag/v2.1.3) | GitHub Latest, clients only | Android phone APK, Android TV APK, Windows MSI. Phone whitelist freeze, TV keep-alive, Windows sleep reconnect and MSI service upgrade. No server binary. |
+| [v2.2.0](../../../releases/tag/v2.2.0) | GitHub Latest, clients only | Multi-profile Android phone/TV APKs, Windows MSI, and masque-setup.exe (defaults to the v2.1.0 server; compact UI). Dependency updates since v2.1.3. iOS 2.2.0 ships through TestFlight by 7 December 2026. No server binary. |
+| [v2.1.3](../../../releases/tag/v2.1.3) | Superseded client drop | Install v2.2.0 instead. Phone whitelist freeze, TV keep-alive, Windows sleep reconnect and MSI service upgrade. No server binary. |
 | [v2.1.0](../../../releases/tag/v2.1.0) | Current server | Linux server, install.sh, gen-config.sh, checksums, Docker sources, and masque-setup.exe. UDP and TCP CONNECT-IP; TCP serves an HTML page to connections without a valid client certificate. Keep this server with v2.1.3 clients. |
 | [v2.1.2](../../../releases/tag/v2.1.2) | Superseded TV build | Android TV APK only. Install v2.1.3 instead. |
 | [v2.1.1](../../../releases/tag/v2.1.1) | Superseded TV build | Android TV APK only. Install v2.1.3 instead. |
@@ -49,16 +50,16 @@ The v2.0.0 experiment forced client MTU 1340 and did not expose manual transport
 
 A phone-path sweep on 2026-10-11 found UDP usable at MTU 1280 and 1340, slow at 1359, and unusable at 1365 and 1369. TCP remained usable at every tested MTU and was fastest at 1280. These are observations from that tested path, not universal protocol rankings or a promise that TCP is always faster. See [benchmarks](benchmarks/) for supporting measurements.
 
-## v2.2: planned — November 2026
+## v2.2.0: delivered — 28 November 2026
 
-The release scope is committed to these two items. A day within the month is not.
+Both committed items shipped in [v2.2.0](../../../releases/tag/v2.2.0).
 
-- [ ] Multi-profile clients on every platform: store several imported profiles per device and choose which one Connect uses.
+- [x] Multi-profile clients on every platform: store several imported profiles per device and choose which one Connect uses.
   - Profiles are stored in per-profile directories (certificates plus a metadata file), and one active-profile pointer selects what Connect uses. Importing a profile that matches an existing server and certificate updates that entry instead of creating a duplicate.
   - Existing single-profile installs migrate automatically on first launch of the updated client. The shared Go core is unchanged: it keeps receiving certificate paths.
   - Android phone: a profile picker ahead of Connect. Android TV: a picker row in the existing D-pad layout; Connect stays the first control. Windows: a profile dropdown in the GUI plus service IPC commands to list, switch, and delete profiles. iOS: the picker lives in the host app; the Packet Tunnel extension reads the active profile from the shared app group.
   - Switching to another profile while connected disconnects first, after a confirmation dialog. Transport, MTU, and kill switch remain global per-device settings in this release, and traffic statistics remain cumulative. This is client-side storage of already issued profiles; it does not change server-side issuance numbering (masque-client-N) or the bootstrap profile flow.
-- [ ] masque-setup.exe fixes, already implemented on the working branch: the embedded install script downloads the [v2.1.0](../../../releases/tag/v2.1.0) server by default (it previously fell back to v2.0.0 when no Linux binary sat beside the EXE), and the wizard window and profile QR dialog fit smaller 14-inch displays. These changes ship in the v2.2 assets.
+- [x] masque-setup.exe fixes, already implemented on the working branch: the embedded install script downloads the [v2.1.0](../../../releases/tag/v2.1.0) server by default (it previously fell back to v2.0.0 when no Linux binary sat beside the EXE), and the wizard window and profile QR dialog fit smaller 14-inch displays. These changes ship in the v2.2 assets; the v2.1.0 release asset was replaced in November 2026.
 
 ## Planned work
 

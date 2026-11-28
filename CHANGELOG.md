@@ -4,9 +4,33 @@ All notable changes to MASQUE VPN are documented here.
 
 ## [Unreleased]
 
+## [v2.2.0] - 2026-11-28
+
+**GitHub Latest. Client-only.** Replaces Latest [v2.1.3](https://github.com/Next1971/masque-vpn/releases/tag/v2.1.3) for Android phone, Android TV, and Windows, and attaches `masque-setup.exe` again. The published **server stays v2.1.0** — do not replace the VPS binary for this release. iOS 2.2.0 ships through TestFlight by 7 December 2026. No IPA in this drop.
+
+### Added
+
+- Multi-profile clients on all platforms: store several imported profiles and pick the active one in the app UI.
+  - Profiles live one directory each (certificates plus metadata) with a single active-profile pointer. The profile id combines the server name with the client certificate hash, so re-importing a bundle updates that entry instead of creating a duplicate. Pre-2.2 single-profile installs migrate automatically on first use.
+  - Windows: profile dropdown and Delete in the GUI. The service answers `list_profiles`, `set_active`, and `delete_profile` over the named pipe, and refuses switching or deleting the active profile while connected, so the GUI disconnects first.
+  - Android phone: profile spinner with a Delete button. Switching while connected disconnects the current session after a confirmation.
+  - Android TV: a compact picker row one D-pad press above Connect; Connect stays the first control.
+  - iOS: profile menu with Delete; switching while connected disconnects first and applies the switch when the stop finishes. The Packet Tunnel extension needs no update and reads the active profile.
+  - Transport, MTU, kill switch, autoconnect, and traffic counters remain global per-device settings.
+
 ### Fixed
 
-- masque-setup.exe: the embedded install script defaulted to downloading the v2.0.0 server when no Linux binary sat beside the EXE. It now defaults to v2.1.0, like `server/install.sh`. The v2.1.0 release asset was replaced on 22 November 2026 and `SHA256SUMS` carries the new hash. The wizard layout also fits smaller 14-inch displays.
+- masque-setup.exe: the embedded install script downloaded the v2.0.0 server by default when no Linux binary sat beside the EXE. It now defaults to v2.1.0, like `server/install.sh`. (The v2.1.0 release asset was replaced accordingly in November 2026.) The wizard layout also fits smaller 14-inch displays.
+
+### Changed
+
+- Dependency updates since v2.1.3: connect-ip-go 0.7.0 with quic-go v0.65.0 (Windows and Android Go modules), golang.org/x/net 0.63.0 (Windows and Android), golang.org/x/crypto 0.59.0 (Windows), golang.org/x/sys 0.50.0 (Android), Android Gradle plugin 9.5.2, Gradle wrapper 9.9.1.
+
+### Compatibility
+
+- Profiles and certificates do not change. Keep the v2.1.0 server.
+- Install the v2.2.0 APK or MSI over the previous client. A v1.7.1 client still reaches the v2.1.0 server over UDP; TCP needs a v2.0.0 or v2.1.0 server.
+- Android `2.2.0` and `2.2.0-tv` (`versionCode` 30). Windows product **2.2.0**.
 
 ## [v2.1.3] - 2026-11-07
 

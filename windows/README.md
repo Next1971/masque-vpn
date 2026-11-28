@@ -1,20 +1,21 @@
 # MASQUE VPN — Windows client
 
-The published **v2.1.3** Windows client supports HTTP/3 CONNECT-IP over QUIC/UDP and HTTP/2 CONNECT-IP over TLS/TCP, with private-CA client authentication and a Wintun adapter. The server stays **v2.1.0**.
+The published **v2.2.0** Windows client supports HTTP/3 CONNECT-IP over QUIC/UDP and HTTP/2 CONNECT-IP over TLS/TCP, with private-CA client authentication and a Wintun adapter. The server stays **v2.1.0**.
 
 A LocalSystem service owns the tunnel; the Fyne GUI imports profiles and sends commands over a named pipe. Installation requires elevation, but normal GUI use does not. Closing the window leaves the tunnel running.
 
-## What changed in v2.1.3
+## What changed in v2.2.0
 
-- After sleep, the service rebuilds the Wintun adapter, bypass route, and MASQUE session. v2.1.0 left a dead tunnel until you pressed Connect.
-- Double-clicking a newer MSI stops the old service, replaces the files, and starts the new service. Profiles under %ProgramData%\MASQUE stay in place.
-- The main window shows **v2.1.3**.
+- **Multiple profiles:** the GUI stores several imported profiles and connects with the selected one (see below). The service gained `list_profiles`, `set_active`, and `delete_profile` over the named pipe.
+- The attached `masque-setup.exe` again defaults its embedded install script to the **v2.1.0** server (an earlier copy fell back to v2.0.0 when no Linux binary sat beside the EXE), and its wizard fits smaller 14-inch displays.
+- Dependency updates since v2.1.3: connect-ip-go 0.7.0 with quic-go v0.65.0, golang.org/x/net 0.63.0, golang.org/x/crypto 0.59.0.
+- The main window shows **v2.2.0**.
 
 ## Install from a release
 
-1. Download masque-2.1.3.msi from [v2.1.3](../../releases/tag/v2.1.3).
+1. Download masque-2.2.0.msi from [v2.2.0](../../releases/tag/v2.2.0).
 2. Run it and approve the UAC prompt. That is the update: you do not copy `masque-svc.exe` by hand.
-3. Open MASQUE VPN from the Start menu as a normal user and confirm the version line is v2.1.3.
+3. Open MASQUE VPN from the Start menu as a normal user and confirm the version line is v2.2.0.
 4. Import a device-specific profile.masque if this machine does not already have one. See [issuing client configurations](../docs/CLIENTS.md).
 5. Select Automatic, UDP only, or TCP only. Start with MTU 1340, then connect and verify the VPS exit address.
 
@@ -32,7 +33,7 @@ Pick the active profile in the GUI dropdown. Switching to another profile while 
 
 ### Compatibility
 
-Existing profiles and certificates remain unchanged. Keep the v2.1.0 server. A v2.1.3 client can use that server over UDP or TCP. TCP requires a v2.0.0 or v2.1.0 server; the HTML response to unauthenticated TCP connections belongs to the v2.1.0 server. Older UDP clients can still reach that server over UDP.
+Existing profiles and certificates remain unchanged. Keep the v2.1.0 server. A v2.2.0 client can use that server over UDP or TCP. TCP requires a v2.0.0 or v2.1.0 server; the HTML response to unauthenticated TCP connections belongs to the v2.1.0 server. Older UDP clients can still reach that server over UDP.
 
 ## Install the server from Windows (masque-setup.exe)
 

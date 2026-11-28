@@ -28,8 +28,8 @@ android {
         applicationId = "com.next1971.masque"
         minSdk = 24          // Android 7.0 — CreateUnmonitoredTUNFromFD and VpnService are available
         targetSdk = 34
-        versionCode = 29
-        versionName = "2.1.3"
+        versionCode = 30
+        versionName = "2.2.0"
     }
 
     // Two form factors from one codebase:
