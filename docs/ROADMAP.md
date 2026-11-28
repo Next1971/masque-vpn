@@ -1,6 +1,6 @@
 # Roadmap
 
-> Status snapshot: 2026-11-22. This document covers current release status, project decisions, and future work. See [CHANGELOG.md](../CHANGELOG.md) and [GitHub Releases](../../../releases) for detailed release history. Release notes take precedence over older platform-guide introductions.
+> Status snapshot: 2026-11-28. This document covers current release status, project decisions, and future work. See [CHANGELOG.md](../CHANGELOG.md) and [GitHub Releases](../../../releases) for detailed release history. Release notes take precedence over older platform-guide introductions.
 
 ## Current releases
 
@@ -8,13 +8,13 @@
 |---|---|---|
 | [v2.2.0](../../../releases/tag/v2.2.0) | GitHub Latest, clients only | Multi-profile Android phone/TV APKs, Windows MSI, and masque-setup.exe (defaults to the v2.1.0 server; compact UI). Dependency updates since v2.1.3. iOS 2.2.0 ships through TestFlight by 7 December 2026. No server binary. |
 | [v2.1.3](../../../releases/tag/v2.1.3) | Superseded client drop | Install v2.2.0 instead. Phone whitelist freeze, TV keep-alive, Windows sleep reconnect and MSI service upgrade. No server binary. |
-| [v2.1.0](../../../releases/tag/v2.1.0) | Current server | Linux server, install.sh, gen-config.sh, checksums, Docker sources, and masque-setup.exe. UDP and TCP CONNECT-IP; TCP serves an HTML page to connections without a valid client certificate. Keep this server with v2.1.3 clients. |
-| [v2.1.2](../../../releases/tag/v2.1.2) | Superseded TV build | Android TV APK only. Install v2.1.3 instead. |
-| [v2.1.1](../../../releases/tag/v2.1.1) | Superseded TV build | Android TV APK only. Install v2.1.3 instead. |
-| iOS 2.1.1 | Current TestFlight client | Public [join link](https://testflight.apple.com/join/x52N41V1). UDP and TCP. No GitHub IPA. |
+| [v2.1.0](../../../releases/tag/v2.1.0) | Current server | Linux server, install.sh, gen-config.sh, checksums, Docker sources, and masque-setup.exe. UDP and TCP CONNECT-IP; TCP serves an HTML page to connections without a valid client certificate. Keep this server with v2.2.0 clients. |
+| [v2.1.2](../../../releases/tag/v2.1.2) | Superseded TV build | Android TV APK only. Install v2.2.0 instead. |
+| [v2.1.1](../../../releases/tag/v2.1.1) | Superseded TV build | Android TV APK only. Install v2.2.0 instead. |
+| iOS 2.1.1 | Current TestFlight client | Public [join link](https://testflight.apple.com/join/x52N41V1). UDP and TCP. No GitHub IPA. iOS 2.2.0 replaces it by 7 December 2026. |
 | [v2.0.0](../../../releases/tag/v2.0.0) | Earlier experimental pre-release | First TCP CONNECT-IP experiment; fixed client MTU 1340 and automatic fallback after an unanswered UDP probe. TCP required a client certificate at the handshake and did not serve a website. Not Latest. |
 | [v1.7.1](../../../releases/tag/v1.7.1) | Previous Latest | Android phone/TV and Windows clients; UDP-only. No server binary in that release. |
-| [v1.7](../../../releases/tag/v1.7) | Older iOS TestFlight release | Apple build 20, UDP-only. Its 4 December 2026 expiry refers to that older build, not to the current iOS 2.0 build. |
+| [v1.7](../../../releases/tag/v1.7) | Older iOS TestFlight release | Apple build 20, UDP-only. Its 4 December 2026 expiry refers to that older build, not to the current TestFlight build. |
 | [v1.5.6](../../../releases/tag/v1.5.6) | Earlier release | IPv6 QUIC transport, dual-stack server bind, Windows Disconnect fix, and server installation packaging. |
 
 All releases remain experimental software. GitHub build/test checks are not an independent security audit. A new Latest release does not guarantee suitability for every network or deployment.
@@ -30,7 +30,7 @@ All releases remain experimental software. GitHub build/test checks are not an i
 - The server certificate is still signed by the private CA. A browser shows a certificate warning before the page. UDP does not serve a website.
 - Android phone, Android TV, and Windows expose Automatic / UDP only / TCP only transport selection and a configurable MTU with default 1340.
 - These clients also expose a kill switch (off by default), day/month traffic statistics, and ping on TCP sessions. QUIC ping remains the smoothed QUIC RTT; TCP ping must not be described as QUIC RTT.
-- iOS 2.0 is available through TestFlight and is UDP only for now. TCP does not carry traffic on iOS.
+- The v2.1.0-era iOS TestFlight build (iOS 2.0) was UDP only at that time. Current TestFlight builds carry UDP and TCP; see the current releases table.
 
 ### Compatibility and deployment
 
@@ -67,7 +67,9 @@ No committed release numbers or dates are assigned to the items below.
 
 - [ ] Windows: before connecting, detect another VPN that already owns the default route. Ask whether to continue: another VPN is already connected, and continuing builds a tunnel inside a tunnel. Connect only after confirmation. Do not disconnect the other VPN. The Windows GUI is English, so the dialog copy should match that UI. If the user confirms, pin the MASQUE server bypass to the physical gateway. Checked before `CreateTUN`
 
-- [ ] Expand troubleshooting documentation and platform-specific FAQs; remove stale release-status and transport descriptions from server and client guides and Wiki pages.
+- [ ] Ship iOS 2.2.0 through TestFlight by 7 December 2026, as promised in the v2.2.0 release notes. The multi-profile code is already on main; the TestFlight build (version 2.2.0, build 45) has not been uploaded yet.
+
+- [ ] Expand troubleshooting documentation and platform-specific FAQs. The stale release-status and transport descriptions were removed in the November documentation pass across the repository guides and Wiki; keep new pages consistent at each release.
 
 - [ ] Add user-selected app exclusions on Android phone using VpnService.Builder.addDisallowedApplication. The MASQUE package itself remains excluded. Apply changes on the next Connect. Android TV is not included; excluded apps are outside the tunnel and its kill switch.
 
@@ -80,11 +82,12 @@ This is a capability summary, not a second changelog.
 |---|---|
 | Core tunnel | HTTP/3 CONNECT-IP over QUIC/UDP, HTTP/2 CONNECT-IP over TCP, private-CA client authentication, and a shared Go client core. |
 | Server | Config/certificate generator, systemd/NAT setup, multi-client return-path demultiplexing, sticky addresses by client certificate CN, graceful shutdown, optional IPv6 pools/forwarding, and a TCP website for unauthenticated/non-VPN connections. |
-| Android and TV | Server-assigned addresses, two-phase connection setup, TV flavor and paste import, network-change reconnect without closing TUN, battery-exemption prompt on phones, optional kill switch, IPv6 handling, transport/MTU controls, and day/month traffic statistics. |
-| Windows | Service + GUI + MSI, Wintun, optional kill switch, IPv6 tunnel routes, immediate QUIC session closure on Disconnect, transport/MTU controls, and day/month traffic statistics. |
+| Profiles | Multi-profile storage with an active-profile picker on Android phone/TV, Windows, and iOS; per-profile directories, re-import updates in place, automatic migration of pre-2.2 single-profile installs; global transport/MTU/kill-switch settings. Delivered in v2.2.0. |
+| Android and TV | Server-assigned addresses, two-phase connection setup, TV flavor and paste import, network-change reconnect without closing TUN, tunnel data-plane watch with redial, battery-exemption prompt on phones, optional kill switch, IPv6 handling, transport/MTU controls, and day/month traffic statistics. |
+| Windows | Service + GUI + MSI, Wintun, optional kill switch, IPv6 tunnel routes, immediate QUIC session closure on Disconnect, sleep-reconnect rebuild, transport/MTU controls, and day/month traffic statistics. |
 | Connectivity | QUIC keepalive, optional dual-port QUIC dialing, IPv6 QUIC transport, TCP CONNECT-IP, and documented alternate-port redirects. |
 | Operations | Experimental Windows VPS installer with certificate issuance/revocation, UDP/TCP deployment and profile QR display; server CN denylist; install.sh; checksums/attestations; Docker/Compose sources. |
-| User interface | Android/Windows icons, version display, QUIC RTT display, and TCP-session ping in v2.1.0 Android/TV/Windows clients. |
+| User interface | Android/Windows icons, version display, QUIC RTT display, and TCP-session ping in the Android/TV/Windows clients. |
 | iOS | Public TestFlight distribution with a Packet Tunnel client and shared Go core.  |
 
 The initial public v1.0 release shipped on 14 August 2026. Detailed version-by-version changes belong in the [changelog](../CHANGELOG.md).
